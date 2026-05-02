@@ -22,53 +22,53 @@ namespace MATH
 //!  Note 3: double or e are considered the 0th component as in most modern texts.
 //!
 //! Storage  for lorentz vectors
-//! x0=t, x1= x,x2= y, x3=z (i.e., cartesian coordinates)
+//! _x0=t, _x1= x,_x2= y, _x3=z (i.e., cartesian coordinates)
 
 
 class VectorLorentz
 {
 protected:
-  double x0;
-  double x1;
-  double x2;
-  double x3;
+  double _x0;
+  double _x1;
+  double _x2;
+  double _x3;
 
 public:
 
   VectorLorentz();
   VectorLorentz(const double & _x0, const double & _x1, const double & _x2, const double & _x3);
-  VectorLorentz(const float _values[4]);
-  VectorLorentz(const double _values[4]);
-  VectorLorentz(std::vector<float> _values);
-  VectorLorentz(std::vector<double> _values);
+  VectorLorentz(const float values[4]);
+  VectorLorentz(const double values[4]);
+  VectorLorentz(std::vector<float> values);
+  VectorLorentz(std::vector<double> values);
   VectorLorentz(const VectorLorentz & source);
   virtual ~VectorLorentz() {};
   double operator[] (unsigned int index) const;
   inline double t()  const
   {
-  return x0;
+  return _x0;
   }
 
   inline double x()  const
   {
-  return x1;
+  return _x1;
   }
 
   inline double y()  const
   {
-  return x2;
+  return _x2;
   }
 
   inline double z()  const
   {
-  return x3;
+  return _x3;
   }
 
   void setTXYZ(const double & _x0, const double & _x1, const double & _x2, const double & _x3);
-  void setTXYZ(const float _values[4]);
-  void setTXYZ(const double _values[4]);
-  void setTXYZ(const std::vector<float> _values);
-  void setTXYZ(const std::vector<double> _values);
+  void setTXYZ(const float values[4]);
+  void setTXYZ(const double values[4]);
+  void setTXYZ(const std::vector<float> values);
+  void setTXYZ(const std::vector<double> values);
   void setTXYZ(const VectorLorentz & source);
   void setTPhiThetaR(const double & t, const double & phi, const double & theta, const double & r);
   void setTPhiRhoZ(const double & t, const double & phi, const double & rho, const double & z);
@@ -77,62 +77,62 @@ public:
   void setMPhiPtY(const double & m, const double & phi, const double & pt, const double & y);
   inline double  phi() const
   {
-  return std::atan2(x2,x1);
+  return std::atan2(_x2,_x1);
   }
 
   inline double  cosPhi() const
   {
-  return x1/std::sqrt(x1*x1+x2*x2);
+  return _x1/std::sqrt(_x1*_x1+_x2*_x2);
   }
 
   inline double  sinPhi() const
   {
-  return x2/std::sqrt(x1*x1+x2*x2);
+  return _x2/std::sqrt(_x1*_x1+_x2*_x2);
   }
 
   double  deltaPhi(const VectorLorentz & other) const;
 
   inline double theta() const
   {
-  return std::atan2(std::sqrt(x1*x1+x2*x2),x3);
+  return std::atan2(std::sqrt(_x1*_x1+_x2*_x2),_x3);
   }
 
   inline double  cosTheta() const
   {
-  return x3/std::sqrt(x1*x1+x2*x2+x3*x3);
+  return _x3/std::sqrt(_x1*_x1+_x2*_x2+_x3*_x3);
   }
 
   inline double sinTheta() const
   {
-  double ptSq = x1*x1+x2*x2;
-  return std::sqrt(ptSq)/std::sqrt(ptSq+x3*x3);
+  double ptSq = _x1*_x1+_x2*_x2;
+  return std::sqrt(ptSq)/std::sqrt(ptSq+_x3*_x3);
   }
 
   inline double modulus3() const
   {
-  return std::sqrt(x1*x1+x2*x2+x3*x3);
+  return std::sqrt(_x1*_x1+_x2*_x2+_x3*_x3);
   }
 
   inline double  modulus3Square() const
   {
-  return x1*x1+x2*x2+x3*x3;
+  return _x1*_x1+_x2*_x2+_x3*_x3;
   }
 
   double modulus() const;
 
   inline double  modulusSquare() const
   {
-  return x0*x0 - (x1*x1+x2*x2+x3*x3);
+  return _x0*_x0 - (_x1*_x1+_x2*_x2+_x3*_x3);
   }
 
   inline double  perp() const
   {
-  return std::sqrt(x1*x1+x2*x2);
+  return std::sqrt(_x1*_x1+_x2*_x2);
   }
 
   inline double perpSquare() const
   {
-  return x1*x1+x2*x2;
+  return _x1*_x1+_x2*_x2;
   }
 
   Vector3D xyz() const;
@@ -162,12 +162,12 @@ public:
   VectorLorentz operator- () const;
   inline double  scalarProduct3D(const VectorLorentz & rhs) const
   {
-  return x1*rhs.x1 + x2*rhs.x2 + x3*rhs.x3;
+  return _x1*rhs._x1 + _x2*rhs._x2 + _x3*rhs._x3;
   }
 
   inline double  scalarProduct(const VectorLorentz & rhs) const
   {
-  return x0*rhs.x0 - x1*rhs.x1 - x2*rhs.x2 - x3*rhs.x3;
+  return _x0*rhs._x0 - _x1*rhs._x1 - _x2*rhs._x2 - _x3*rhs._x3;
   }
 
   double distanceT(const VectorLorentz & other) const;

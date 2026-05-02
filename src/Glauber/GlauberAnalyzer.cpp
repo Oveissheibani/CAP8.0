@@ -70,11 +70,12 @@ namespace CAP
   _configuration.addProperty(createKey(taskName,"EVENT_0:OWNER"),    false);
 
   String objectType = "HISTOGRAM";
-  _configuration.addProperty(createKey(taskName,objectType,"fillBasics"),true);
-  _configuration.addProperty(createKey(taskName,objectType,"fillMoments"),false);
-  _configuration.addProperty(createKey(taskName,objectType,"fillSmeared"),false);
-  _configuration.addProperty(createKey(taskName,objectType,"fillArea"),false);
-  _configuration.addProperty(createKey(taskName,objectType,"fillEvents"),false);
+  _configuration.addProperty(createKey(taskName,objectType,"fillBasics"),  true);
+  _configuration.addProperty(createKey(taskName,objectType,"fillMoments"), false);
+  _configuration.addProperty(createKey(taskName,objectType,"fillSmeared"), false);
+  _configuration.addProperty(createKey(taskName,objectType,"fillArea"),    false);
+  _configuration.addProperty(createKey(taskName,objectType,"drawEvents"),  false);
+  _configuration.addProperty(createKey(taskName,objectType,"drawEvents:N"),20);
   _configuration.addProperty(createKey(taskName,objectType,"nOrders"),4);
 
   _configuration.addProperty(createKey(taskName,objectType,"nParts_nbins"),100);
@@ -176,21 +177,12 @@ namespace CAP
   _eventAccepted.print();
   }
 
-  void GlauberAnalyzer::execute()
+  void GlauberAnalyzer::fillMoments(std::vector<GlauberNucleon> & nucleonsA,
+                                    std::vector<GlauberNucleon> & nucleonsB,
+                                    GlauberEventMoments & moments)
   {
-  //if (reportInfo(__FUNCTION__)) { printCR();}
-  GlauberEvent & ev = event();
-  GlauberNucleus & nucleusA = ev.nucleusA();
-  GlauberNucleus & nucleusB = ev.nucleusB();
-  std::vector<GlauberNucleon> & nucleonsA = nucleusA.allNucleons();
-  std::vector<GlauberNucleon> & nucleonsB = nucleusB.allNucleons();
-
-  GlauberEventMoments & momentsA      = ev.momentsNucleusA();
-  GlauberEventMoments & momentsB      = ev.momentsNucleusB();
-  GlauberEventMoments & momentsSystem = ev.momentsSystem();
-  momentsA.reset();
-  momentsB.reset();
-  momentsSystem.reset();
+  // first call to calculate the first moments
+  // second call to calculate 2nd and higher moments, eccentricity and psi
   double smearRadius, smearPhi, x, y;
 
   for (auto & nucleonA : nucleonsA)
@@ -206,8 +198,7 @@ namespace CAP
       x += smearRadius*cos(smearPhi);
       y += smearRadius*sin(smearPhi);
       }
-    momentsA.fill(x,y);
-    momentsSystem.fill(x,y);
+    moments.fill(x,y);
     }
   for (auto & nucleonB : nucleonsB)
     {
@@ -222,14 +213,26 @@ namespace CAP
       x += smearRadius*cos(smearPhi);
       y += smearRadius*sin(smearPhi);
       }
-    momentsB.fill(x,y);
-    momentsSystem.fill(x,y);
+    moments.fill(x,y);
     }
-  momentsA.calculateAverages();
-  momentsB.calculateAverages();
+  }
+
+  void GlauberAnalyzer::execute()
+  {
+  //if (reportInfo(__FUNCTION__)) { printCR();}
+  GlauberEvent & ev = event();
+  GlauberNucleus & nucleusA = ev.nucleusA();
+  GlauberNucleus & nucleusB = ev.nucleusB();
+  std::vector<GlauberNucleon> & nucleonsA = nucleusA.allNucleons();
+  std::vector<GlauberNucleon> & nucleonsB = nucleusB.allNucleons();
+  GlauberEventMoments & momentsSystem = ev.momentsSystem();
+  momentsSystem.resetPass();
+  momentsSystem.reset();
+  fillMoments(nucleonsA,nucleonsB,momentsSystem);
   momentsSystem.calculateAverages();
-
-
+  momentsSystem.reset();
+  fillMoments(nucleonsA,nucleonsB,momentsSystem);
+  momentsSystem.calculateAverages();
 
   std::vector<GlauberEventFilter*> & filters = eventFilters();
   std::vector<GlauberHistos*> & glauberHistos = histograms();
@@ -265,10 +268,11 @@ namespace CAP
   //!
   void GlauberAnalyzer::scaleHistograms()
   {
-  if (reportInfo(__FUNCTION__)) { /* no ops */ };
+  if (reportInfo(__FUNCTION__)) { printCR(); };
 
   std::vector<long> & counts = _eventAccepted.values();
   std::vector<double> factors;
+  factors.clear();
   for (auto count : counts)
     {
     if (count>0)
@@ -288,13 +292,19 @@ namespace CAP
 
   void GlauberAnalyzer::scaleHistograms(const std::vector<double> & factors)
   {
-  if (reportStart(__FUNCTION__)) { /* no ops */ };
+  printValue("Check",1);
   std::vector<GlauberHistos*> & histos = histograms();
+  printValue("histos.size()",histos.size());
+  printValue("factors.size()",factors.size());
+
   for (unsigned int k=0; k< histos.size(); k++)
     {
-    histos[k]->scaleHistograms(factors[k]);
+    printValue("k",k);
+    double scale = factors[k];
+    printValue("scale",scale);
+    histos[k]->scaleHistograms(scale);
     }
-  if (reportEnd(__FUNCTION__)) { /* no ops */ };
+  printValue("Check",2);
   }
   
 

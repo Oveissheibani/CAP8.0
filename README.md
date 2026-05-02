@@ -20,7 +20,7 @@
 # Build CAP
 ```
 cd <your_cap_directory>
-source Setup_CAP.sh
+source SetupCAP.sh
 mkdir build
 cd build
 cmake ../src

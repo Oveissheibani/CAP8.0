@@ -1,6 +1,9 @@
 #include "GlauberGenerator.hpp"
 #include "GlauberEvent.hpp"
 #include "GlauberEventMoments.hpp"
+#include "RootHistogramHelpers.hpp"
+#include "TCanvas.h"
+#include "TH1D.h"
 #include "TRandom.h"
 
 
@@ -207,8 +210,8 @@ namespace CAP
     }
   String  nameA     = _configuration.valueString(createKey(taskName,objectType,"NUCLEUS_A:NAME"));
   int     nTrialsA  = _configuration.valueInt(   createKey(taskName,objectType,"NUCLEUS_A:NTRIALS"));
-  bool    recentA   = _configuration.valueBool(  createKey(taskName,objectType,"NUCLEUS_A:RECENTERING"));
-  bool    overA     = _configuration.valueInt(   createKey(taskName,objectType,"NUCLEUS_A:ALLOW_OVERLAP"));
+  bool    recenterA = _configuration.valueBool(  createKey(taskName,objectType,"NUCLEUS_A:RECENTERING"));
+  bool    allowOverlapA     = _configuration.valueInt(   createKey(taskName,objectType,"NUCLEUS_A:ALLOW_OVERLAP"));
   double  minInterA = _configuration.valueDouble(createKey(taskName,objectType,"NUCLEUS_A:MIN_INTER"));
   bool    useUserSA = _configuration.valueBool(  createKey(taskName,objectType,"NUCLEUS_A:USE_USERSIGMA"));
 
@@ -216,8 +219,8 @@ namespace CAP
     {
     printValue("nameA",nameA);
     printValue("nTrialsA",nTrialsA);
-    printValue("recentA",recentA);
-    printValue("overA",overA);
+    printValue("recenterA",recenterA);
+    printValue("allowOverlapA",allowOverlapA);
     printValue("minInterA",minInterA);
     printValue("useUserSA",useUserSA);
     }
@@ -225,8 +228,8 @@ namespace CAP
   GlauberNucleus & nucleusA = glauberEvent.nucleusA();
   glauberDb.findNucleus(nameA,nucleusA.type());
   nucleusA.setNucleus();
-  nucleusA.setRecenteringMode(recentA);
-  nucleusA.setAllowOverlap(overA);
+  nucleusA.setRecenteringMode(recenterA);
+  nucleusA.setAllowOverlap(allowOverlapA);
   nucleusA.setUserSigmaMode(useUserSA);
   nucleusA.setUseLattice(false);
   nucleusA.setMaxNumberTrials(nTrialsA);
@@ -235,8 +238,8 @@ namespace CAP
 
   String  nameB     = _configuration.valueString(   createKey(taskName,objectType,"NUCLEUS_B:NAME"));
   int     nTrialsB  = _configuration.valueInt(      createKey(taskName,objectType,"NUCLEUS_B:NTRIALS"));
-  bool    recentB   = _configuration.valueBool(     createKey(taskName,objectType,"NUCLEUS_B:RECENTERING"));
-  bool    overB     = _configuration.valueBool(     createKey(taskName,objectType,"NUCLEUS_B:ALLOW_OVERLAP"));
+  bool    recenterB = _configuration.valueBool(     createKey(taskName,objectType,"NUCLEUS_B:RECENTERING"));
+  bool    allowOverlapB = _configuration.valueBool(     createKey(taskName,objectType,"NUCLEUS_B:ALLOW_OVERLAP"));
   double  minInterB = _configuration.valueDouble(   createKey(taskName,objectType,"NUCLEUS_B:MIN_INTER"));
   bool    useUserSB = _configuration.valueBool(     createKey(taskName,objectType,"NUCLEUS_B:USE_USERSIGMA"));
 
@@ -244,8 +247,8 @@ namespace CAP
     {
     printValue("nameB",nameB);
     printValue("nTrialsB",nTrialsB);
-    printValue("recentB",recentB);
-    printValue("overB",overB);
+    printValue("recenterB",recenterB);
+    printValue("allowOverlapB",allowOverlapB);
     printValue("minInterB",minInterB);
     printValue("useUserSB",useUserSB);
     }
@@ -253,23 +256,23 @@ namespace CAP
   GlauberNucleus & nucleusB = glauberEvent.nucleusB();
   glauberDb.findNucleus(nameA, nucleusB.type());
   nucleusB.setNucleus();
-  nucleusB.setRecenteringMode(recentB);
-  nucleusB.setAllowOverlap(overB);
+  nucleusB.setRecenteringMode(recenterB);
+  nucleusB.setAllowOverlap(allowOverlapB);
   nucleusB.setUserSigmaMode(useUserSB);
   nucleusB.setMaxNumberTrials(nTrialsB);
   nucleusB.setMinInterNucleonDistance(minInterB);
   nucleusB.generateNucleons();
 
   _nnCollisionOption  = _configuration.valueInt(createKey(taskName,objectType,"INTERACTION:NNCOLLISION_OPTION"));
-  _minImpact       = _configuration.valueDouble(createKey(taskName,objectType,"INTERACTION:IMPACT_MIN"));
-  _maxImpact       = _configuration.valueDouble(createKey(taskName,objectType,"INTERACTION:IMPACT_MAX"));
-  _randomizeEP     = _configuration.valueBool(  createKey(taskName,objectType,"INTERACTION:RANDOMIZE_EP"));
-  _intDistanceMax  = _configuration.valueDouble(createKey(taskName,objectType,"INTERACTION:DISTANCE_MAX"));
-  _hardIntDistMax  = _configuration.valueDouble(createKey(taskName,objectType,"INTERACTION:HARD_DISTANCE_MAX"));
-  _minImpactSq       = _minImpact*_minImpact;
-  _maxImpactSq       = _maxImpact*_maxImpact;
-  _intDistanceMaxSq  = _intDistanceMax*_intDistanceMax;
-  _hardIntDistMaxSq  = _hardIntDistMax*_hardIntDistMax;
+  _minImpact          = _configuration.valueDouble(createKey(taskName,objectType,"INTERACTION:IMPACT_MIN"));
+  _maxImpact          = _configuration.valueDouble(createKey(taskName,objectType,"INTERACTION:IMPACT_MAX"));
+  _randomizeEP        = _configuration.valueBool(  createKey(taskName,objectType,"INTERACTION:RANDOMIZE_EP"));
+  _intDistanceMax     = _configuration.valueDouble(createKey(taskName,objectType,"INTERACTION:DISTANCE_MAX"));
+  _hardIntDistMax     = _configuration.valueDouble(createKey(taskName,objectType,"INTERACTION:HARD_DISTANCE_MAX"));
+  _minImpactSq        = _minImpact*_minImpact;
+  _maxImpactSq        = _maxImpact*_maxImpact;
+  _intDistanceMaxSq   = _intDistanceMax*_intDistanceMax;
+  _hardIntDistMaxSq   = _hardIntDistMax*_hardIntDistMax;
 
   if (verbose)
     {
@@ -318,6 +321,38 @@ namespace CAP
       printValue("_xSectionG",_xSectionG);
       _nnXSectProfile = new NNProfile();
       _nnXSectProfile->setParameters(_xSection,_xSectionOmega,_xSectionG);
+
+      // the following is used for diagnostic purpose only
+
+      int n = 400;
+      double max = 6.0;
+      TH1 * h = new TH1D("nnXSectProfile","nnXSectProfile",n, -max, max);
+      TH1 * hs = new TH1D("nnXSectProfileS","nnXSectProfileS",n, -max, max);
+      double dx = 2.0*max/double(n);
+      double x = -max;
+      double sum = 0.0;
+      for (int k=0; k<n; k++)
+        {
+        double v = _nnXSectProfile->evaluate(fabs(x));
+        x += dx;
+        sum += dx*v;
+        h->SetBinContent(k,v);
+        h->SetBinError(k,0.0);
+        hs->SetBinContent(k,sum);
+        hs->SetBinError(k,0.0);
+        }
+      cout << " integral: " << sum << endl;
+
+      TCanvas * canvas = new TCanvas("NNProfile","NNProfile",5,5,800, 800);
+      canvas->SetLogy(1);
+      h->Draw();
+      canvas->Print("NNProfile.pdf");
+
+      TCanvas * canvas2 = new TCanvas("NNProfileS","NNProfileS",25,5,800, 800);
+      //canvas2->SetLogy(1);
+      hs->Draw();
+      canvas2->Print("NNProfileS.pdf");
+
       break;
       }
 
@@ -373,9 +408,8 @@ namespace CAP
     {
     for (auto & nucleonB : nucleusB.allNucleons())
       {
-      // printValue("Check",7);
       distanceAB = nucleonA.distanceTo2D(nucleonB);
-      // printValue("Check",8);
+      if (distanceAB>4.0) continue;
 
       //printValue("_nnCollisionOption",_nnCollisionOption);
       // few methods:
@@ -388,9 +422,8 @@ namespace CAP
           {
           // printValue("Check",9);
          double prob = _nnXSectProfile->evaluate(distanceAB);
-          ran = gRandom->Uniform();
+          ran = gRandom->Rndm();
           ev.setEventXSection(_xSection);
-
 //          printValue("distanceAB",distanceAB);
 //          printValue("prob",prob);
 //          printValue("ran",ran);

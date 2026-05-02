@@ -1379,7 +1379,7 @@ void createFigureSlide(std::ofstream & out, const TString & title, const TString
 }
 
 
-int Plots(bool print=0, bool latex=1)
+int Plots(bool print=1, bool latex=1)
 {
   TString includeBasePath = getenv("CAP_SRC_PATH");
   loadLatex(includeBasePath);
@@ -1722,7 +1722,7 @@ int Plots(bool print=0, bool latex=1)
   histos[0]->GetXaxis()->SetTitle("#varepsilon");
   histos[0]->GetYaxis()->SetTitle("P(#varepsilon)");
   canvasList.push_back(plot("SysEccentricity",canvasConfig,histos,graphConfigs,labels,
-                            -1.0, 1.0, 0.0, 0.399,
+                            -1.0, 1.0, 0.0, 0.199,
                             0.7,0.65,0.85,0.85,fontSize,1,1));
 
   labels.clear();
@@ -1756,14 +1756,14 @@ int Plots(bool print=0, bool latex=1)
   labels.push_back(TString("#varepsilon_{y,part}"));
   labels.push_back(TString("#varepsilon_{part}"));
   histos.clear();
-  histos.push_back(loadH1(files[0], createName(baseName,"sysEccX")));
-  histos.push_back(loadH1(files[0], createName(baseName,"sysEccY")));
-  histos.push_back(loadH1(files[0], createName(baseName,"sysEcc")));
+  histos.push_back(loadH1(files[0], createName(baseName,"sysEccXVsImpact")));
+  histos.push_back(loadH1(files[0], createName(baseName,"sysEccYVsImpact")));
+  histos.push_back(loadH1(files[0], createName(baseName,"sysEccVsImpact")));
   histos[0]->SetTitle("");
   histos[0]->GetXaxis()->SetTitle("b (fm)");
   histos[0]->GetYaxis()->SetTitle("#varepsilon");
   canvasList.push_back(plot("SysEccentricityVsImpact",canvasConfig,histos,graphConfigs,labels,
-                            0.0, 20.0, -0.05, 0.5,
+                            0.0, 20.0, -0.2, 1.5,
                             0.7,0.65,0.85,0.85,fontSize,1,1));
 
   if (print) printCanvases(canvasList,outDirectory);

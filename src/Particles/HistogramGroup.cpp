@@ -120,7 +120,7 @@ namespace CAP
   
   void HistogramGroup::scaleHistograms(double a)
   {
-  if (reportDebug(__FUNCTION__)) { printCR(); }
+  if (reportInfo(__FUNCTION__)) { printCR(); }
   for (auto & object  : _objects)
     {
     if ((object ->IsA()==TProfile::Class()) ||

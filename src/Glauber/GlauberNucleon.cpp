@@ -283,13 +283,19 @@ namespace CAP
   void GlauberNucleon::setRndmPositionInSphere(double maxRadiusSq)
   {
   double phi    = twoPi()*gRandom->Rndm();
-  double cosTh  = 2.0*gRandom->Rndm()-1;
+  double cosTh  = 2.0*gRandom->Rndm()-1.0;
   double sinTh  = sqrt(1.0-cosTh*cosTh);
-  double r      = sqrt( maxRadiusSq*gRandom->Rndm() );
+  double r      = sqrt(maxRadiusSq)*gRandom->Rndm();
   double rSinTh = r*sinTh;
   double x      = rSinTh*cos(phi);
   double y      = rSinTh*sin(phi);
   double z      = r*cosTh;
+//    printValue("phi",phi);
+//    printValue("cosTh",cosTh);
+//    printValue("r",r);
+//    printValue("x",x);
+//    printValue("y",y);
+//    printValue("z",z);
   _position.setTXYZ(0.0,x,y,z);
   }
   

@@ -221,12 +221,12 @@ namespace CAP
   const double undefined = -1.0E100;
 
   _meanX  =  _xSum/_sum;
-  _meanY  =  _xSum/_sum;
+  _meanY  =  _ySum/_sum;
   _meanX2 =  _x2Sum/_sum;
   _meanY2 =  _y2Sum/_sum;
   _meanXY =  _xySum/_sum;
   _varX   =  _meanX2 - _meanX*_meanX;
-  _varY   =  _meanX2 - _meanY*_meanY;
+  _varY   =  _meanY2 - _meanY*_meanY;
   _varXY  =  _meanXY - _meanX*_meanY;
   _rmsX   = _varX>=0 ? sqrt(_varX) : -1.0E100;
   _rmsY   = _varY>=0 ? sqrt(_varY) : -1.0E100;
@@ -274,7 +274,7 @@ namespace CAP
         }
       }
     }
-
+  _pass++;
   }
 
   void GlauberEventMoments::clear()

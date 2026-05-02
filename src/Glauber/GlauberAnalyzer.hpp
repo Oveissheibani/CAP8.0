@@ -39,6 +39,9 @@ namespace CAP
   virtual void reset();
   virtual void clear();
   virtual void print() const;
+  virtual void fillMoments(std::vector<GlauberNucleon> & nucleonsA,
+                           std::vector<GlauberNucleon> & nucleonsB,
+                           GlauberEventMoments & moments);
   unsigned int nEvents() const  { return _managedEvents.size();  }
   unsigned int nEventFilters() const  { return _managedEventFilters.size();  }
   unsigned int nHistograms() const  { return _managedHistograms.size();  }

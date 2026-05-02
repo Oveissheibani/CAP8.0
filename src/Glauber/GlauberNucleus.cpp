@@ -267,12 +267,13 @@ namespace CAP
   void GlauberNucleus::positionNucleons()
   {
   int nNucleons = _nucleons.size();
-  //printValue("nNucleons",nNucleons);
+
   if (nNucleons<1) throw InvalidValueGlauberException(nNucleons,"Nucleus has nNucleons<1",__FUNCTION__);
   else if (nNucleons == 1) // proton
     {
     _nucleons[0].reset();
-    _nucleons[0].setRndmPositionInSphere(_protonDistribution);
+    //_nucleons[0].setRndmPositionInSphere(_protonDistribution);
+    _nucleons[0].setRndmPositionInSphere(4.0);
     }
   else if (nNucleons == 2) // deuteron
     {
@@ -312,6 +313,7 @@ namespace CAP
             case 1: // large spherical nucleus use proton profile only
             {
             nucleon.setRndmPositionInSphere(_protonDistribution);
+            //nucleon.setRndmPositionInSphere(6.0);
             break;
             }
             case 5:
@@ -372,6 +374,7 @@ namespace CAP
               else
                 nucleon.setRndmPositionInSphere(_neutronDistribution);
               }
+            break;
             }
           } // switch (_nucleusType.radialDistType)
         if (_allowOverlap)
@@ -379,13 +382,13 @@ namespace CAP
         else if (hasNucleonCloseTo(nucleon,_nnDistanceMinSq))
           continue;
         }
-      if (nNucleons>2)
-        {
-        double xRot = gRandom->Rndm()*twoPi();
-        double yRot = gRandom->Rndm()*twoPi();
-        double zRot = gRandom->Rndm()*twoPi();
-        nucleon.rotateXYZ(xRot,yRot,zRot);
-        }
+//      if (nNucleons>2)
+//        {
+//        double xRot = gRandom->Rndm()*twoPi();
+//        double yRot = gRandom->Rndm()*twoPi();
+//        double zRot = gRandom->Rndm()*twoPi();
+//        nucleon.rotateXYZ(xRot,yRot,zRot);
+//        }
       }
     }
   if (_recenteringMode>0) recenterNucleus();

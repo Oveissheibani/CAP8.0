@@ -13,6 +13,7 @@
 #include "MathConstants.hpp"
 #include "NameHelpers.hpp"
 #include "PrintHelpers.hpp"
+#include "RootHistogramHelpers.hpp"
 #include "VectorLorentz.hpp"
 #include "TEllipse.h"
 #include "TCanvas.h"
@@ -382,6 +383,10 @@ namespace CAP
   _fillBasics    = configuration.valueBool(   createKey(taskName,type,"fillBasics"));
   _fillMoments   = configuration.valueBool(   createKey(taskName,type,"fillMoments"));
   _fillSmeared   = configuration.valueBool(   createKey(taskName,type,"fillSmeared"));
+  _drawEvents    = configuration.valueBool(   createKey(taskName,type,"drawEvents"));
+  _drawEventsN   = configuration.valueInt(    createKey(taskName,type,"drawEvents:N"));
+  _drawEventsIndex = 0;
+
   _nOrders       = configuration.valueInt(    createKey(taskName,type,"nOrders"));
 
   _nParts_nBins    = configuration.valueInt( createKey(taskName,type,"nParts_nBins"));
@@ -423,6 +428,9 @@ namespace CAP
   printValue("_fillBasics",_fillBasics);
   printValue("_fillMoments",_fillMoments);
   printValue("_fillSmeared",_fillSmeared);
+  printValue("_drawEvents",_drawEvents);
+  printValue("_drawEventsN",_drawEventsN);
+  printValue("_drawEventsIndex",_drawEventsIndex);
 
   printValue("_nParts_nBins",_nParts_nBins);
   printValue("_nBinaries_nBins",_nBinaries_nBins);
@@ -617,10 +625,10 @@ namespace CAP
     h_sysVarXY = createHistogram(createName(_histogramBaseName,"sysVarXY"), _impact_nBins,_impact_min,_impact_max,"<xy> (fm^{2})","N");
     h_sysRmsX  = createHistogram(createName(_histogramBaseName,"sysRmsX"),  _impact_nBins,_impact_min,_impact_max,"<#Delta x^{2}>^{1/2} (fm)","N");
     h_sysRmsY  = createHistogram(createName(_histogramBaseName,"sysRmsY"),  _impact_nBins,_impact_min,_impact_max,"<#Delta y^{2}>^{1/2} (fm)","N");
-    h_sysEccX  = createHistogram(createName(_histogramBaseName,"sysEccX"),  _impact_nBins,_impact_min,_impact_max,"#varepsilon_{x}","N");
-    h_sysEccY  = createHistogram(createName(_histogramBaseName,"sysEccY"),  _impact_nBins,_impact_min,_impact_max,"#varepsilon_{y}","N");
-    h_sysEcc   = createHistogram(createName(_histogramBaseName,"sysEcc"),   _impact_nBins,_impact_min,_impact_max,"#varepsilon","N");
-    h_sysPsi   = createHistogram(createName(_histogramBaseName,"sysPsi"),   _impact_nBins,_impact_min,_impact_max,"#psi","N");
+    h_sysEccX  = createHistogram(createName(_histogramBaseName,"sysEccX"),  _ecc_nBins,_ecc_min,_ecc_max,"#varepsilon_{x}","N");
+    h_sysEccY  = createHistogram(createName(_histogramBaseName,"sysEccY"),  _ecc_nBins,_ecc_min,_ecc_max,"#varepsilon_{y}","N");
+    h_sysEcc   = createHistogram(createName(_histogramBaseName,"sysEcc"),   _ecc_nBins,_ecc_min,_ecc_max,"#varepsilon","N");
+    h_sysPsi   = createHistogram(createName(_histogramBaseName,"sysPsi"),   _psi_nBins,_psi_min,_psi_max,"#psi","N");
 
     h_sysMeanXVsImpact  = createProfile(createName(_histogramBaseName,"sysMeanXVsImpact"),  _impact_nBins,_impact_min,_impact_max,"b (fm)","<x> (fm)");
     h_sysMeanYVsImpact  = createProfile(createName(_histogramBaseName,"sysMeanYVsImpact"),  _impact_nBins,_impact_min,_impact_max,"b (fm)","<y> (fm)");
@@ -669,8 +677,11 @@ namespace CAP
 
   void GlauberHistos::drawEvent(GlauberEvent & event, const String & eventName)
   {
-  TH2 * h = createHistogram(eventName,1, -20.0, 20.0, 1, -20.0, 20.0,"x(fm)", "y(fm)","");
+  float xHalfWidth = 14.0;
+  float yHalfWidth = 14.0;
+  TH2 * h = createNewHistogram(eventName,1, -xHalfWidth, xHalfWidth, 1, -yHalfWidth, yHalfWidth, "x(fm)", "y(fm)","");
   TCanvas * canvas = new TCanvas(eventName,eventName,5,5,800, 800);
+  double protonRadius = 0.5*sqrt(event.eventXSection()/(pi()*10));
   h->Draw();
   TEllipse e;
   e.SetFillColor(0);
@@ -691,7 +702,7 @@ namespace CAP
 
   e.SetLineColor(2);
   e.SetFillColor(2);
-  double r = 0.5;
+  double r = protonRadius;
   for (auto nucleon : nucleonsA)
     {
     double x = nucleon.position().x();
@@ -714,6 +725,19 @@ namespace CAP
       e.SetFillStyle(0);
     e.DrawEllipse(x,y,r,r,0.0,360.0,0);
     }
+
+  std::vector<GlauberPoint> & intPoints = event.interactionPositions();
+  r = 0.25;
+  e.SetFillStyle(1001);
+  e.SetLineColor(1);
+  e.SetFillColor(1);
+  for (auto point : intPoints)
+    {
+    double x = point.x();
+    double y = point.y();
+    e.DrawEllipse(x,y,r,r,0.0,360.0,0);
+    }
+
   canvas->Print(eventName+".pdf");
   delete h;
   }
@@ -924,9 +948,7 @@ namespace CAP
 //      }
     }
   if (_fillArea) calculateArea(event);
-
-  _drawEvents  = true;
-  if (_drawEvents && _drawEventsIndex<20)
+  if (_drawEvents && _drawEventsIndex<_drawEventsN)
     {
     printValue("_drawEventsIndex",_drawEventsIndex);
     String eventName = createName(_histogramBaseName,"Event_");
@@ -934,8 +956,6 @@ namespace CAP
     drawEvent(event,eventName);
     _drawEventsIndex++;
     }
-
-
   }
 
   double GlauberHistos::calculateDensityAt(const GlauberNucleus & nucleus,
@@ -947,7 +967,8 @@ namespace CAP
   for (auto & nucleon : nucleus.allNucleons())
     {
     density += 1;
-//    if (nucleon.isWounded() && nucleon.square2DDistanceTo(x,y)<=rMaxSq) density += dist.evaluate(sqrt(rSq));
+    if (nucleon.isWounded() && nucleon.square2DDistanceTo(x,y)<=rMaxSq)
+      density += 0.0; //dist.evaluate(sqrt(rSq)); fix me!!!
     }
   return density;
   }
@@ -966,10 +987,10 @@ namespace CAP
 //  double rMax = aMax+bMax;
 //  double rMaxSq = rMax*rMax;
 //  double rSq;
-//  double density = 0;
+   double density = 0;
 //  density += calculateDensityAt(nucleusA,x,y,rMaxSq);
 //  density += calculateDensityAt(nucleusB,x,y,rMaxSq);
-//  return density;
+  return density;
   }
 
   void GlauberHistos::calculateAreaAt(const GlauberNucleus & nucleus, TH2* area, double mx, double my, double rMaxSq)
@@ -1002,8 +1023,8 @@ namespace CAP
   double mx, my;
   const GlauberNucleus & nucleusA = event.nucleusA();
   const GlauberNucleus & nucleusB = event.nucleusB();
-  const GlauberNucleusType & typeA = nucleusA.type();
-  const GlauberNucleusType & typeB = nucleusB.type();
+//  const GlauberNucleusType & typeA = nucleusA.type();
+//  const GlauberNucleusType & typeB = nucleusB.type();
   double impact = event.impactParameter();
   h_areaA->Reset();
   h_areaB->Reset();

@@ -15,9 +15,9 @@ namespace MATH
 class Vector3D
 {
 protected:
-  double x1;
-  double x2;
-  double x3;
+  double _x1;
+  double _x2;
+  double _x3;
 
 public:
 
@@ -25,88 +25,88 @@ public:
   
   Vector3D();
   Vector3D(const double & _x1, const double & _x2, const double & _x3);
-  Vector3D(const float _values[3]);
-  Vector3D(const double _values[3]);
-  Vector3D(std::vector<float> _values);
-  Vector3D(std::vector<double> _values);
+  Vector3D(const float values[3]);
+  Vector3D(const double values[3]);
+  Vector3D(std::vector<float> values);
+  Vector3D(std::vector<double> values);
   Vector3D(const Vector3D & source);
   virtual ~Vector3D() {};
   double operator[] (unsigned int index) const;
 
   inline double x()  const
   {
-  return x1;
+  return _x1;
   }
 
   inline double y()  const
   {
-  return x2;
+  return _x2;
   }
 
   inline double z()  const
   {
-  return x3;
+  return _x3;
   }
 
   void setXYZ(const double & _x1, const double & _x2, const double & _x3);
-  void setXYZ(const float _values[3]);
-  void setXYZ(const double _values[3]);
-  void setXYZ(const std::vector<float> _values);
-  void setXYZ(const std::vector<double> _values);
+  void setXYZ(const float values[3]);
+  void setXYZ(const double values[3]);
+  void setXYZ(const std::vector<float> values);
+  void setXYZ(const std::vector<double> values);
   void setXYZ(const Vector3D & source);
   void setPhiThetaR(const double & phi, const double & theta, const double & r);
   void setPhiRhoZ(const double & phi, const double & rho, const double & z);
   inline double  phi() const
   {
-  return std::atan2(x2,x1);
+  return std::atan2(_x2,_x1);
   }
 
   inline double  cosPhi() const
   {
-  return x1/std::sqrt(x1*x1+x2*x2);
+  return _x1/std::sqrt(_x1*_x1+_x2*_x2);
   }
 
   inline double  sinPhi() const
   {
-  return x2/std::sqrt(x1*x1+x2*x2);
+  return _x2/std::sqrt(_x1*_x1+_x2*_x2);
   }
 
   double  deltaPhi(const Vector3D & other) const;
 
   inline double theta() const
   {
-  return std::atan2(std::sqrt(x1*x1+x2*x2),x3);
+  return std::atan2(std::sqrt(_x1*_x1+_x2*_x2),_x3);
   }
 
   inline double  cosTheta() const
   {
-  return x3/std::sqrt(x1*x1+x2*x2+x3*x3);
+  return _x3/std::sqrt(_x1*_x1+_x2*_x2+_x3*_x3);
   }
 
   inline double sinTheta() const
   {
-  double ptSq = x1*x1+x2*x2;
-  return std::sqrt(ptSq)/std::sqrt(ptSq+x3*x3);
+  double ptSq = _x1*_x1+_x2*_x2;
+  return std::sqrt(ptSq)/std::sqrt(ptSq+_x3*_x3);
   }
 
   inline double modulus() const
   {
-  return std::sqrt(x1*x1+x2*x2+x3*x3);
+  return std::sqrt(_x1*_x1+_x2*_x2+_x3*_x3);
   }
 
   inline double  modulusSquare() const
   {
-  return x1*x1+x2*x2+x3*x3;
+  return _x1*_x1+_x2*_x2+_x3*_x3;
   }
 
   inline double  perp() const
   {
-  return std::sqrt(x1*x1+x2*x2);
+  return std::sqrt(_x1*_x1+_x2*_x2);
   }
 
   inline double perpSquare() const
   {
-  return x1*x1+x2*x2;
+  return _x1*_x1+_x2*_x2;
   }
 
   Vector3D & operator= (const Vector3D & rhs);
@@ -117,7 +117,7 @@ public:
   Vector3D operator- () const;
   inline double  scalarProduct(const Vector3D & rhs) const
   {
-  return x1*rhs.x1 + x2*rhs.x2 + x3*rhs.x3;
+  return _x1*rhs._x1 + _x2*rhs._x2 + _x3*rhs._x3;
   }
 
   double distanceX(const Vector3D & other) const;
