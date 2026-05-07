@@ -315,6 +315,17 @@ namespace CAP
   cout << "-- prl    : prlc style papers"<< endl;
   }
 
+  void LatexDocument::addFigures(const String & path, const std::vector<String> & fileList)
+  {
+  for (auto file : fileList)
+    {
+    addFrame(file);
+    addFigure(path+file,file,file);
+    endSection();
+    }
+  }
+
+
   void LatexDocument::addFiguresFrom(const String & path, const String & ext, int depth)
   {
   bool verbose = true;
@@ -325,12 +336,7 @@ namespace CAP
     printCR();
     printValue("fileList.size()",fileList.size());
     }
-  for (auto file : fileList)
-    {
-    addFrame(file);
-    addFigure(path+file,file,file);
-    endSection();
-    }
+  addFigures(path,fileList);
 
   // add subdirectories (if any) as subsections.
   std::vector<String> directories = listDirsIn(path,verbose);

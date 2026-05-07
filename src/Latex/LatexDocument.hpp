@@ -70,6 +70,7 @@ namespace CAP
   LatexParagraph &     addParagraph(const String & title, const String & label);
   LatexEquation &      addEquation(const String & text, const String & label);
   LatexFigure &        addFigure(const String & name, const String & label, const String & caption);
+  void                 addFigures(const String & path, const std::vector<String> & fileNames);
   void                 addFiguresFrom(const String & path, const String & ext=".pdf", int depth=1);
   LatexText &          addText(const String & text);
   void endSection();
