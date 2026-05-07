@@ -1,0 +1,6 @@
+ParticleDecayerTask:HistogramsScale                          : BOOL       : 1
+ParticleDecayerTask:HistogramsForceRewrite                   : BOOL       : 1
+ParticleDecayerTask:HistogramsImportPath                     : STRING     : Default
+ParticleDecayerTask:HistogramsImportFile                     : STRING     : Default
+ParticleDecayerTask:HistogramsExportPath                     : STRING     : Default
+ParticleDecayerTask:HistogramsExportFile                     : STRING     : Default

@@ -1,0 +1,17 @@
+EventVertexRandomizerTask:HistogramsScale                    : BOOL       : 1
+EventVertexRandomizerTask:HistogramsForceRewrite             : BOOL       : 1
+EventVertexRandomizerTask:HistogramsImportPath               : STRING     : Default
+EventVertexRandomizerTask:HistogramsImportFile               : STRING     : Default
+EventVertexRandomizerTask:HistogramsExportPath               : STRING     : Default
+EventVertexRandomizerTask:HistogramsExportFile               : STRING     : Default
+EventVertexRandomizerTask:EventsUseStream0                   : BOOL       : 1
+EventVertexRandomizerTask:rConversion                        : INTEGER    : 1000000000
+EventVertexRandomizerTask:tConversion                        : INTEGER    : 1000000000
+EventVertexRandomizerTask:xAvg                               : BOOL       : 0
+EventVertexRandomizerTask:yAvg                               : BOOL       : 0
+EventVertexRandomizerTask:zAvg                               : BOOL       : 0
+EventVertexRandomizerTask:tAvg                               : BOOL       : 0
+EventVertexRandomizerTask:xRms                               : INTEGER    : 100
+EventVertexRandomizerTask:yRms                               : INTEGER    : 100
+EventVertexRandomizerTask:zRms                               : INTEGER    : 5
+EventVertexRandomizerTask:tRms                               : INTEGER    : 10

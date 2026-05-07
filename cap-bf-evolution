@@ -1,0 +1,221 @@
+#!/usr/bin/env python3
+# *********************************************************************
+# cap-bf-evolution
+#
+# Overlay the Balance Function from multiple BF-per-stage CAP runs
+# onto a single canvas so you can see how charge correlations
+# evolve through the parton → shower → pre-decay → final cascade.
+#
+# Discovers stage subfolders under
+#     histos/<Generator>/<KeepProfile>/<Stage>/<run>/PairBFGen.root
+# for the same <Generator> + <run> name and overlays whichever
+# stages exist.
+#
+# Usage:
+#   cap-bf-evolution                            # auto-discover most recent
+#   cap-bf-evolution --gen Pythia --run demo_run
+#   cap-bf-evolution --gen Herwig --run demo_run --observable BF_n2_DyDphi_PiP_PiM
+#   cap-bf-evolution --output BFEvolution.pdf
+#
+# *********************************************************************
+import argparse
+import sys
+from pathlib import Path
+
+# Resolve repo root by inspecting our own location.
+REPO = Path(__file__).resolve().parent
+HISTOS = REPO / "histos"
+
+KNOWN_GENERATORS = ("Pythia", "Herwig", "HepMC3", "EPOS", "PHSD",
+                    "Therminator", "Glauber", "Basic", "Misc")
+
+# Stage-display ordering — render in physical-cascade order so the
+# overlay reads left→right as time→time.
+STAGE_ORDER = (
+    "partons",
+    "intermediate_hadrons",
+    "final_hadrons",
+    "leptons",
+)
+
+# Stage colour scheme — one ROOT TColor per stage.
+STAGE_COLOURS = {
+    "partons":              "kRed+1",
+    "intermediate_hadrons": "kOrange+7",
+    "final_hadrons":        "kAzure+1",
+    "leptons":              "kGreen+2",
+}
+
+
+def _discover_stages(generator: str, run_name: str) -> list[Path]:
+    """Walk histos/<generator>/*/<stage>/<run_name>/PairBFGen.root
+    and return one entry per (KeepProfile, Stage) where the file
+    exists, sorted by STAGE_ORDER."""
+    out: list[Path] = []
+    gen_root = HISTOS / generator
+    if not gen_root.is_dir():
+        return out
+    for keep_dir in sorted(gen_root.iterdir()):
+        if not keep_dir.is_dir(): continue
+        for stage_dir in sorted(keep_dir.iterdir()):
+            if not stage_dir.is_dir(): continue
+            run_dir = stage_dir / run_name
+            f = run_dir / "PairBFGen.root"
+            if f.is_file():
+                out.append(f)
+    # Sort by physical-cascade order (parton → ... → final → lepton).
+    def _order(p: Path) -> tuple[int, str]:
+        stage = p.parent.parent.name
+        try:    return (STAGE_ORDER.index(stage), stage)
+        except ValueError:
+            return (len(STAGE_ORDER), stage)
+    out.sort(key=_order)
+    return out
+
+
+def _resolve_color(spec: str):
+    """Convert a 'kRed+1' / 'kAzure+1' style string into the ROOT
+    TColor int.  Falls back to kBlack if anything unparsable."""
+    import ROOT
+    try:
+        if "+" in spec:
+            base, off = spec.split("+", 1); off = int(off)
+        elif "-" in spec:
+            base, off = spec.split("-", 1); off = -int(off)
+        else:
+            base, off = spec, 0
+        return getattr(ROOT, base) + off
+    except Exception:
+        return ROOT.kBlack
+
+
+def _load_bf_histo(root_file: Path, observable: str):
+    """Open root_file, read the named histogram, return a deep clone
+    that survives after the file closes."""
+    import ROOT
+    f = ROOT.TFile.Open(str(root_file), "READ")
+    if not f or f.IsZombie():
+        print(f"  ! cannot open {root_file}", file=sys.stderr)
+        return None
+    h = f.Get(observable)
+    if not h:
+        # List candidates so the user can spot a typo.
+        names = []
+        for k in f.GetListOfKeys():
+            n = k.GetName()
+            if "BF" in n or "n2" in n:
+                names.append(n)
+                if len(names) >= 6: break
+        print(f"  ! '{observable}' not in {root_file.name}.  "
+              f"First 6 BF-ish keys: {names}", file=sys.stderr)
+        f.Close()
+        return None
+    h_clone = h.Clone(f"{h.GetName()}__{root_file.parent.parent.name}")
+    h_clone.SetDirectory(0)   # detach from file
+    f.Close()
+    return h_clone
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--gen", default=None,
+        help="Generator subfolder (Pythia / Herwig / HepMC3 / ...).  "
+             "Default: autodetect first that has any BF files.")
+    ap.add_argument("--run", default="demo_run",
+        help="Run name (the leaf folder under each stage).")
+    ap.add_argument("--observable", default="BF_n2_DyDphi_PiP_PiM",
+        help="Histogram name to overlay (default: BF_n2_DyDphi_PiP_PiM).  "
+             "List candidates with --list.")
+    ap.add_argument("--output", default="BFEvolution.pdf",
+        help="Output PDF filename (default: BFEvolution.pdf).")
+    ap.add_argument("--list", action="store_true",
+        help="Just list the BF-ish histograms in the first stage file "
+             "and exit — handy when you don't know the observable name.")
+    args = ap.parse_args()
+
+    # Pick a generator.
+    if args.gen:
+        generators = [args.gen]
+    else:
+        generators = list(KNOWN_GENERATORS)
+
+    files: list[Path] = []
+    chosen_gen = None
+    for g in generators:
+        files = _discover_stages(g, args.run)
+        if files:
+            chosen_gen = g
+            break
+    if not files:
+        print(f"No PairBFGen.root files found for run '{args.run}' "
+              f"under histos/<gen>/.  Did you actually run BF stages?",
+              file=sys.stderr)
+        return 1
+
+    print(f"Generator: {chosen_gen}")
+    print(f"Run name:  {args.run}")
+    print(f"Found {len(files)} stage file(s):")
+    for f in files:
+        keep, stage = f.parent.parent.parent.name, f.parent.parent.name
+        print(f"  • {keep}/{stage}/{f.parent.name}/PairBFGen.root")
+
+    if args.list:
+        # Show a sample of histo names in the first file and exit.
+        import ROOT
+        f = ROOT.TFile.Open(str(files[0]), "READ")
+        if f and not f.IsZombie():
+            for k in sorted(f.GetListOfKeys(), key=lambda k: k.GetName()):
+                n = k.GetName()
+                if "BF" in n or "n2" in n:
+                    print(f"  {n}")
+            f.Close()
+        return 0
+
+    # Load histograms and overlay.
+    import ROOT
+    ROOT.gROOT.SetBatch(True)
+    canvas = ROOT.TCanvas("c", "BF evolution", 900, 700)
+    canvas.SetGrid()
+    legend = ROOT.TLegend(0.55, 0.70, 0.88, 0.88)
+    legend.SetBorderSize(0)
+    legend.SetFillStyle(0)
+
+    histos = []
+    first = True
+    drawn = 0
+    for f in files:
+        stage = f.parent.parent.name
+        h = _load_bf_histo(f, args.observable)
+        if h is None: continue
+        col = _resolve_color(STAGE_COLOURS.get(stage, "kBlack"))
+        h.SetLineColor(col); h.SetLineWidth(2)
+        h.SetMarkerColor(col); h.SetMarkerStyle(20); h.SetMarkerSize(0.6)
+        h.SetTitle(f"BF evolution — {chosen_gen} / {args.run};"
+                   f"{h.GetXaxis().GetTitle() or '#Delta#eta'};"
+                   f"BF({args.observable.split('_')[-2]}, "
+                   f"{args.observable.split('_')[-1]})")
+        if first:
+            h.Draw("HIST")
+            first = False
+        else:
+            h.Draw("HIST SAME")
+        legend.AddEntry(h, stage, "l")
+        histos.append(h)
+        drawn += 1
+
+    if not drawn:
+        print(f"!!  No '{args.observable}' found in any stage file.  "
+              f"Try `cap-bf-evolution --list` to see valid names.",
+              file=sys.stderr)
+        return 1
+
+    legend.Draw()
+    out_path = Path(args.output).resolve()
+    canvas.SaveAs(str(out_path))
+    print(f"\nWrote {out_path}  ({drawn} stages overlaid)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

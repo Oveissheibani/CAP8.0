@@ -1,0 +1,7 @@
+FileIterator:HistogramsScale                                 : BOOL       : 1
+FileIterator:HistogramsForceRewrite                          : BOOL       : 1
+FileIterator:HistogramsImportPath                            : STRING     : Default
+FileIterator:HistogramsImportFile                            : STRING     : Default
+FileIterator:HistogramsExportPath                            : STRING     : Default
+FileIterator:HistogramsExportFile                            : STRING     : Default
+FileIterator:nLevels                                         : BOOL       : 0

@@ -1,0 +1,7 @@
+Task:HistogramsScale                                         : BOOL       : 1
+Task:HistogramsForceRewrite                                  : BOOL       : 1
+Task:HistogramsImportPath                                    : STRING     : Default
+Task:HistogramsImportFile                                    : STRING     : Default
+Task:HistogramsExportPath                                    : STRING     : Default
+Task:HistogramsExportFile                                    : STRING     : Default
+Task:SelectedMethod                                          : BOOL       : 0

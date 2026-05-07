@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+"""
+cap-check — fast triage tool for CAP histogram files.
+
+Walks every histogram in a .root file (recursing through TDirectories) and
+reports a 1/0 "filled" flag plus stats for each.  Designed so when you
+say "PairDerivedGen.root looks empty", I can run
+
+    ./cap-check histos/demo_run/PairDerivedGen.root
+
+and immediately see which TKeys have data, which don't, and where the
+data is leaking.  Output is plain text — paste it here and I'll
+diagnose.
+
+USAGE
+    ./cap-check <file.root> [<file2.root> ...]
+    ./cap-check --verbose <file.root>          # one line per histogram
+    ./cap-check --filter R2_ <file.root>       # only histos whose name matches
+    ./cap-check --empties-only <file.root>     # only list empties (default)
+    ./cap-check --filled-only <file.root>      # only list filled
+    ./cap-check --all <file.root>              # list every histogram
+
+OUTPUT
+    Each histogram line:
+      <flag> <class> <dim> <entries:>10 <integral:>+12.6g  <name>
+    where flag = 1 (has entries) | 0 (empty)
+
+    Summary at the end of each file:
+      <file>:  N total / F filled / E empty  (E_pct%)
+
+Exits 0 always — this is a diagnostic tool, no pass/fail semantics.
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+import re
+from typing import Iterator
+
+
+def _import_root():
+    """Defer the ROOT import so --help works without ROOT on PATH."""
+    try:
+        import ROOT  # noqa: F401
+        ROOT.gROOT.SetBatch(True)
+        ROOT.gErrorIgnoreLevel = ROOT.kWarning
+        return ROOT
+    except ImportError:
+        sys.stderr.write(
+            "cap-check: PyROOT not available — make sure ROOT is on PATH.\n"
+            "  source SetupCAP.sh\n"
+        )
+        sys.exit(2)
+
+
+# --------------------------------------------------------------------------
+#  Histogram walker — yields (path, class_name, hist_obj) for every TH*
+#  encountered, including those nested in subdirectories.
+# --------------------------------------------------------------------------
+def walk_histos(d, prefix: str = "") -> Iterator[tuple[str, str, object]]:
+    keys = d.GetListOfKeys()
+    if not keys:
+        return
+    for key in keys:
+        cls = key.GetClassName()
+        name = key.GetName()
+        full = f"{prefix}{name}" if not prefix else f"{prefix}/{name}"
+        # Recurse into directories.
+        if cls.startswith("TDirectory"):
+            sub = d.Get(name)
+            if sub:
+                yield from walk_histos(sub, full)
+            continue
+        # ROOT histogram hierarchy: TH1/TH2/TH3 cover TH*F/D/I + TProfile.
+        # Skip canvases, trees, and anything not a histogram.
+        if not (cls.startswith("TH") or cls.startswith("TProfile")):
+            continue
+        obj = d.Get(name)
+        if obj is None:
+            continue
+        yield full, cls, obj
+
+
+def hist_stats(h) -> tuple[int, int, float]:
+    """Return (dim, entries, integral) for h.  Integral excludes over-/underflow."""
+    try:
+        dim = h.GetDimension()
+    except Exception:
+        dim = 1
+    try:
+        entries = int(h.GetEntries())
+    except Exception:
+        entries = 0
+    try:
+        integral = float(h.Integral())
+    except Exception:
+        integral = 0.0
+    return dim, entries, integral
+
+
+# --------------------------------------------------------------------------
+#  Per-file inspection
+# --------------------------------------------------------------------------
+def check_file(path: str, args, ROOT) -> dict:
+    """Process one .root file.  Returns dict with summary counts."""
+    if not os.path.exists(path):
+        sys.stderr.write(f"cap-check: {path} does not exist\n")
+        return {"file": path, "total": 0, "filled": 0, "empty": 0, "missing": True}
+
+    f = ROOT.TFile.Open(path, "READ")
+    if not f or f.IsZombie():
+        sys.stderr.write(f"cap-check: cannot open {path}\n")
+        return {"file": path, "total": 0, "filled": 0, "empty": 0, "missing": True}
+
+    flt = re.compile(args.filter) if args.filter else None
+    rows: list[tuple[int, str, str, int, int, float]] = []
+    for fullname, cls, h in walk_histos(f):
+        if flt and not flt.search(fullname):
+            continue
+        dim, entries, integral = hist_stats(h)
+        # "Filled" = strictly more than zero entries OR non-zero integral.
+        # The integral check catches histograms that were created and
+        # populated by a Calculator (entries can be 0 if you Set'd bins
+        # directly without filling, e.g. R2 = n2/(n1*n1) - 1).
+        flag = 1 if (entries > 0 or abs(integral) > 0.0) else 0
+        rows.append((flag, cls, fullname, dim, entries, integral))
+
+    f.Close()
+
+    total  = len(rows)
+    filled = sum(1 for r in rows if r[0])
+    empty  = total - filled
+
+    # Print header for this file.
+    print(f"\n=== {path} ===")
+    print(f"    total: {total}    filled: {filled}    empty: {empty}"
+          f"    ({100.0*empty/total:5.1f}% empty)" if total else "    (no histograms)")
+
+    # Decide which rows to print.
+    show_filled = args.all or args.filled_only or args.verbose
+    show_empty  = args.all or args.empties_only or args.verbose or not args.filled_only
+
+    print(f"    {'F':1s}  {'class':<10s} {'dim':>3s}  "
+          f"{'entries':>10s}  {'integral':>14s}  name")
+    print(f"    " + "-" * 68)
+    for flag, cls, name, dim, entries, integral in rows:
+        if flag and not show_filled:
+            continue
+        if not flag and not show_empty:
+            continue
+        print(f"    {flag}  {cls:<10s} {dim:>3d}  "
+              f"{entries:>10d}  {integral:>+14.6g}  {name}")
+
+    return {"file": path, "total": total, "filled": filled, "empty": empty,
+            "missing": False}
+
+
+# --------------------------------------------------------------------------
+#  Main
+# --------------------------------------------------------------------------
+def main() -> None:
+    ap = argparse.ArgumentParser(
+        description="ROOT histogram content auditor for CAP.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__)
+    ap.add_argument("files", nargs="+", help=".root file(s) to inspect")
+    g = ap.add_mutually_exclusive_group()
+    g.add_argument("--empties-only", action="store_true",
+                   help="(default) list only empty histograms")
+    g.add_argument("--filled-only",  action="store_true",
+                   help="list only filled histograms")
+    g.add_argument("--all",          action="store_true",
+                   help="list every histogram (filled and empty)")
+    ap.add_argument("--verbose", action="store_true",
+                    help="alias for --all")
+    ap.add_argument("--filter", metavar="REGEX", default=None,
+                    help="only consider histograms whose name matches REGEX")
+    args = ap.parse_args()
+
+    # If neither flag set, default to empties-only (most useful for triage).
+    if not (args.empties_only or args.filled_only or args.all or args.verbose):
+        args.empties_only = True
+
+    ROOT = _import_root()
+    summaries = [check_file(p, args, ROOT) for p in args.files]
+
+    # Cross-file rollup.
+    if len(summaries) > 1:
+        print("\n=== summary across files ===")
+        print(f"  {'file':<60s} {'total':>6s} {'filled':>7s} {'empty':>6s}")
+        print("  " + "-" * 84)
+        for s in summaries:
+            if s["missing"]:
+                print(f"  {os.path.basename(s['file']):<60s}    (missing)")
+                continue
+            print(f"  {os.path.basename(s['file']):<60s} "
+                  f"{s['total']:>6d} {s['filled']:>7d} {s['empty']:>6d}")
+
+
+if __name__ == "__main__":
+    main()

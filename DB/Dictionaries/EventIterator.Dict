@@ -1,0 +1,4 @@
+EventIterator:HistogramsImportPath                           : STRING     : ./
+EventIterator:HistogramsExportPath                           : STRING     : ./
+EventIterator:nEventsRequested                               : BOOL       : 1
+EventIterator:nEventsReport                                  : INTEGER    : 10

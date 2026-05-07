@@ -1,0 +1,10 @@
+FilterCreator:HistogramsScale                                : BOOL       : 1
+FilterCreator:HistogramsForceRewrite                         : BOOL       : 1
+FilterCreator:HistogramsImportPath                           : STRING     : Default
+FilterCreator:HistogramsImportFile                           : STRING     : Default
+FilterCreator:HistogramsExportPath                           : STRING     : Default
+FilterCreator:HistogramsExportFile                           : STRING     : Default
+FilterCreator:EventFilter:N                                  : BOOL       : 0
+FilterCreator:ParticleFilter:N                               : BOOL       : 0
+FilterCreator:EfficiencyFilter:N                             : BOOL       : 0
+FilterCreator:JetFilter:N                                    : BOOL       : 0

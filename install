@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  install — top-level launcher for CAP setup.
+#
+#  Pick a UI:
+#    ./install                # auto: GUI if available, else CLI
+#    ./install --cli          # force terminal-based picker
+#    ./install --gui          # force the Tk graphical setup picker
+#    ./install --headless     # non-interactive (auto-pick top-ranked deps),
+#                             # configure, build, and install. Useful for
+#                             # CI / cluster head-node submissions.
+#    ./install --run          # launch the run-cap GUI for executing analyses
+#                             # (assumes CAP is already built)
+#    ./install --build-ini    # launch the build-ini-gui to compose a new
+#                             # analysis .ini file from scratch
+#    ./install --reset        # wipe .cap-config and start over
+#
+#  Both UIs share the same detection logic and write logs to ./logs/.
+# =============================================================================
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+mode="auto"
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --cli)        mode="cli"; shift ;;
+        --gui)        mode="gui"; shift ;;
+        --headless)   mode="headless"; shift ;;
+        --run)        mode="run"; shift ;;
+        --build-ini)  mode="build-ini"; shift ;;
+        --reset)      rm -f .cap-config && echo "Removed .cap-config." && exit 0 ;;
+        -h|--help)
+            sed -n '2,/^# =\{40,\}/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "Unknown argument: $1" >&2; exit 1 ;;
+    esac
+done
+
+# ------ Probe whether the GUI can run ----------------------------------------
+gui_available() {
+    # Need Python 3 with tkinter.
+    command -v python3 > /dev/null 2>&1 || return 1
+    python3 - <<'PY' > /dev/null 2>&1 || return 1
+import tkinter
+PY
+    # Need a working display server.
+    if [ "$(uname -s)" = "Darwin" ]; then
+        # Cocoa Tk works without DISPLAY.
+        return 0
+    fi
+    [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]
+}
+
+# ------ Mode dispatch ---------------------------------------------------------
+case "$mode" in
+auto)
+    if gui_available; then
+        mode="gui"
+    else
+        mode="cli"
+    fi
+    ;;
+esac
+
+case "$mode" in
+gui)
+    echo "Starting graphical installer (logs at ./logs/last-gui.log)…"
+    exec ./setup-cap-gui
+    ;;
+cli)
+    exec ./setup-cap
+    ;;
+run)
+    if [ ! -x ./bin/CAP ]; then
+        echo "bin/CAP not found — build CAP first with ./install --gui or ./install --cli." >&2
+        exit 2
+    fi
+    echo "Starting run-cap (logs at ./logs/last-run.log)…"
+    exec ./run-cap
+    ;;
+build-ini)
+    if [ ! -x ./analyses/builder/build-ini-gui ]; then
+        echo "analyses/builder/build-ini-gui not found." >&2
+        exit 2
+    fi
+    echo "Starting build-ini-gui (output → analyses/projects/)…"
+    exec ./analyses/builder/build-ini-gui
+    ;;
+headless)
+    # Non-interactive end-to-end: auto-pick deps, save config, build & install.
+    ./setup-cap --auto
+    # shellcheck disable=SC1091
+    source ./SetupCAP.sh
+    cmake -S . -B build \
+        ${CAP_CMAKE_FLAGS_PYTHIA:-} ${CAP_CMAKE_FLAGS_JETS:-}
+    cmake --build build -j
+    cmake --install build
+    ;;
+*) echo "Unhandled mode: $mode" >&2; exit 2 ;;
+esac

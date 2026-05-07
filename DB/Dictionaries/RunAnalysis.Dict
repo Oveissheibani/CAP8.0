@@ -1,0 +1,9 @@
+RunAnalysis:HistogramsScale                                  : BOOL       : 1
+RunAnalysis:HistogramsForceRewrite                           : BOOL       : 1
+RunAnalysis:HistogramsImportPath                             : STRING     : Default
+RunAnalysis:HistogramsImportFile                             : STRING     : Default
+RunAnalysis:HistogramsExportPath                             : STRING     : Default
+RunAnalysis:HistogramsExportFile                             : STRING     : Default
+RunAnalysis:TaskName                                         : STRING     : RunAnalysis
+RunAnalysis:TaskClassName                                    : STRING     : CAP::RunAnalysis
+RunAnalysis:Severity                                         : STRING     : Info

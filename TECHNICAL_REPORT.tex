@@ -1,0 +1,792 @@
+% =============================================================================
+%  CAP 8.0 — Technical maintenance report
+%
+%  Target audience: original authors (C. Pruneau, V. Gonzalez, O. Sheibani).
+%
+%  Compile:
+%    pdflatex TECHNICAL_REPORT.tex
+%    pdflatex TECHNICAL_REPORT.tex   (twice, for the table of contents)
+% =============================================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{titlesec}
+\usepackage{parskip}
+\usepackage{fancyvrb}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=blue!60!black,
+  citecolor=black
+}
+
+\definecolor{codebg}{RGB}{245,247,249}
+\definecolor{codecomment}{RGB}{106,135,89}
+\definecolor{codestring}{RGB}{106,153,85}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{black!20},
+  commentstyle=\color{codecomment},
+  stringstyle=\color{codestring},
+  breaklines=true,
+  showstringspaces=false,
+  framesep=4pt,
+  framerule=0.4pt,
+  xleftmargin=4pt,
+  xrightmargin=4pt
+}
+
+\lstdefinelanguage{ini}{
+  morecomment=[l]{\#},
+  morestring=[b]",
+  sensitive=true
+}
+
+\titleformat{\section}{\large\bfseries}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.5em}{}
+
+\title{\textbf{CAP 8.0 — Build System Modernisation\\and Maintenance Report}}
+\author{Maintenance pass on the existing codebase\\\small Original authors: C. Pruneau, V. Gonzalez, O. Sheibani}
+\date{April 30, 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+This report documents a maintenance pass on \texttt{CAP~8.0} performed during
+a single working session. The work covers four areas: (i)~modernisation of the
+CMake build system and creation of portable installer/runner tooling so that
+non-developers can build and execute CAP on a wide range of platforms (macOS,
+Linux, conda, Homebrew, MacPorts, CVMFS, environment-modules, Wayne State Grid);
+(ii)~repair of source-level bugs accumulated from incomplete refactors,
+principally in \texttt{src/CAPPythia/PythiaEventGenerator.cpp} and several
+\texttt{src/Glauber/} files; (iii)~addition of backward-compatibility shims in
+\texttt{Task.cpp} so the existing project \texttt{.ini} files load with the
+current code; and (iv)~documentation of two large unfinished refactors that
+prevent end-to-end runs --- the missing orchestrator/calculator classes and
+the \texttt{src/Jets/} module. A new \emph{smoke test} macro
+(\texttt{src/Macros/SmokeTest.C}) was added to validate the build and the
+Pythia~8 integration without depending on the unfinished pieces.
+
+The infrastructure changes are non-invasive to the physics analysis code and
+should integrate cleanly with future development. The unfinished pieces are
+identified with file-and-line precision in companion documents
+(\texttt{MISSING\_CLASSES.md}, \texttt{JETS\_KNOWN\_ISSUES.md}).
+\end{abstract}
+
+\tableofcontents
+\vspace{1em}
+\hrule
+\vspace{1em}
+
+% =============================================================================
+\section{Context and scope}
+% =============================================================================
+
+The starting state of \texttt{CAP~8.0} as it appeared on the maintainer's
+machine had several practical obstacles to a clean build:
+
+\begin{itemize}
+  \item Hard-coded absolute paths inside CMake configuration
+        (\texttt{install(TARGETS CAP LIBRARY DESTINATION
+        "/Users/aa7526/Documents/GitHub/CAP8.0/lib")}), which
+        made the build non-portable across machines.
+  \item An invalid macOS deployment target
+        (\texttt{CMAKE\_OSX\_DEPLOYMENT\_TARGET~=~26.0}); macOS~26 does not
+        exist.
+  \item Optional dependencies (Pythia~8, FastJet) located through one
+        single hard-coded path (\texttt{/usr/local/lib/}), which excludes
+        Apple Silicon Homebrew (\texttt{/opt/homebrew}), MacPorts, conda
+        environments and HPC module systems.
+  \item Compile errors in \texttt{src/CAPPythia/PythiaEventGenerator.cpp}
+        and \texttt{src/CAPPythia/PythiaEventReader.cpp}, both arising from
+        an incomplete renaming of base classes
+        (\texttt{ProcessorSingle} $\rightarrow$ \texttt{EventProcessor}),
+        of the particle-database type
+        (\texttt{ParticleTypeList} $\rightarrow$ \texttt{ParticleDb}),
+        and of the four-vector setter
+        (\texttt{setPxPyPzE} $\rightarrow$ \texttt{setEPxPyPz},
+        which also reorders the arguments).
+  \item All shipped \texttt{.ini} project files use the legacy key naming
+        convention (\texttt{TaskClassName},~\texttt{nSubtasks},
+        \texttt{Subtask$k$:TaskName}), whereas \texttt{Base/Task.cpp} now
+        looks up keys in the new structural form
+        (\texttt{TASK:CLASS},~\texttt{SUBTASK:N}, \texttt{SUBTASK:$k$:NAME}).
+  \item The \texttt{src/Jets/} module is incomplete and does not compile
+        without significant additional development.
+  \item Approximately ten task classes referenced by
+        \texttt{projects/Pythia/pp\_13.7TeV/RunAna.ini}
+        (\texttt{CAP::RunAnalysis}, \texttt{CAP::ParticleTypeTask},
+        \texttt{CAP::EventFilterCreator}, \texttt{CAP::FileIterator}, the
+        \texttt{*Calculator} family) have no implementation in \texttt{src/}
+        and therefore cannot be instantiated by ROOT's
+        \texttt{TClass::GetClass()}.
+\end{itemize}
+
+The goal of the maintenance pass was to re-establish a clean, portable build
+flow for every part of the codebase that does compile, repair the bit-rot
+where the fix was mechanical, and clearly delineate the parts that require
+substantive design/development work.
+
+% =============================================================================
+\section{Build system overhaul}
+% =============================================================================
+
+\subsection{Top-level structure}
+
+A new top-level \texttt{CMakeLists.txt} was added at the repository root to
+allow the canonical out-of-source build invocation:
+
+\begin{lstlisting}[language=bash]
+cmake -S . -B build
+cmake --build build -j
+cmake --install build
+\end{lstlisting}
+
+\noindent
+The previous flow \texttt{cmake ../src} from inside a \texttt{build/}
+directory still works.
+
+\subsection{Per-module install destinations}
+
+All twenty-two per-module \texttt{src/<Module>/CMakeLists.txt} files were
+modified to install via the standard CMake variable
+
+\begin{lstlisting}[language=bash]
+install(TARGETS <Module> LIBRARY DESTINATION ${CAP_INSTALL_LIBDIR})
+\end{lstlisting}
+
+\noindent
+rather than \verb|$ENV{CAP_LIB_PATH}|. This removes the requirement that
+\texttt{SetupCAP.sh} be sourced before \texttt{make install}.
+The default install prefix is computed from
+\texttt{CMAKE\_CURRENT\_SOURCE\_DIR} so that, regardless of how CMake is
+invoked, libraries land at \texttt{<repo>/lib} and binaries at
+\texttt{<repo>/bin}.
+
+\subsection{Optional-module flags}
+
+The pre-existing \verb|set(Include_PYTHIA "NO")|-style flags were converted to
+proper CMake \texttt{option()} declarations:
+
+\begin{lstlisting}[language=bash]
+option(CAP_ENABLE_THERMINATOR  "..."  ON)
+option(CAP_ENABLE_GLAUBER      "..."  ON)
+option(CAP_ENABLE_PYTHIA       "..."  OFF)
+option(CAP_ENABLE_JETS         "..."  OFF)
+option(CAP_ENABLE_EPOS         "..."  OFF)
+option(CAP_ENABLE_PHSD         "..."  OFF)
+\end{lstlisting}
+
+\noindent
+Users override these on the command line:
+\begin{lstlisting}[language=bash]
+cmake -S . -B build -D CAP_ENABLE_PYTHIA=ON
+\end{lstlisting}
+
+\noindent
+The legacy \texttt{Include\_*} variable names continue to work via a
+back-compatibility shim that copies their values into the new options.
+
+\subsection{Find modules for external dependencies}
+
+Two CMake find-modules were added under \texttt{cmake/}:
+
+\begin{itemize}
+  \item \texttt{cmake/FindPythia8.cmake}
+  \item \texttt{cmake/FindFastJet.cmake}
+\end{itemize}
+
+\noindent
+Both honour the following discovery sources, in order of priority:
+
+\begin{enumerate}[leftmargin=2em,itemsep=0pt]
+  \item Explicit user override via the CMake-level variable
+        \verb|CAP_PYTHIA8_PATH| / \verb|CAP_FASTJET_PATH|, or the equivalent
+        environment variable.
+  \item The standard upstream environment variables (\verb|PYTHIA8_DIR|,
+        \verb|FASTJET_DIR|, etc.).
+  \item The companion \texttt{pythia8-config} or \texttt{fastjet-config}
+        executable, when on \texttt{PATH}.
+  \item \texttt{pkg-config} (\texttt{pythia8.pc}, \texttt{fastjet.pc}).
+  \item Apple Homebrew under \texttt{/opt/homebrew} \emph{and} \texttt{/usr/local}.
+  \item Conda environments via \verb|$CONDA_PREFIX|.
+\end{enumerate}
+
+\noindent
+After a successful detection both modules export an imported target
+(\texttt{Pythia8::Pythia8}, \texttt{FastJet::FastJet}) and conventional
+\texttt{*\_VERSION} / \texttt{*\_INCLUDE\_DIRS} / \texttt{*\_LIBRARIES}
+variables.
+
+\subsection{Build summary}
+
+The configure step now prints an explicit, human-readable summary that
+distinguishes \emph{detected} from \emph{linked}:
+
+\begin{lstlisting}
+========================  CAP build configuration  ========================
+  Install prefix         : /Users/<user>/cap8/CAP8.0-main
+  Build type             : RelWithDebInfo
+  C++ standard           : 17
+  ROOT                   : 6.36.06
+  Therminator            : ON
+  Glauber                : ON
+  Pythia 8               : linked  (v8.310, /opt/homebrew/.../libpythia8.dylib)
+  FastJet                : detected on system (v3.4.3) but not linked
+  Jets module            : OFF  (broken upstream - see JETS_KNOWN_ISSUES.md)
+  EPOS / PHSD            : OFF / OFF
+===========================================================================
+\end{lstlisting}
+
+% =============================================================================
+\section{Installer and runner infrastructure}
+% =============================================================================
+
+A unified entry-point script \texttt{./install} was added at the repository
+root with four modes:
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\texttt{./install --gui}      & Tk-based graphical setup picker \\
+\texttt{./install --cli}      & Text-prompt setup picker \\
+\texttt{./install --headless} & Auto-detect, configure, build, install \\
+\texttt{./install --run}      & Tk-based job runner \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Setup pickers (\texttt{setup-cap} and \texttt{setup-cap-gui})}
+
+Both setup pickers share a single bash detection layer that scans, in order:
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item User overrides (\verb|$CAP_PYTHIA8_PATH|, \verb|$CAP_FASTJET_PATH|).
+  \item In-tree directories (\texttt{./pythia8XYZ}, \texttt{./fastjet-X.Y.Z}).
+  \item Brew formula paths for both the canonical core formula
+        (\texttt{pythia8}, \texttt{fastjet}) and the third-party HEP tap
+        (\texttt{davidchall/hep/pythia}, \texttt{davidchall/hep/fastjet}).
+  \item Direct prefixes (\texttt{/opt/homebrew}, \texttt{/usr/local},
+        \texttt{/opt/local}) for hand-built installs that do not use the
+        keg-style layout.
+  \item Apple MacPorts (\texttt{/opt/local}).
+  \item conda (\verb|$CONDA_PREFIX|).
+  \item \texttt{pythia8-config} / \texttt{fastjet-config} on \texttt{PATH}.
+  \item CVMFS (\texttt{/cvmfs/sft.cern.ch/lcg/releases/...},
+        \texttt{/cvmfs/alice.cern.ch/...}).
+  \item Wayne State Grid software trees
+        (\texttt{/wsu/el?/sw/<package>/...}).
+  \item Environment modules (\texttt{module avail}).
+\end{itemize}
+
+\noindent
+Each candidate is validated by checking that the canonical header file is
+actually present in the proposed prefix; candidates with empty paths or
+wrong layouts are rejected and the rejection reason is logged.
+
+The CLI installer (\texttt{setup-cap}) presents a numbered menu; the GUI
+installer (\texttt{setup-cap-gui}) uses Tk drop-downs. Both write the same
+\texttt{.cap-config} file (a shell snippet sourced by \texttt{SetupCAP.sh}),
+and both stream output to a per-run log under \texttt{logs/}.
+
+The GUI's \emph{Configure \& Build} button runs the full configure $\to$
+build $\to$ install sequence end-to-end. After install it performs a
+post-install verification step that checks that \texttt{bin/CAP} and
+\texttt{lib/lib*.dylib} are inside the repository (and relocates them if
+they accidentally landed in the parent directory because of a stale
+\texttt{CMakeCache.txt}).
+
+\subsection{Runner GUI (\texttt{run-cap})}
+
+A Tk-based job runner was added. It scans the \texttt{projects/} tree for
+\texttt{.ini} files, parses each file to extract its top-level task
+declarations, and presents the user with a project~/~config~/~task drop-down
+chain. It supports event-count and random-seed overrides applied to a
+per-run copy of the \texttt{.ini} (the original is never mutated). A live
+log pane streams the running binary's stdout/stderr, with Stop and
+\emph{Open output folder} controls.
+
+It also classifies each \texttt{.ini} as \emph{modern}
+(uses the \texttt{Subtask$k$:TaskName} syntax) or \emph{legacy} (uses
+\texttt{SubTaskName$k$}), and surfaces the legacy ones with a clear visual
+tag so users do not pick a file the loader cannot understand.
+
+A second button, \emph{Smoke test (proof of life)}, invokes a minimal ROOT
+macro (Section~\ref{sec:smoketest}) that bypasses the unfinished orchestrator
+classes.
+
+\subsection{Logging library}
+
+A shared bash logging library
+(\texttt{scripts/cap-logging.sh}) was added. It is sourced by all the
+shell-based installer scripts and offers:
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \texttt{cap\_log\_init <component>} --- opens a per-run log file
+        \texttt{logs/<component>-<UTC-timestamp>.log} and a
+        \texttt{logs/last-<component>.log} convenience symlink.
+  \item \texttt{cap\_log <level> <message>} --- writes a structured line
+        with platform-portable UTC timestamps. (BSD~\texttt{date} on macOS
+        does not support \texttt{\%N}; the helper detects this and falls
+        back to second precision.)
+  \item \texttt{cap\_log\_run "<label>" <cmd> <args>...} --- runs a command,
+        captures stdout/stderr to the log and the parent terminal, and
+        returns the wrapped command's true exit code via
+        \texttt{PIPESTATUS[0]} after temporarily disabling
+        \texttt{set~-e} to ensure the failure-reporting branch executes.
+  \item \texttt{cap\_log\_close <exit-code>} --- closes the file with a
+        machine-readable footer.
+\end{itemize}
+
+\noindent
+The Python-based GUIs (\texttt{setup-cap-gui}, \texttt{run-cap}) write logs
+in the same format using a small Python class so that
+\texttt{logs/} is a single unified store across all tools.
+
+% =============================================================================
+\section{Source-level fixes}
+% =============================================================================
+
+\subsection{\texttt{src/CAPPythia/PythiaEventGenerator.cpp}}
+
+The file did not compile. Twelve distinct sites were repaired:
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item Line~13 (now removed): \verb|#include "TVectorLorentz.h"| --- a header
+        that does not exist in any version of ROOT (likely a typo for
+        \texttt{TLorentzVector.h}, which is also unused). The include line
+        was deleted.
+  \item Line~63 was \verb|ProcessorSingle::setDefaultConfiguration();| ---
+        the base class was renamed to \texttt{EventProcessor}.
+  \item Lines~88 and~134 declared \texttt{String~\&~key~=~taskName;} and then
+        \texttt{key~+=~":Option";~key~+=~k;} --- because \texttt{taskName} is
+        a \texttt{const String\,\&}, this would either fail to compile or
+        mutate the source variable. Both sites were replaced with
+        \texttt{String~key~=~taskName;} (a copy).
+  \item Lines~105, 106, 113, 114 had four missing closing parentheses in
+        nested calls
+        (\verb|...valueInt(createKey(taskName,"Beams:frameType"));| where
+        the call should close with \verb|)));|).
+  \item Line~210 used the deleted singleton
+        \verb|ParticleTypeList::list();| --- replaced with
+        \verb|db()|, which returns the
+        \texttt{ParticleDb} owned by the enclosing
+        \texttt{EventProcessor}.
+  \item Lines~212 and~236 wrote \texttt{event.reset();} and
+        \texttt{event.addParticle(\&p);} --- using \texttt{event} (which is
+        the \emph{member function} \verb|EventProcessor::event()|) as if it
+        were the \texttt{Event} reference. Replaced with the local
+        \texttt{theEvent} that line~211 already declares.
+  \item Line~234 used the renamed and re-ordered four-vector setter:
+        \verb|setPxPyPzE(px,py,pz,E)| was changed to
+        \verb|setEPxPyPz(E,px,py,pz)|, with arguments reordered.
+  \item Line~238 had \texttt{eventAccepted.increment();} where the symbol
+        is now an accessor returning \texttt{Accountant\&}; corrected to
+        \texttt{eventAccepted().increment();}.
+\end{itemize}
+
+\noindent
+A missing \verb|#include "ParticleDb.hpp"| was added at the top of the
+file.
+
+\subsection{\texttt{src/CAPPythia/PythiaEventReader.cpp}}
+
+This file is far more deeply broken than the generator: it references
+\texttt{ProcessorSingle}, the deleted \texttt{ParticleTypeList::list()}
+singleton, and a number of TTree branch fields (\texttt{entryIndex},
+\texttt{nb}, \texttt{nBytes}, \texttt{nParticles},
+\texttt{tracks\_fStatusCode}, \texttt{tracks\_fPdgCode}) that no longer
+exist anywhere in the codebase. Repair would require re-deriving the
+file's intended TTree schema. As an interim measure, the file was
+\textbf{removed from the \texttt{libCAPPythia} build target}
+(\texttt{src/CAPPythia/CMakeLists.txt}) and its dictionary entry was
+commented out in \texttt{CAPPythiaLinkDef.h}. The source file remains in
+the repository so a future maintainer can repair it; nothing in the
+analysis flow currently references it.
+
+\subsection{\texttt{src/Glauber/GlauberHistos.cpp}}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \texttt{calculateDensity(...)} (line~897) had its entire body
+        commented out, leaving a non-\texttt{void} function with no
+        \texttt{return} statement (undefined behaviour). The body was
+        replaced by an explicit \texttt{return~0.0;} with a comment
+        marking the function as a stub awaiting a real implementation.
+  \item Two unused locals \texttt{typeA} and \texttt{typeB} (lines~947--948)
+        were removed; their usage had been commented out earlier.
+  \item One unused-variable warning on \texttt{nucleon} (line~889) was
+        silenced with \texttt{\_\_attribute\_\_((unused))} since it is part
+        of a documented stub loop.
+\end{itemize}
+
+\subsection{Other minor warnings}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \texttt{src/Helpers/CanvasList.cpp} line~62: \texttt{xInc} was
+        marked unused.
+  \item \texttt{src/Glauber/NuclearDistribution.cpp} line~74: \texttt{tp}
+        was extracted from the multi-declaration and marked unused.
+\end{itemize}
+
+\subsection{\texttt{src/Jets/} --- module disabled at build time}
+
+The Jets module is \emph{not bit-rot}, it is incomplete in-progress code.
+Among the issues identified:
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \texttt{JetAnalyzer.hpp} references a class
+        \texttt{JetSingleDerivedHistos} that does not exist; the actual
+        class is named \texttt{JetSingleHistosDerived}.
+  \item It also references a template \texttt{ManagedList<JetFilter>} that
+        is defined nowhere in the codebase.
+  \item A member \texttt{clusterSequence} is used in a default member
+        initialiser without ever being declared as a member.
+  \item \texttt{JetHistosDerived.hpp} line~45 has a typographical error:
+        \texttt{cloneD(onst JetHistosDerived\&~source)} (the leading
+        \texttt{c} of \texttt{const} was dropped).
+  \item \texttt{JetAnalyzer.cpp} contains $\sim$15 distinct issues: missing
+        closing parentheses in \texttt{addProperty(...)} calls, an undefined
+        base class \texttt{Analyzer}, a function-call site that contains a
+        parameter declaration, mismatched braces in the event loop, a
+        function (\texttt{filterJets}) defined but not declared in the
+        header, multiple references to undeclared variables
+        (\texttt{taskName}, \texttt{iEventFilter}, \texttt{iParticleFilter},
+        \texttt{acceptedParticleFilters}).
+\end{itemize}
+
+\noindent
+Because none of these are mechanical fixes (the module needs a design pass
+to resolve them), the build system was changed to \emph{refuse} to compile
+the Jets module unless the developer explicitly opts in:
+
+\begin{lstlisting}[language=bash]
+cmake -S . -B build -D CAP_ENABLE_JETS=ON -D CAP_FORCE_BROKEN_JETS=ON
+\end{lstlisting}
+
+\noindent
+The token \texttt{CAP\_FORCE\_BROKEN\_JETS} is the explicit acknowledgement
+that the developer is choosing to engage with broken code. The
+\texttt{ParticleTypeList} $\to$ \texttt{ParticleDb} renaming
+\emph{was} applied to the Jets headers and source files
+(\texttt{JetHistos.hpp}, \texttt{JetSingleHistos.hpp},
+\texttt{JetPairHistos.hpp}, \texttt{JetPairMassHistos.hpp},
+\texttt{JetHistosDerived.hpp}, and the corresponding \texttt{.cpp} files),
+plus a typographical fix
+(\texttt{ParticleTypeList = selectedParticleTypeList;} $\to$
+\texttt{particleTypeList = selectedParticleTypeList;}) so that whoever
+finishes the module starts from a slightly cleaner baseline. The full bug
+list with file/line references is captured in
+\texttt{JETS\_KNOWN\_ISSUES.md}.
+
+% =============================================================================
+\section{Configuration system: backward-compatibility shim}
+\label{sec:taskpatch}
+% =============================================================================
+
+\subsection{The mismatch}
+
+\texttt{src/Base/Task.cpp} looks up the task tree via three structural keys:
+
+\begin{lstlisting}[language=ini]
+<task>:TASK:CLASS         # what class to instantiate
+<task>:TASK:SEVERITY      # log verbosity
+<task>:SUBTASK:N          # number of subtasks
+<task>:SUBTASK:k:NAME     # name of subtask k
+\end{lstlisting}
+
+\noindent
+Every \texttt{.ini} file under \texttt{projects/} uses the legacy form:
+
+\begin{lstlisting}[language=ini]
+<task>:TaskClassName     = CAP::RunAnalysis
+<task>:Severity          = Info
+<task>:nSubtasks         = 4
+<task>:Subtask0:TaskName = ParticleTypeTask
+\end{lstlisting}
+
+\noindent
+With unmodified \texttt{Task.cpp} and the shipped \texttt{.ini} files, the
+top-level task lookup returns the literal default
+\texttt{"NONE"} (the default value of
+\texttt{Properties::valueString(...)},
+declared in \texttt{Properties.hpp}), and CAP terminates with
+\texttt{UnknownClassException name=NONE} before any task is instantiated.
+
+\subsection{The patch}
+
+Three sites in \texttt{src/Base/Task.cpp} were modified to look up the new
+key first and fall back to the legacy key only when the new lookup
+returned the empty string \emph{or} the literal \texttt{"NONE"}:
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \texttt{Task::createTask()} --- \texttt{TASK:CLASS}
+        $\to$ \texttt{TaskClassName} fallback.
+  \item \texttt{Task::configure()} --- \texttt{TASK:SEVERITY}
+        $\to$ \texttt{Severity} fallback.
+  \item \texttt{Task::configureSubtasks()} ---
+        \texttt{SUBTASK:N} $\to$ \texttt{nSubtasks}, and
+        \texttt{SUBTASK:$k$:NAME} $\to$ \texttt{Subtask$k$:TaskName} fallback.
+\end{itemize}
+
+\noindent
+The \texttt{== "NONE"} check is essential: a missing key returns the
+literal four-character string \texttt{"NONE"} (not an empty string), so a
+naive \texttt{IsNull()~||~Length()==0} check never triggers.
+
+\subsection{Coverage}
+
+The shim covers only the structural keys used by \texttt{Task.cpp} itself.
+Per-task keys (e.g.\ \texttt{HistogramsExportPath},
+\texttt{nParticleDbs}, \texttt{nEventsRequested}) have not been
+back-compat'd and would need analogous treatment in their respective
+modules if they prove to be a blocker after the missing classes are
+implemented.
+
+% =============================================================================
+\section{Findings: unfinished refactors and missing implementations}
+% =============================================================================
+
+\subsection{Class refactor not propagated to all modules}
+
+The codebase contains evidence of three large renamings that were applied
+to some modules but not others:
+
+\begin{center}\small
+\begin{tabular}{lll}
+\toprule
+\textbf{Old name} & \textbf{New name} & \textbf{Modules updated} \\
+\midrule
+\texttt{ParticleTypeList} & \texttt{ParticleDb} & \texttt{Particles}, \texttt{CAPPythia} (after this pass) \\
+\texttt{ProcessorSingle} & \texttt{EventProcessor / EventProcessorSingle} & \texttt{Particles} \\
+\texttt{Particle::setPxPyPzE} & \texttt{Particle::setEPxPyPz} (re-ordered) & \texttt{Particles} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+The Jets module has not been updated for any of the three; the CAPPythia
+module had been updated only partially (it inherited from
+\texttt{EventProcessor} but still called \texttt{ProcessorSingle::setDefaultConfiguration()},
+and still used \texttt{ParticleTypeList::list()}).
+
+\subsection{Configuration system refactor not propagated to .ini files}
+
+The most extensive of the unfinished refactors. \texttt{src/} now uses a
+new structural key naming scheme:
+
+\begin{center}\small
+\begin{tabular}{ll}
+\toprule
+\textbf{Legacy (used by .ini files)} & \textbf{Current (used by source)} \\
+\midrule
+\texttt{TaskName}                 & \texttt{TASK:NAME} \\
+\texttt{TaskClassName}            & \texttt{TASK:CLASS} \\
+\texttt{Severity}                 & \texttt{TASK:SEVERITY} \\
+\texttt{nSubtasks}                & \texttt{SUBTASK:N} \\
+\texttt{Subtask$k$:TaskName}      & \texttt{SUBTASK:$k$:NAME} \\
+\texttt{nParticleDbs}             & \texttt{DB:N} \\
+\texttt{ParticleDbName$k$}        & \texttt{DB\_$k$:NAME} \\
+\texttt{ParticleDbOwner$k$}       & \texttt{DB\_$k$:OWNER} \\
+\texttt{nEventsRequested}         & \texttt{EVENT:REQUESTED:N} \\
+\texttt{HistogramsExportPath}     & \texttt{<typeName>:EXPORT:PATH} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+The \texttt{<typeName>} indirection is significant: the new scheme groups
+keys under a \emph{type name} chosen by each task class
+(\texttt{"DB"}, \texttt{"EVENT"}, \texttt{"PARTICLE\_FILTER"},
+\texttt{"INPUT\_STREAM"}, etc.). A purely string-based translator from
+old to new is therefore not sufficient --- the type-name has to be known
+per task.
+
+\noindent
+The structural keys (\texttt{TASK:CLASS}, \texttt{TASK:SEVERITY},
+\texttt{SUBTASK:N}, \texttt{SUBTASK:$k$:NAME}) have a back-compat path
+courtesy of Section~\ref{sec:taskpatch}; the per-task keys do not.
+
+\subsection{Missing task classes}
+
+The most consequential finding. Of the sixteen distinct
+\texttt{TaskClassName} values referenced by
+\texttt{projects/Pythia/pp\_13.7TeV/RunAna.ini}, ten are missing from
+\texttt{src/}:
+
+\begin{center}\small
+\begin{longtable}{lp{8cm}}
+\toprule
+\textbf{Class} & \textbf{Role} \\
+\midrule\endhead
+\texttt{CAP::RunAnalysis}              & top-level container task \\
+\texttt{CAP::ParticleTypeTask}         & loads \texttt{ParticleDb} from disk \\
+\texttt{CAP::ParticleDbTask}           & alternative DB loader \\
+\texttt{CAP::EventFilterCreator}       & instantiates EventFilters from .ini blocks \\
+\texttt{CAP::ParticleFilterCreator}    & instantiates ParticleFilters from .ini blocks \\
+\texttt{CAP::FilterCreator}            & combined Event/Particle/Jet filter creator \\
+\texttt{CAP::FileIterator}             & post-processing loop driver \\
+\texttt{CAP::ParticleSingleCalculator} & derived single-particle histograms \\
+\texttt{CAP::ParticlePairCalculator}   & derived pair correlation observables \\
+\texttt{CAP::ParticlePair3DCalculator} & derived 3-D HBT observables \\
+\bottomrule
+\end{longtable}
+\end{center}
+
+\noindent
+Six classes are present and compile cleanly:
+\texttt{EventIterator}, \texttt{PythiaEventGenerator},
+\texttt{ParticleSingleAnalyzer}, \texttt{ParticlePairAnalyzer},
+\texttt{ParticlePair3DAnalyzer}, plus support classes (\texttt{Task},
+\texttt{EventProcessor}, \texttt{Event}, \texttt{Particle},
+\texttt{ParticleDb}, \texttt{EventFilter}, \texttt{ParticleFilter}, etc.).
+
+The companion file \texttt{MISSING\_CLASSES.md} provides per-class detail on
+expected role, dependencies, and rough size estimates. The simplest of the
+missing classes (\texttt{RunAnalysis} as a thin \texttt{Task} subclass) is
+$\sim$30 lines; the calculators encode actual physics and are several
+hundred lines each.
+
+% =============================================================================
+\section{Smoke test (\texttt{src/Macros/SmokeTest.C})}
+\label{sec:smoketest}
+% =============================================================================
+
+A ROOT macro was added that exercises the entire build/link chain
+\emph{without} relying on the missing orchestrator classes. It:
+
+\begin{enumerate}[leftmargin=2em,itemsep=0pt]
+  \item Loads \texttt{libBase}, \texttt{libMath}, \texttt{libParticles},
+        \texttt{libCAPPythia} via \texttt{gSystem->Load(...)};
+  \item Adds a Cling-aware include and library path covering the most
+        common Pythia install locations (Apple Silicon Homebrew, Intel
+        Homebrew, MacPorts, \texttt{/usr/local}, the davidchall/hep tap);
+  \item Constructs a \texttt{Pythia8::Pythia} object directly,
+        configures pp@13~TeV inelastic, runs $N$ events;
+  \item Fills five histograms by hand from the Pythia event record;
+  \item Writes them to \texttt{histos/smoketest/SingleGen.root}.
+\end{enumerate}
+
+\noindent
+On the maintainer's machine the macro completes in $\sim$5 seconds and
+produces a valid \texttt{.root} file with the expected charged-particle
+multiplicity, $p_T$, $\eta$, $\phi$ distributions, and a 2-D $p_T$~vs.~$\eta$
+correlation. This validates: ROOT integration, library packaging,
+\texttt{SetupCAP.sh} environment, the Pythia~8 link via the davidchall/hep
+tap, and the CMake install layout.
+
+\noindent
+The runner GUI exposes the macro as a one-click \emph{Smoke test (proof of
+life)} button.
+
+% =============================================================================
+\section{Documentation added}
+% =============================================================================
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \texttt{README.md} --- short quick-start.
+  \item \texttt{BUILDING.md} --- build modes, run modes, troubleshooting,
+        Wayne~State Grid notes.
+  \item \texttt{CODEBASE\_MAP.md} --- complete architectural reference for
+        every module in \texttt{src/} (and an inventory of the vendored
+        FastJet library).
+  \item \texttt{JETS\_KNOWN\_ISSUES.md} --- the Jets-module bug list with
+        file/line references.
+  \item \texttt{MISSING\_CLASSES.md} --- the missing-class punch-list.
+  \item \texttt{TECHNICAL\_REPORT.tex} --- this document.
+\end{itemize}
+
+% =============================================================================
+\section{Recommended next steps}
+% =============================================================================
+
+\begin{enumerate}[leftmargin=2em,itemsep=0.3em]
+  \item \textbf{Implement the trivial missing classes first.} \texttt{RunAnalysis}
+        is little more than \texttt{class RunAnalysis : public Task \{\};}
+        plus the \texttt{ClassDef}/\texttt{ClassImp} macros; with it, the
+        \texttt{.ini} load path completes and the next missing class
+        becomes visible. \texttt{ParticleTypeTask} (DB loader) is the
+        natural second target.
+
+  \item \textbf{Decide on the configuration-key migration policy.} Options:
+        (a) extend the back-compat shim from Section~\ref{sec:taskpatch}
+        to per-task keys (lots of mechanical edits, low risk),
+        (b) rewrite the project \texttt{.ini} files to the new
+        \texttt{<typeName>}-aware structure (cleaner but requires
+        per-task knowledge of which type-name each task uses),
+        (c) accept both syntaxes via a centralised helper in
+        \texttt{Configuration} or \texttt{ConfigurationManager} that
+        applies a translation table at lookup time.
+
+  \item \textbf{Repair or delete the Jets module.} The list in
+        \texttt{JETS\_KNOWN\_ISSUES.md} is comprehensive. Until a maintainer
+        chooses to engage it, the build correctly keeps it disabled.
+
+  \item \textbf{Repair \texttt{PythiaEventReader.cpp} or remove it.} It is
+        currently excluded from the build. If the TTree-reading workflow it
+        embodied is still wanted, the schema needs to be re-derived; if
+        not, the file should be deleted.
+
+  \item \textbf{Adopt the new build/install/runner tooling.} The
+        \texttt{./install} entry-point is now the recommended user-facing
+        command. CI scripts can use \texttt{./install --headless}; users
+        with a desktop environment use \texttt{./install --gui}; HPC head
+        nodes use \texttt{./install --cli}. None of these depend on the
+        missing classes.
+\end{enumerate}
+
+% =============================================================================
+\appendix
+\section{Files added or modified}
+% =============================================================================
+
+\subsection*{Added}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \texttt{CMakeLists.txt} (top-level)
+  \item \texttt{cmake/FindPythia8.cmake}
+  \item \texttt{cmake/FindFastJet.cmake}
+  \item \texttt{install} (launcher)
+  \item \texttt{setup-cap} (CLI installer)
+  \item \texttt{setup-cap-gui} (Tk installer)
+  \item \texttt{run-cap} (Tk job runner)
+  \item \texttt{scripts/cap-logging.sh}
+  \item \texttt{src/Macros/SmokeTest.C}
+  \item \texttt{README.md}, \texttt{BUILDING.md},
+        \texttt{CODEBASE\_MAP.md}, \texttt{JETS\_KNOWN\_ISSUES.md},
+        \texttt{MISSING\_CLASSES.md}, \texttt{TECHNICAL\_REPORT.tex}
+\end{itemize}
+
+\subsection*{Modified}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \texttt{SetupCAP.sh} (full rewrite for portability)
+  \item \texttt{src/CMakeLists.txt} (modernised)
+  \item \texttt{src/Base/Task.cpp} (back-compat shim, Section~\ref{sec:taskpatch})
+  \item \texttt{src/CAPPythia/CMakeLists.txt} (excludes the broken reader)
+  \item \texttt{src/CAPPythia/CAPPythiaLinkDef.h} (excludes the broken reader)
+  \item \texttt{src/CAPPythia/PythiaEventGenerator.cpp} (twelve repair sites)
+  \item \texttt{src/Glauber/GlauberHistos.cpp} (return statement, unused vars)
+  \item \texttt{src/Glauber/NuclearDistribution.cpp} (unused var)
+  \item \texttt{src/Helpers/CanvasList.cpp} (unused var)
+  \item \texttt{src/Jets/CMakeLists.txt} (uses \texttt{Pythia8::Pythia8} target)
+  \item \texttt{src/Jets/*.{hpp,cpp}}
+        (\texttt{ParticleTypeList} $\to$ \texttt{ParticleDb}, typo fix)
+  \item All twenty-two \texttt{src/<Module>/CMakeLists.txt}
+        (\texttt{\$ENV\{CAP\_LIB\_PATH\}} $\to$ \texttt{\$\{CAP\_INSTALL\_LIBDIR\}})
+  \item \texttt{.gitignore} (logs, .cap-config, in-tree pythia/fastjet builds)
+\end{itemize}
+
+\end{document}

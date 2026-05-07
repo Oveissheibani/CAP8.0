@@ -1,0 +1,36 @@
+EventTask:HistogramsScale                                    : BOOL       : 1
+EventTask:HistogramsForceRewrite                             : BOOL       : 1
+EventTask:HistogramsImportPath                               : STRING     : Default
+EventTask:HistogramsImportFile                               : STRING     : Default
+EventTask:HistogramsExportPath                               : STRING     : Default
+EventTask:HistogramsExportFile                               : STRING     : Default
+EventTask:ModelType                                          : BOOL       : 1
+EventTask:ModelSubType                                       : INTEGER    : 6
+EventTask:ModelInputPath                                     : STRING     : 
+EventTask:ModelInputFile                                     : STRING     : 
+EventTask:ModelOutputPath                                    : STRING     : 
+EventTask:ModelOutputFile                                    : STRING     : 
+EventTask:HypersurfaceInputPath                              : STRING     : 
+EventTask:HypersurfaceInputFile                              : STRING     : 
+EventTask:HypersurfaceOutputPath                             : STRING     : 
+EventTask:HypersurfaceOutputFile                             : STRING     : 
+EventTask:MultiplicitiesImport                               : BOOL       : 0
+EventTask:MultiplicitiesExport                               : BOOL       : 0
+EventTask:MultiplicitiesCreate                               : BOOL       : 0
+EventTask:MultiplicitiesFluctType                            : BOOL       : 0
+EventTask:MultiplicitiesInputPath                            : STRING     : 
+EventTask:MultiplicitiesInputFile                            : STRING     : 
+EventTask:MultiplicitiesOutputPath                           : STRING     : 
+EventTask:MultiplicitiesOutputFile                           : STRING     : 
+EventTask:MultiplicitiesFractionMin                          : DOUBLE     : 0.5
+EventTask:MultiplicitiesFractionMax                          : BOOL       : 1
+EventTask:MultiplicitiesForceZeroNetQ                        : BOOL       : 0
+EventTask:DisablePhotons                                     : BOOL       : 1
+EventTask:nSamplesIntegration                                : INTEGER    : 10000
+EventTask:ModelOnlyBackFlow                                  : BOOL       : 0
+EventTask:DecayRescaleChannels                               : BOOL       : 0
+EventTask:DecayDisabled                                      : BOOL       : 0
+EventTask:DecayDisable3Prong                                 : BOOL       : 0
+EventTask:DecayDisable2Prong                                 : BOOL       : 0
+EventTask:DecayNoWeakDecay                                   : BOOL       : 0
+EventTask:DecayStoreDecayedParts                             : BOOL       : 0

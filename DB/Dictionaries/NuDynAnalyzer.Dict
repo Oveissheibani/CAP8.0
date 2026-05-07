@@ -1,0 +1,11 @@
+NuDyn:HistogramsScale                                        : BOOL       : 1
+NuDyn:HistogramsForceRewrite                                 : BOOL       : 1
+NuDyn:HistogramsImportPath                                   : STRING     : Default
+NuDyn:HistogramsImportFile                                   : STRING     : Default
+NuDyn:HistogramsExportPath                                   : STRING     : Default
+NuDyn:HistogramsExportFile                                   : STRING     : Default
+NuDyn:HistogramBaseName                                      : STRING     : NuDyn
+NuDyn:EvtClassName                                           : STRING     : Mult0
+NuDyn:nBins_EvtClass                                         : INTEGER    : 200
+NuDyn:Min_EvtClass                                           : BOOL       : 0
+NuDyn:Max_EvtClass                                           : INTEGER    : 200

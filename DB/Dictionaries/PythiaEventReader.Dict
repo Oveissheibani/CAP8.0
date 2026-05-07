@@ -1,0 +1,11 @@
+Pythia:HistogramsScale                                       : BOOL       : 1
+Pythia:HistogramsForceRewrite                                : BOOL       : 1
+Pythia:HistogramsImportPath                                  : STRING     : Default
+Pythia:HistogramsImportFile                                  : STRING     : Default
+Pythia:HistogramsExportPath                                  : STRING     : Default
+Pythia:HistogramsExportFile                                  : STRING     : Default
+Pythia:SaveFinalOnly                                         : BOOL       : 1
+Pythia:SavePhotons                                           : BOOL       : 0
+Pythia:SaveNeutrinos                                         : BOOL       : 0
+Pythia:SaveQuarks                                            : BOOL       : 0
+Pythia:SaveGaugeBosons                                       : BOOL       : 0

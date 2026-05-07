@@ -1,0 +1,500 @@
+#include "GlauberDb.hpp"
+#include "NameHelpers.hpp"
+#include "PrintHelpers.hpp"
+#include "StreamHelpers.hpp"
+
+ClassImp(CAP::Manager<CAP::GlauberDb>);
+ClassImp(CAP::GlauberDb)
+
+namespace CAP
+{
+
+  GlauberDb::GlauberDb()
+  {
+  // no ops
+  }
+
+  GlauberDb::GlauberDb(const GlauberDb & src)
+  {
+  // no ops
+  }
+
+  GlauberDb GlauberDb::operator=(const GlauberDb & generator)
+  {
+  if (this!=&generator)
+    {
+    // no ops
+    }
+  return *this;
+  }
+
+  //!
+  //! Find the given nucleus and set the GlauberNucleusType pbject accordingly.
+  //!
+  //!nNucleons: number of nucleons (atomic mass)
+  //!nProtons: atomic number
+  //!pRadius: radius of the protons
+  //!nRadius: radius of the neutrons
+  //!pSkin: skin thickness parameter of the protons
+  //!nSkin: skin thickness parameter of the neutrons
+  //!pWPar: central deformation parameter (protons)
+  //!nWPar: central deformation parameter (neutrons)
+  //!beta2: deformation parameter - 2nd harmonic
+  //!beta4: deformation parameter - 4th harmonic
+  //!rType: type of radial function used in the construction of the nuclei
+  //!r0, r1, r2: parameters used in special radial profiles.
+  //!
+  //!Uranium description taken from Heinz & Kuhlman, nucl-th/0411054.  In this code, pRadius is defined as 6.8*0.91, pWPar=6.8*0.26
+  //!
+  void GlauberDb::findNucleus(const String & name, GlauberNucleusType & nucleusType)
+  {
+  double nNucleons  = 0;
+  double nProtons   = 1;
+  double pRadius    = 0;
+  double nRadius    = 0;
+  double pSkin      = 0;
+  double nSkin      = 0;
+  double pWPar      = 0;
+  double nWPar      = 0;
+  int    rType      = 0;
+  double aPar       = 0;
+  double bPar       = 0;
+  double r0         = 0;
+  double r1         = 0;
+  double r2         = 0;
+  double beta2      = 0;
+  double beta4      = 0;
+
+  if      (name.EqualTo( "p" ))      {nNucleons = 1;   pRadius = 0.234;  pSkin = 0;      pWPar =  0;       rType = 0;  nProtons=1;}
+  else if (name.EqualTo( "pg" ))     {nNucleons = 1;   pRadius = 0.514;  pSkin = 0;      pWPar =  0;       rType = 9;  nProtons=1;}
+  else if (name.EqualTo( "pdg" ))    {nNucleons = 1;   pRadius = 1;      pSkin = 0;      pWPar =  0;       rType = 10; nProtons=1;} // from arXiv:1101.5953
+  else if (name.EqualTo( "dpf" ))    {nNucleons = 2;   pRadius = 0.01;   pSkin = 0.5882; pWPar =  0;       rType = 1;  nProtons=1;} // deuteron 2pf (tuned to useHulthen)
+  else if (name.EqualTo( "dh" ))     {nNucleons = 2;   pRadius = 0.2283; pSkin = 1.1765; pWPar =  0;       rType = 3;  nProtons=1;} // deuteron useHulthen free
+  else if (name.EqualTo( "d" ))      {nNucleons = 2;   pRadius = 0.2283; pSkin = 1.1765; pWPar =  0;       rType = 4;  nProtons=1;} // deuteron useHulthen constrained
+  else if (name.EqualTo( "He3" ))    {nNucleons = 3;   pRadius = 0.00;   pSkin = 0.0000; pWPar =  0;       rType = 6;  nProtons=1;} // read configurations from file
+  else if (name.EqualTo( "H3" ))     {nNucleons = 3;   pRadius = 0.00;   pSkin = 0.0000; pWPar =  0;       rType = 6;  nProtons=2;} // read configurations from file
+  else if (name.EqualTo( "He4" ))    {nNucleons = 4;   pRadius = 0.00;   pSkin = 0.0000; pWPar =  0;       rType = 6;  nProtons=2;} // read configurations from file
+  else if (name.EqualTo( "C" ))      {nNucleons = 12;  pRadius = 2.608;  pSkin = 0.513;  pWPar = -0.051;   rType = 6;  nProtons=6;} // read configurations from file
+  else if (name.EqualTo( "O"))       {nNucleons = 16;  pRadius = 2.608;  pSkin = 0.513;  pWPar = -0.051;   rType = 6;  nProtons=8;} // read configurations from file
+  else if (name.EqualTo( "Opar"))    {nNucleons = 16;  pRadius = 2.608;  pSkin = 0.513;  pWPar = -0.051;   rType = 1;  nProtons=8;} // WS parameterization
+  else if (name.EqualTo( "Oho" ))    {nNucleons = 16;  pRadius = 1.833;  pSkin = 1.544;  pWPar =  0;       rType = 15; nProtons=8;} // Harmonic oscillator parameterization
+  else if (name.EqualTo( "Al" ))     {nNucleons = 27;  pRadius = 3.34;   pSkin = 0.580;  pWPar = 0.0;      rType = 8;  nProtons=13; beta2=-0.448; beta4=0.239;}
+  else if (name.EqualTo( "Si" ))     {nNucleons = 28;  pRadius = 3.34;   pSkin = 0.580;  pWPar = -0.233;   rType = 1;  nProtons=14;}
+  else if (name.EqualTo( "Si2"))     {nNucleons = 28;  pRadius = 3.34;   pSkin = 0.580;  pWPar =  0;       rType = 8;  nProtons=14; beta2=-0.478; beta4=0.250;}
+  else if (name.EqualTo( "S" ))      {nNucleons = 32;  pRadius = 2.54;   pSkin = 2.191;  pWPar =  0.16;    rType = 2;  nProtons=16;}
+  else if (name.EqualTo( "Ar"))      {nNucleons = 40;  pRadius = 3.53;   pSkin = 0.542;  pWPar =  0;       rType = 1;  nProtons=18;}
+  else if (name.EqualTo( "Ca"))      {nNucleons = 40;  pRadius = 3.766;  pSkin = 0.586;  pWPar = -0.161;   rType = 1;  nProtons=20;}
+  else if (name.EqualTo( "Ni"))      {nNucleons = 58;  pRadius = 4.309;  pSkin = 0.517;  pWPar = -0.1308;  rType = 1;  nProtons=28;}
+  else if (name.EqualTo( "Cu"))      {nNucleons = 63;  pRadius = 4.20;   pSkin = 0.596;  pWPar =  0;       rType = 1;  nProtons=29;}
+  else if (name.EqualTo( "Curw"))    {nNucleons = 63;  pRadius = 4.20;   pSkin = 0.596;  pWPar =  0;       rType = 12; nProtons=29; r0=1.00898; r1=-0.000790403; r2=-0.000389897;}
+  else if (name.EqualTo( "Cu2"))     {nNucleons = 63;  pRadius = 4.20;   pSkin = 0.596;  pWPar =  0;       rType = 8;  nProtons=29; beta2=0.162; beta4=-0.006;}
+  else if (name.EqualTo( "Cu2rw"))   {nNucleons = 63;  pRadius = 4.20;   pSkin = 0.596;  pWPar =  0;       rType = 14; nProtons=29; beta2=0.162; beta4=-0.006; r0=1.01269; r1=-0.00298083; r2=-9.97222e-05;}
+  else if (name.EqualTo( "CuHN"))    {nNucleons = 63;  pRadius = 4.28;   pSkin = 0.5;    pWPar =  0;       rType = 1;  nProtons=29;} // from arXiv:0904.4080v1
+  else if (name.EqualTo( "Xe"))      {nNucleons = 129; pRadius = 5.36;   pSkin = 0.59;   pWPar =  0;       rType = 1;  nProtons=54;} // adapted from arXiv:1703.04278
+  else if (name.EqualTo( "Xes"))     {nNucleons = 129; pRadius = 5.42;   pSkin = 0.57;   pWPar =  0;       rType = 1;  nProtons=54;} // scale from Sb (Antimony, A=122, r=5.32) by 1.019 = (129/122)**0.333
+  else if (name.EqualTo( "Xe2"))     {nNucleons = 129; pRadius = 5.36;   pSkin = 0.59;   pWPar =  0;       rType = 8;  nProtons=54; beta2=0.161; beta4=-0.003;} // adapted from arXiv:1703.04278 and Z. Physik (1974) 270: 113
+  else if (name.EqualTo( "Xe2a"))    {nNucleons = 129; pRadius = 5.36;   pSkin = 0.59;   pWPar =  0;       rType = 8;  nProtons=54; beta2=0.18; beta4=0;} // ALICE parameters (see public note from 2018 at https://cds.cern.ch/collection/ALICE%20Public%20Notes?ln=en)
+  else if (name.EqualTo( "Xerw"))    {nNucleons = 129; pRadius = 5.36;   pSkin = 0.59;   pWPar =  0;       rType = 12; nProtons=54; r0=1.00911; r1=-0.000722999; r2=-0.0002663;}
+  else if (name.EqualTo( "Xesrw"))   {nNucleons = 129; pRadius = 5.42;   pSkin = 0.57;   pWPar =  0;       rType = 12; nProtons=54; r0=1.0096; r1=-0.000874123; r2=-0.000256708;}
+  else if (name.EqualTo( "Xe2arw"))  {nNucleons = 129; pRadius = 5.36;   pSkin = 0.59;   pWPar =  0;       rType = 14; nProtons=54; beta2=0.18; beta4=0; r0=1.01246; r1=-0.0024851; r2=-5.72464e-05;}
+  else if (name.EqualTo( "W"))       {nNucleons = 186; pRadius = 6.58;   pSkin = 0.480;  pWPar =  0;       rType = 1;  nProtons=74;}
+  else if (name.EqualTo( "Au"))      {nNucleons = 197; pRadius = 6.38;   pSkin = 0.535;  pWPar =  0;       rType = 1;  nProtons=79;}
+  else if (name.EqualTo( "Aurw"))    {nNucleons = 197; pRadius = 6.38;   pSkin = 0.535;  pWPar =  0;       rType = 12; nProtons=79; r0=1.00899; r1=-0.000590908; r2=-0.000210598;}
+  else if (name.EqualTo( "Au2"))     {nNucleons = 197; pRadius = 6.38;   pSkin = 0.535;  pWPar =  0;       rType = 8;  nProtons=79; beta2=-0.131; beta4=-0.031; }
+  else if (name.EqualTo( "Au2rw"))   {nNucleons = 197; pRadius = 6.38;   pSkin = 0.535;  pWPar =  0;       rType = 14; nProtons=79; beta2=-0.131; beta4=-0.031; r0=1.01261; r1=-0.00225517; r2=-3.71513e-05;}
+  else if (name.EqualTo( "AuHN"))    {nNucleons = 197; pRadius = 6.42;   pSkin = 0.44;   pWPar =  0;       rType = 1;  nProtons=79;} // from arXiv:0904.4080v1
+  else if (name.EqualTo( "Pb"))      {nNucleons = 208; pRadius = 6.62;   pSkin = 0.546;  pWPar =  0;       rType = 1;  nProtons=82;}
+  else if (name.EqualTo( "Pbrw"))    {nNucleons = 208; pRadius = 6.62;   pSkin = 0.546;  pWPar =  0;       rType = 12; nProtons=82; r0=1.00863; r1=-0.00044808; r2=-0.000205872;} //only Pb 207 was tested but should be the same for 208
+  else if (name.EqualTo( "Pb*"))     {nNucleons = 208; pRadius = 6.624;  pSkin = 0.549;  pWPar =  0;       rType = 1;  nProtons=82;}
+  else if (name.EqualTo( "PbHN"))    {nNucleons = 208; pRadius = 6.65;   pSkin = 0.460;  pWPar =  0;       rType = 1;  nProtons=82;}
+  else if (name.EqualTo( "Pbpn"))    {nNucleons = 208; pRadius = 6.68;   pSkin = 0.447;  pWPar =  0;       rType = 11; nProtons=82; nRadius=6.69; nSkin=0.56; nWPar=0;}
+  else if (name.EqualTo( "Pbpnrw"))  {nNucleons = 208; pRadius = 6.68;   pSkin = 0.447;  pWPar =  0;       rType = 13; nProtons=82; nRadius=6.69; nSkin=0.56; nWPar=0;}
+  else if (name.EqualTo( "U"))       {nNucleons = 238; pRadius = 6.188;  pSkin = 0.54;   pWPar =  1.77;    rType = 5;  nProtons=92;}
+  else if (name.EqualTo( "U2"))      {nNucleons = 238; pRadius = 6.67;   pSkin = 0.44;   pWPar =  0;       rType = 8;  nProtons=92; beta2=0.280; beta4=0.093; }
+  else
+    throw NucleusNotFoundGlauberException(name,"Nucleus name not found in DB",__FUNCTION__);
+
+  nucleusType.setName(name);
+  nucleusType.setNProtons(nProtons);
+  nucleusType.setNNeutrons(nNucleons-nProtons);
+  nucleusType.setRecenteringMode(1);
+  nucleusType.setShapeBeta2(beta2);
+  nucleusType.setShapeBeta4(beta4);
+  nucleusType.setMaximumRadius(3.0*1.2*TMath::Power(nNucleons,0.33333));
+  nucleusType.setNucleusRadius_Proton(pRadius);
+  nucleusType.setNucleusSkin_Proton(pSkin);
+  nucleusType.setNucleusWPar_Proton(pWPar);
+  nucleusType.setNucleusRadius_Neutron(nRadius);
+  nucleusType.setNucleusSkin_Neutron(nSkin);
+  nucleusType.setNucleusWPar_Neutron(nWPar);
+  nucleusType.setShapeBeta2(beta2);
+  nucleusType.setShapeBeta4(beta4);
+  nucleusType.setAParameter(aPar);
+  nucleusType.setBParameter(bPar);
+  nucleusType.setR0Parameter(r0);
+  nucleusType.setR1Parameter(r1);
+  nucleusType.setR2Parameter(r2);
+  if (nRadius>0 || nSkin>0 || nWPar>0)
+    nucleusType.setUseSameDistForPN(false);
+  else
+    nucleusType.setUseSameDistForPN(true);
+  }
+
+  void GlauberDb::configure(const String & taskName,
+                             const String & objectType,
+                             const Configuration & configuration,
+                             unsigned int index)
+  {
+  if (reportDebug(__FUNCTION__))
+    {
+    printCR();
+    printValue("taskName",  taskName);
+    printValue("objectType",objectType);
+    }
+  //  _dbImport            = configuration.valueBool(  createKey(taskName,objectType,index,"IMPORT"));
+  //  _dbImportPath        = configuration.valueString(createKey(taskName,objectType,index,"IMPORT:PATH"));
+  //  _dbImportFile        = configuration.valueString(createKey(taskName,objectType,index,"IMPORT:FILE_NAME"));
+  //  _dbImportDecaysFile  = configuration.valueString(createKey(taskName,objectType,index,"IMPORT:DECAYS_FILE"));
+  //  _dbExport            = configuration.valueBool(  createKey(taskName,objectType,index,"EXPORT"));
+  //  _dbExportPath        = configuration.valueString(createKey(taskName,objectType,index,"EXPORT:PATH"));
+  //  _dbExportFile        = configuration.valueString(createKey(taskName,objectType,index,"EXPORT:FILE"));
+  //  _dbExportDecaysFile  = configuration.valueString(createKey(taskName,objectType,index,"EXPORT:DECAYS_FILE"));
+
+    }
+
+  //!
+  //! nn _xSection vs sqrt{s}
+  //! _sqrtS [GeV]
+  //! nnXset [mb]
+  //!
+  //! From fits published in
+  //! Improved Monte Carlo Glauber predictions at present and future nuclear colliders
+  //! Constantin Loizides (ORNL), Jason Kamin (UiC), David d'Enterria (CERN)
+  //! Phys.Rev. C97 (2018) 054910; Erratum: Phys.Rev. C99 (2019) 019901
+  //! Parameters are from Table 1.
+  //!
+  //! s_nn = A + B log^n(s)
+  //!
+  //! Type    |    A                  |          B                 |     n                  |   chi^2/ndf
+  //! ------------------------------------------------
+  //! s_nn = A + B log^n(s)
+  //! ln(s)     | -3.33 +- 1/58  |  4.195 +- 0.103    |     1  (fixed)      |   1/.52
+  //! ln^2(s) | 25.0 +- 0.9      |  0.146 +- 0.004    |     2  (fixed)      | 0.97
+  //! ln^n(s) | 29.8 +- 4.7      |  0.038 +- 0.060     |    2.43 +- 0.50 | 0.98
+  //!
+  //!  s_nn  = A+B log^2(s) + C s^{-eta}
+  //!  A = 24.4\pm 1.4
+  //!  B = 0.01008 +- 0.1537
+  //!  C = 0.1.454 +- 1.768
+  //!  eta = 0.131 +- 0.0180
+  //!  chi^2/ndf  1.09
+  //!
+  //!  s_nn  A+B log^2(s)+D log(s)
+  //!  A = 39.7 +- 1.4
+  //!  B = 0.2212 +-0.0708
+  //!  D = -2.154 +- 2.035
+  //!  chi^2/ndf = 0.96
+  //!
+  NNXSectVsSqrtS::NNXSectVsSqrtS()
+  :
+  _option(0),
+  _a(0),
+  _b(0),
+  _c(0),
+  _d(0),
+  _n(0),
+  _eta(0)
+  {}
+
+  NNXSectVsSqrtS::NNXSectVsSqrtS(const NNXSectVsSqrtS & src)
+  :
+  _option(src._option),
+  _a(src._a),
+  _b(src._b),
+  _c(src._c),
+  _d(src._d),
+  _n(src._n),
+  _eta(src._eta)
+  {}
+
+  NNXSectVsSqrtS & NNXSectVsSqrtS::operator=(const NNXSectVsSqrtS & rhs)
+  {
+  if (this!=&rhs)
+    {
+    _option = src._option;
+    _a = rhs._a;
+    _b = rhs._b;
+    _c = rhs._c;
+    _d = rhs._d;
+    _n = rhs._n;
+    _eta = rhs._eta;
+    }
+  return *this;
+  }
+
+  void NNXSectVsSqrtS::reset()
+  {
+  _option = 0;
+  _a = 0.0;
+  _b = 0.0;
+  _c = 0.0;
+  _d = 0.0;
+  _n = 0.0;
+  _eta = 0.0;
+  }
+
+
+  void NNXSectVsSqrtS::setOption(unsigned int option)
+  {
+  reset();
+  _option = option;
+  switch (_option)
+    {
+      case 1: // exponent n == 1
+      {
+      _a = -3.33;
+      _b = 4.195;
+      break;
+      }
+
+      case 2: // exponent n == 2
+      {
+      _a = 25.0;
+      _b = 0.146;
+      break;
+      }
+
+      case 3: // exponent n == 2.43
+      {
+      _a = 29.8;
+      _b = 0.038;
+      _n = 2.43;
+      break;
+      }
+
+      case 4:
+      {
+      //!  s_nn  = A+B log^2(s) + C s^{-eta}
+      //!  A = 24.4\pm 1.4
+      //!  B = 0.01008 +- 0.1537
+      //!  C = 0.1.454 +- 1.768
+      //!  eta = 0.131 +- 0.0180
+      //!  chi^2/ndf  1.09
+      _a = 24.4;
+      _b = 0.01008;
+      _c = 1.454;
+      _eta = 0.131;
+      break;
+      }
+
+      case 5:
+      {
+      //!  s_nn  = A+B log^2(s)+D log(s)
+      //!  A = 39.7 +- 1.4
+      //!  B = 0.2212 +-0.0708
+      //!  D = -2.154 +- 2.035
+      _a = 39.7;
+      _b = 0.2212;
+      _d = -2.154;
+      break;
+      }
+
+      default:
+      throw InvalidValueGlauberException(option,"Invalid Option for calculation of xSect vs s",__FUNCTION__);
+    }
+  }
+
+  //!
+  //!Calculate the NN cross section at the given value of x=sqrt(s)
+  //!
+  double NNXSectVsSqrtS::evaluate(double x);
+  {
+  double result = 0
+  switch (_option)
+  {
+    default:
+    case 1: // exponent n == 1
+    {
+    result = _a + _b*log(x*x);
+    break;
+    }
+
+    case 2: // exponent n == 2
+    {
+    double z = log(x*x);
+    result = _a + _b*z*z;
+    break;
+    }
+
+    case 3: // exponent n == 2.43
+    {
+    result = _a + _b*power(log(x*x),_n);
+    break;
+    }
+
+    case 4: // Compete collaboration
+    {
+    //!  s_nn  = A+B log^2(s) + C s^{-eta}
+    //!  A = 24.4\pm 1.4
+    //!  B = 0.01008 +- 0.1537
+    //!  C = 0.1.454 +- 1.768
+    //!  eta = 0.131 +- 0.0180
+    //!  chi^2/ndf  1.09
+    double xx = x*x;
+    double z = log(xx);
+    result = _a + _b*z*z + _c*power(xx,-_eta);
+    break;
+    }
+
+    case 5: // Compete collaboation
+    {
+    //!  s_nn  = A+B log^2(s)+D log(s)
+    //!  A = 39.7 +- 1.4
+    //!  B = 0.2212 +-0.0708
+    //!  D = -2.154 +- 2.035
+    double xx = x*x;
+    double z = log(xx);
+    result = _a + _b*z*z + _d*z;
+    break;
+    }
+
+    default:
+    throw InvalidValueGlauberException(option,"Invalid Option for calculation of xSect vs s",__FUNCTION__);
+  }
+  return result;
+  }
+
+
+  NNProfile::NNProfile()
+  {}
+
+  NNProfile::NNProfile(const NNProfile & src)
+
+  NNProfile & NNProfile::operator=(const NNProfile & rhs)
+
+
+  double NNProfile::evaluate(double x)
+  {
+  return _g*(1-TMath::Gamma(_omegaInv,_gOverOmegaR2*x*x));
+  }
+
+  void NNProfile::reset()
+  {
+  _xSection = 0.0;
+  _omega = 0.0;
+  _g = 0.0;
+  _r2 = 0.0;
+  _omegaInv = 0.0;
+  _gOverOmegaR2 = 0.0;
+  }
+
+  SmearingProfile::SmearingProfile()
+  :
+  _nucleonSigma(0.0)
+  {  }
+
+  SmearingProfile::SmearingProfile(const SmearingProfile & src)
+  :
+  _nucleonSigma(src._nucleonSigma)
+  {  }
+
+   SmearingProfile & SmearingProfile::operator=(const SmearingProfile & rhs)
+  {
+   if (this!=&rhs)
+     {
+     _nucleonSigma = rhs._nucleonSigma;
+     }
+   return *this;
+   }
+
+  virtual void setNucleonSigma(double value)
+  {
+  if (value<=0.0)
+    throw GlauberException("nucleonSigma<=0",__FUNCTION__);
+  _nucleonSigma = value;
+  _twoNucleonSigmaSq = 2.0*_nucleonSigma*_nucleonSigma;
+  }
+
+  void SmearingProfile::reset()
+  {
+  _nucleonSigma   = 0.0;
+  _twoNucleonSigmaSq = 0.0;
+  }
+
+  double SmearingProfile::evaluate(double x)
+  {
+  return x*exp(-x*x/_twoNucleonSigmaSq);
+  }
+
+  PTotProfile::PTotProfile()
+  :
+  _nnXSect(0),
+  _nnXSectOmega(0),
+  _nnXSectLambda(0)
+  { }
+
+  PTotProfile::PTotProfile(const PTotProfile & src)
+  :
+  _nnXSect(src._nnXSect),
+  _nnXSectOmega(src._nnXSectOmega),
+  _nnXSectLambda(src._nnXSectLambda)
+  { }
+
+  PTotProfile & PTotProfile::operator=(const PTotProfile & rhs)
+  {
+  if (this!=&rhs)
+    {
+    _nnXSect       = rhs._nnXSect;
+    _nnXSectOmega  = rhs._nnXSectOmega;
+    _nnXSectLambda = rhs._nnXSectLambda;
+    }
+  return *this;
+  }
+
+  double PTotProfile::evaluate(double x)
+  {
+  // [0] _nnXSect,
+  // [1] _nnXSectOmega,
+  // [2] _nnXSectLambda
+  double xr = x/_nnXSectLambda;
+  double ss = _nnXSectOmega*_nnXSectOmega;
+  double aa = xr/_nnXSect-1.0
+  return (xr/(xr+_nnXSect))*exp(-aa*aa/ss)/_nnXSectLambda;
+  }
+
+  NucleonProfile::NucleonProfile()
+  :
+  _nucleonRadius(0)
+  { }
+
+  NucleonProfile::NucleonProfile(const NucleonProfile & src)
+  :
+  _nucleonRadius(src._nucleonRadius)
+  { }
+
+
+  NucleonProfile & NucleonProfile::operator=(const NucleonProfile & rhs)
+  {
+  if (this!=&rhs)
+    {
+    _nucleonRadius = rhs._nucleonRadius;
+    }
+  return *this;
+  }
+
+  void NucleonProfile::setNucleonRadius(double value)
+  {
+  if (value<=0.0)
+    throw GlauberException("nucleonRadius<=0",__FUNCTION__);
+  _nucleonRadius = value;
+  }
+
+  double NucleonProfile::evaluate(double x)
+  {
+  return x*x*exp(-x/_nucleonRadius);
+  }
+
+}  // namespace CAP
+
+
+

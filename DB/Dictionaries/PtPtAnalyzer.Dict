@@ -1,0 +1,11 @@
+PtPt:HistogramsScale                                         : BOOL       : 1
+PtPt:HistogramsForceRewrite                                  : BOOL       : 1
+PtPt:HistogramsImportPath                                    : STRING     : Default
+PtPt:HistogramsImportFile                                    : STRING     : Default
+PtPt:HistogramsExportPath                                    : STRING     : Default
+PtPt:HistogramsExportFile                                    : STRING     : Default
+PtPt:HistogramBaseName                                       : STRING     : PtPt
+PtPt:EvtClassName                                            : STRING     : ALL
+PtPt:nBins_EvtClass                                          : INTEGER    : 200
+PtPt:Min_EvtClass                                            : BOOL       : 0
+PtPt:Max_EvtClass                                            : INTEGER    : 200

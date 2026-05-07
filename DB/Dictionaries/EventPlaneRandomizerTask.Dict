@@ -1,0 +1,6 @@
+EventPlaneRandomizerTask:HistogramsScale                     : BOOL       : 1
+EventPlaneRandomizerTask:HistogramsForceRewrite              : BOOL       : 1
+EventPlaneRandomizerTask:HistogramsImportPath                : STRING     : Default
+EventPlaneRandomizerTask:HistogramsImportFile                : STRING     : Default
+EventPlaneRandomizerTask:HistogramsExportPath                : STRING     : Default
+EventPlaneRandomizerTask:HistogramsExportFile                : STRING     : Default

@@ -1,0 +1,708 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  setup-cap — interactive dependency picker for the Correlation Analysis Package.
+#
+#  Scans common locations for ROOT, Pythia 8, and FastJet, presents the user a
+#  numbered menu of detected installations, and saves their picks to .cap-config.
+#  Subsequent `source SetupCAP.sh` (and CMake) will read those choices.
+#
+#  Locations probed:
+#    • $CAP_*_PATH user overrides
+#    • In-tree (./pythia8*, ./fastjet-*)
+#    • Environment modules (`module avail`)
+#    • CVMFS (/cvmfs/sft.cern.ch, /cvmfs/alice.cern.ch, ...)
+#    • Wayne State Grid software trees (/wsu/...)
+#    • Homebrew (Apple Silicon + Intel)
+#    • MacPorts (/opt/local)
+#    • Conda ($CONDA_PREFIX)
+#    • Standard system paths (/usr/local, /usr)
+#    • pkg-config / pythia8-config / fastjet-config / root-config
+#
+#  Usage:
+#      ./setup-cap                  # interactive — pick from menu
+#      ./setup-cap --auto           # non-interactive, use top-ranked candidate
+#      ./setup-cap --list           # just print what was detected, exit
+#      ./setup-cap --reset          # delete .cap-config and re-run
+#      ./setup-cap --install pythia # download+build a fresh in-tree Pythia 8
+#      ./setup-cap --install fastjet# build the vendored FastJet source
+#      ./setup-cap --help
+# =============================================================================
+set -euo pipefail
+
+# ----- Resolve script location -----
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_FILE="$SCRIPT_DIR/.cap-config"
+
+# ----- Logging -----
+export CAP_ROOT_PATH="$SCRIPT_DIR"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/scripts/cap-logging.sh"
+cap_log_init setup "$@"
+trap 'cap_log_close $?' EXIT
+
+# ----- Pretty printing -----
+if [ -t 1 ]; then
+    BOLD="$(printf '\033[1m')"; DIM="$(printf '\033[2m')"
+    GREEN="$(printf '\033[32m')"; YELLOW="$(printf '\033[33m')"
+    BLUE="$(printf '\033[34m')"; RED="$(printf '\033[31m')"; RESET="$(printf '\033[0m')"
+else
+    BOLD=""; DIM=""; GREEN=""; YELLOW=""; BLUE=""; RED=""; RESET=""
+fi
+say()  { printf '%s\n' "$*"; }
+hr()   { printf '%s\n' "------------------------------------------------------------------------"; }
+header(){ printf '\n%s%s%s\n' "$BOLD" "$*" "$RESET"; hr; }
+warn() { printf '%s%s%s\n' "$YELLOW" "$*" "$RESET" >&2; }
+fail() { printf '%s%s%s\n' "$RED"    "$*" "$RESET" >&2; exit 1; }
+
+# ----- Argument parsing -----
+MODE="interactive"
+INSTALL_TARGET=""
+PYTHIA_DESIRED_VERSION="${PYTHIA_DESIRED_VERSION:-8.317}"
+FASTJET_DESIRED_VERSION="${FASTJET_DESIRED_VERSION:-3.4.3}"
+# Jets module is OFF by default — see JETS_KNOWN_ISSUES.md.  Opt-in via
+# --enable-jets on the command line, or CAP_ENABLE_JETS=ON in the env.
+ENABLE_JETS_FLAG=0
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --auto)         MODE="auto"; shift ;;
+        --list)         MODE="list"; shift ;;
+        --json)         MODE="json"; shift ;;
+        --reset)        rm -f "$CONFIG_FILE"; say "Removed $CONFIG_FILE"; exit 0 ;;
+        --install)      MODE="install"; INSTALL_TARGET="${2:-}"; shift 2 ;;
+        --enable-jets)  ENABLE_JETS_FLAG=1; shift ;;
+        --no-jets)      ENABLE_JETS_FLAG=0; shift ;;
+        -h|--help)
+            sed -n '2,/^# =\{40,\}/p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        *) fail "Unknown argument: $1" ;;
+    esac
+done
+cap_log INFO "setup-cap mode=$MODE install_target=${INSTALL_TARGET:-<none>}"
+
+# =============================================================================
+#  Detection helpers
+# =============================================================================
+
+# Each candidate is encoded as one tab-separated line:
+#   <kind>\t<source>\t<version>\t<path>
+# where <kind> tags how it was found (in-tree, brew, conda, module, cvmfs, …).
+# This format gets parsed back when displaying the menu.
+
+detect_root() {
+    local out=""
+    [ -n "${ROOTSYS:-}" ] && [ -d "$ROOTSYS" ] \
+        && out+="env\t\$ROOTSYS\t$(root-config --version 2>/dev/null || echo unknown)\t$ROOTSYS\n"
+    if command -v root-config >/dev/null 2>&1; then
+        local prefix; prefix="$(root-config --prefix 2>/dev/null || true)"
+        [ -n "$prefix" ] && out+="path\troot-config\t$(root-config --version)\t$prefix\n"
+    fi
+    # Homebrew
+    for brew_root in /opt/homebrew/opt/root /usr/local/opt/root; do
+        [ -d "$brew_root" ] && out+="brew\thomebrew\t$($brew_root/bin/root-config --version 2>/dev/null || echo unknown)\t$brew_root\n"
+    done
+    # Conda
+    if [ -n "${CONDA_PREFIX:-}" ] && [ -x "$CONDA_PREFIX/bin/root-config" ]; then
+        out+="conda\tCONDA_PREFIX\t$($CONDA_PREFIX/bin/root-config --version)\t$CONDA_PREFIX\n"
+    fi
+    # CVMFS
+    for cvmfs in /cvmfs/sft.cern.ch/lcg/releases/ROOT/*/*-x86_64-*/ \
+                 /cvmfs/alice.cern.ch/x86_64-*/Modules/modulefiles/ROOT/*; do
+        [ -d "$cvmfs" ] && out+="cvmfs\tCVMFS\t$(basename "$cvmfs")\t$cvmfs\n"
+    done 2>/dev/null
+    # Wayne State Grid (heuristic — check common module roots)
+    for wsu in /wsu/el?/sw/root /wsu/sw/root; do
+        for v in "$wsu"/*; do
+            [ -d "$v" ] && out+="wsu\tWayne State\t$(basename "$v")\t$v\n"
+        done 2>/dev/null
+    done
+    # Environment modules
+    if command -v module >/dev/null 2>&1; then
+        local mods; mods="$(module avail root 2>&1 | grep -Eio 'root[/-][0-9.]+' | sort -u || true)"
+        for m in $mods; do
+            out+="module\tmodulefile\t${m#root/}\t$m\n"
+        done
+    fi
+    printf "$out"
+}
+
+# Helper: append a candidate line ONLY if every field is non-empty AND the path
+# actually contains Pythia headers. Defensive against a *-config tool that
+# returns weird output and against tab/newline contamination.
+_emit_pythia8_candidate() {
+    local kind="$1" source="$2" version="$3" path="$4"
+    [ -z "$path" ]    && { cap_log DEBUG "skip pythia candidate (empty path): kind=$kind source=$source"; return; }
+    [ -d "$path" ]    || { cap_log DEBUG "skip pythia candidate (not a dir): $path"; return; }
+    [ -f "$path/include/Pythia8/Pythia.h" ] \
+        || { cap_log DEBUG "skip pythia candidate (no Pythia.h): $path"; return; }
+    # Strip embedded whitespace from any field — a multi-line --version can
+    # break the JSON downstream.
+    kind="$(printf '%s' "$kind"       | tr -d '\n\r\t')"
+    source="$(printf '%s' "$source"   | tr -d '\n\r\t')"
+    version="$(printf '%s' "$version" | tr -d '\n\r\t')"
+    path="$(printf '%s' "$path"       | tr -d '\n\r\t')"
+    [ -z "$version" ] && version="unknown"
+    printf '%s\t%s\t%s\t%s\n' "$kind" "$source" "$version" "$path"
+}
+
+_pythia_header_version() {
+    local header="$1"
+    awk '/#define[[:space:]]+PYTHIA_VERSION/ {print $3; exit}' "$header" 2>/dev/null \
+        | tr -d '"'
+}
+
+detect_pythia8() {
+    # Use nullglob locally so unmatched globs disappear instead of falling
+    # through as literal patterns (which were polluting the rejection log).
+    shopt -s nullglob 2>/dev/null || true
+
+    # In-tree pythia8XYZ
+    for d in "$SCRIPT_DIR"/pythia8[0-9]*; do
+        _emit_pythia8_candidate "in-tree" "repo" "$(basename "$d")" "$d"
+    done
+
+    # User override env var
+    [ -n "${CAP_PYTHIA8_PATH:-}" ] \
+        && _emit_pythia8_candidate "env" "\$CAP_PYTHIA8_PATH" "$(basename "$CAP_PYTHIA8_PATH")" "$CAP_PYTHIA8_PATH"
+
+    # Brew formula paths. Two formula names are common:
+    #   • the canonical core formula:                 brew install pythia8
+    #   • the davidchall/hep tap (HEP community):     brew install davidchall/hep/pythia
+    # Probe both candidate keg paths AND ask `brew` directly when available.
+    for brew_root in /opt/homebrew/opt/pythia8 /opt/homebrew/opt/pythia \
+                     /usr/local/opt/pythia8   /usr/local/opt/pythia; do
+        local v="$(_pythia_header_version "$brew_root/include/Pythia8/Pythia.h")"
+        _emit_pythia8_candidate "brew" "homebrew (formula)" "$v" "$brew_root"
+    done
+    if command -v brew >/dev/null 2>&1; then
+        for fname in pythia8 pythia davidchall/hep/pythia; do
+            local p; p="$(brew --prefix "$fname" 2>/dev/null || true)"
+            [ -n "$p" ] && _emit_pythia8_candidate "brew" "brew --prefix $fname" \
+                "$(_pythia_header_version "$p/include/Pythia8/Pythia.h")" "$p"
+        done
+    fi
+
+    # Direct-prefix install — the case where the user manually
+    # `./configure --prefix=/opt/homebrew && make install`'d Pythia, OR
+    # MacPorts at /opt/local, OR /usr/local from a hand-build. The header
+    # check inside _emit_pythia8_candidate ensures we only emit prefixes
+    # that actually contain Pythia.
+    for prefix in /opt/homebrew /usr/local /opt/local; do
+        local v="$(_pythia_header_version "$prefix/include/Pythia8/Pythia.h")"
+        _emit_pythia8_candidate "prefix" "$prefix" "$v" "$prefix"
+    done
+
+    # Conda
+    if [ -n "${CONDA_PREFIX:-}" ]; then
+        _emit_pythia8_candidate "conda" "CONDA_PREFIX" \
+            "$(_pythia_header_version "$CONDA_PREFIX/include/Pythia8/Pythia.h")" \
+            "$CONDA_PREFIX"
+    fi
+
+    # pythia8-config — last resort; some packagings return broken output, so
+    # the helper above will silently drop bogus candidates.
+    if command -v pythia8-config >/dev/null 2>&1; then
+        local p; p="$(pythia8-config --prefix 2>/dev/null || true)"
+        local v; v="$(pythia8-config --version 2>/dev/null || true)"
+        # Sanity: `--version` should NOT look like a path.
+        case "$v" in /*|*/*) v="" ;; esac
+        _emit_pythia8_candidate "path" "pythia8-config" "${v:-from-config}" "$p"
+    fi
+
+    # CVMFS
+    for cvmfs in /cvmfs/sft.cern.ch/lcg/releases/MCGenerators/pythia8/* \
+                 /cvmfs/sft.cern.ch/lcg/releases/pythia8/*; do
+        for sub in "$cvmfs"/*; do
+            _emit_pythia8_candidate "cvmfs" "CVMFS" "$(basename "$cvmfs")" "$sub"
+        done
+    done
+
+    # Wayne State Grid
+    for wsu in /wsu/el?/sw/pythia8 /wsu/sw/pythia8; do
+        for v in "$wsu"/*; do
+            _emit_pythia8_candidate "wsu" "Wayne State" "$(basename "$v")" "$v"
+        done
+    done
+
+    shopt -u nullglob 2>/dev/null || true
+}
+
+# Same hardening as for Pythia.
+_emit_fastjet_candidate() {
+    local kind="$1" source="$2" version="$3" path="$4"
+    [ -z "$path" ]    && { cap_log DEBUG "skip fastjet candidate (empty path): kind=$kind source=$source"; return; }
+    [ -d "$path" ]    || { cap_log DEBUG "skip fastjet candidate (not a dir): $path"; return; }
+    [ -f "$path/include/fastjet/PseudoJet.hh" ] \
+        || { cap_log DEBUG "skip fastjet candidate (no PseudoJet.hh): $path"; return; }
+    kind="$(printf '%s' "$kind"       | tr -d '\n\r\t')"
+    source="$(printf '%s' "$source"   | tr -d '\n\r\t')"
+    version="$(printf '%s' "$version" | tr -d '\n\r\t')"
+    path="$(printf '%s' "$path"       | tr -d '\n\r\t')"
+    [ -z "$version" ] && version="unknown"
+    printf '%s\t%s\t%s\t%s\n' "$kind" "$source" "$version" "$path"
+}
+
+_fastjet_header_version() {
+    local header="$1"
+    grep -E 'fastjet_version[[:space:]]*=' "$header" 2>/dev/null \
+        | head -n1 | sed -E 's/.*"([0-9.]+)".*/\1/'
+}
+
+detect_fastjet() {
+    shopt -s nullglob 2>/dev/null || true
+
+    # In-tree fastjet-X.Y.Z — distinguish "built" vs "source-only".
+    # Use explicit per-extension checks: a bare `ls "$d"/lib/libfastjet.*`
+    # with nullglob enabled expands to nothing and `ls` then lists CWD,
+    # which incorrectly appears successful.
+    _fj_built_at() {
+        local root="$1"
+        [ -f "$root/lib/libfastjet.dylib" ] && return 0
+        [ -f "$root/lib/libfastjet.so" ]    && return 0
+        [ -f "$root/lib/libfastjet.a" ]     && return 0
+        return 1
+    }
+    for d in "$SCRIPT_DIR"/fastjet-[0-9]*; do
+        if [ -d "$d" ] && [ -f "$d/include/fastjet/PseudoJet.hh" ]; then
+            local v; v="$(basename "$d" | sed 's/fastjet-//')"
+            if _fj_built_at "$d"; then
+                _emit_fastjet_candidate "in-tree" "repo (built)" "$v" "$d"
+            elif _fj_built_at "$d/install"; then
+                _emit_fastjet_candidate "in-tree" "repo (built — install/)" "$v" "$d/install"
+            else
+                _emit_fastjet_candidate "in-tree-src" "repo (source only — needs build)" "$v" "$d"
+            fi
+        fi
+    done
+    unset -f _fj_built_at
+
+    [ -n "${CAP_FASTJET_PATH:-}" ] \
+        && _emit_fastjet_candidate "env" "\$CAP_FASTJET_PATH" "unknown" "$CAP_FASTJET_PATH"
+
+    # HERWIG-bundled FastJet — always check $HW_PREFIX (set by
+    # herwig-env.sh, INSTALL_REPORT_HERWIG.md §4.6) and the canonical
+    # local-install path the report documents.  This makes the FastJet
+    # that ships inside the Herwig install appear as a first-class
+    # candidate in the dropdown so users can pick it instead of an
+    # unrelated system FastJet.  See INSTALL_REPORT_HERWIG.md §4.2.
+    for hw_root in "${HW_PREFIX:-}" \
+                   "/Users/oveissheibani/LocalHerwig/LocalHerwig/opt"; do
+        [ -z "$hw_root" ] && continue
+        if [ -f "$hw_root/include/fastjet/PseudoJet.hh" ] \
+           && [ -f "$hw_root/lib/libfastjet.dylib" -o \
+                -f "$hw_root/lib/libfastjet.so" ]; then
+            local v; v="$(_fastjet_header_version "$hw_root/include/fastjet/version.hh")"
+            _emit_fastjet_candidate "herwig" "HERWIG bundle ($hw_root)" \
+                                    "${v:-3.4.x}" "$hw_root"
+        fi
+    done
+
+    # Brew formula — fastjet is consistent across the core formula and the
+    # davidchall/hep tap (`brew install davidchall/hep/fastjet`).
+    for brew_root in /opt/homebrew/opt/fastjet /usr/local/opt/fastjet; do
+        local v; v="$(_fastjet_header_version "$brew_root/include/fastjet/version.hh")"
+        _emit_fastjet_candidate "brew" "homebrew (formula)" "${v:-unknown}" "$brew_root"
+    done
+    if command -v brew >/dev/null 2>&1; then
+        for fname in fastjet davidchall/hep/fastjet; do
+            local p; p="$(brew --prefix "$fname" 2>/dev/null || true)"
+            [ -n "$p" ] && _emit_fastjet_candidate "brew" "brew --prefix $fname" \
+                "$(_fastjet_header_version "$p/include/fastjet/version.hh")" "$p"
+        done
+    fi
+
+    # Direct-prefix install (manual ./configure --prefix=/opt/homebrew, etc.)
+    for prefix in /opt/homebrew /usr/local /opt/local; do
+        local v; v="$(_fastjet_header_version "$prefix/include/fastjet/version.hh")"
+        _emit_fastjet_candidate "prefix" "$prefix" "${v:-unknown}" "$prefix"
+    done
+
+    if [ -n "${CONDA_PREFIX:-}" ]; then
+        _emit_fastjet_candidate "conda" "CONDA_PREFIX" \
+            "$(_fastjet_header_version "$CONDA_PREFIX/include/fastjet/version.hh")" "$CONDA_PREFIX"
+    fi
+
+    if command -v fastjet-config >/dev/null 2>&1; then
+        local p; p="$(fastjet-config --prefix 2>/dev/null || true)"
+        local v; v="$(fastjet-config --version 2>/dev/null || true)"
+        case "$v" in /*|*/*) v="" ;; esac
+        _emit_fastjet_candidate "path" "fastjet-config" "${v:-from-config}" "$p"
+    fi
+
+    for cvmfs in /cvmfs/sft.cern.ch/lcg/releases/fastjet/*; do
+        for sub in "$cvmfs"/*; do
+            _emit_fastjet_candidate "cvmfs" "CVMFS" "$(basename "$cvmfs")" "$sub"
+        done
+    done
+
+    for wsu in /wsu/el?/sw/fastjet /wsu/sw/fastjet; do
+        for v in "$wsu"/*; do
+            _emit_fastjet_candidate "wsu" "Wayne State" "$(basename "$v")" "$v"
+        done
+    done
+
+    shopt -u nullglob 2>/dev/null || true
+}
+
+# =============================================================================
+#  Menu UI
+# =============================================================================
+choose() {
+    local label="$1"; shift
+    local lines=("$@")
+    local extra_install_msg="${EXTRA_INSTALL_MSG:-}"
+
+    header "$label"
+    if [ "${#lines[@]}" -eq 0 ]; then
+        warn "No installations detected."
+    else
+        local i=1
+        for line in "${lines[@]}"; do
+            local kind src ver path
+            IFS=$'\t' read -r kind src ver path <<< "$line"
+            printf "  %s[%d]%s %-14s %-22s %s%s%s\n" \
+                "$BOLD" "$i" "$RESET" "$kind" "$src" "$DIM" "$path  ($ver)" "$RESET"
+            i=$((i+1))
+        done
+    fi
+
+    local install_idx=$(( ${#lines[@]} + 1 ))
+    local skip_idx=$(( install_idx + 1 ))
+    if [ -n "$extra_install_msg" ]; then
+        printf "  %s[%d]%s %s\n" "$BOLD" "$install_idx" "$RESET" "$extra_install_msg"
+    else
+        install_idx=""
+    fi
+    printf "  %s[%d]%s %s\n" "$BOLD" "$skip_idx" "$RESET" "Skip — disable this dependency"
+    printf "  %s[%d]%s %s\n" "$BOLD" "$((skip_idx+1))" "$RESET" "Custom path (you type it)"
+
+    local default=1
+    [ "${#lines[@]}" -eq 0 ] && default="$skip_idx"
+
+    if [ "$MODE" = "auto" ]; then
+        REPLY="$default"
+    else
+        printf "\n%sChoice [%d]:%s " "$BOLD" "$default" "$RESET"
+        read -r REPLY || REPLY=""
+        [ -z "$REPLY" ] && REPLY="$default"
+    fi
+
+    local idx=$REPLY
+    if ! [[ "$idx" =~ ^[0-9]+$ ]]; then
+        fail "Not a number: $REPLY"
+    fi
+
+    if [ -n "$install_idx" ] && [ "$idx" = "$install_idx" ]; then
+        echo "INSTALL"
+        return
+    elif [ "$idx" = "$skip_idx" ]; then
+        echo "SKIP"
+        return
+    elif [ "$idx" = "$((skip_idx+1))" ]; then
+        printf "Path: "; read -r custom
+        [ -z "$custom" ] && fail "Empty path."
+        [ -d "$custom" ] || fail "Not a directory: $custom"
+        echo "CUSTOM:$custom"
+        return
+    elif [ "$idx" -lt 1 ] || [ "$idx" -gt "${#lines[@]}" ]; then
+        fail "Out of range: $idx"
+    fi
+
+    # Return the chosen line — caller parses kind/src/ver/path.
+    echo "${lines[$((idx-1))]}"
+}
+
+# =============================================================================
+#  Install actions for fresh in-tree Pythia / FastJet
+# =============================================================================
+# Try a list of URLs in order; first one that yields a real gzipped tarball wins.
+# Returns 0 on success and prints the path of the validated tarball to stdout.
+_download_first_working() {
+    local out_path="$1"; shift
+    local urls=("$@")
+    local url
+    for url in "${urls[@]}"; do
+        rm -f "$out_path"
+        cap_log INFO "Trying $url"
+        if cap_log_run "download $(basename "$url")" \
+            curl -fL --connect-timeout 10 --retry 2 -o "$out_path" "$url"; then
+            # Verify it's actually a gzipped tarball (caught the HTML-404 failure mode)
+            if tar -tzf "$out_path" >/dev/null 2>&1; then
+                cap_log INFO "Verified: $out_path is a valid tarball ($(_human_size "$out_path"))"
+                return 0
+            else
+                cap_log WARN "Downloaded file is not a valid tarball; trying next mirror."
+            fi
+        fi
+    done
+    return 1
+}
+
+_human_size() {
+    if command -v stat >/dev/null 2>&1; then
+        if stat -f%z "$1" >/dev/null 2>&1; then           # BSD / macOS
+            stat -f%z "$1" | awk '{ printf "%.1f MB", $1/1024/1024 }'
+        else                                              # GNU
+            stat -c%s "$1" | awk '{ printf "%.1f MB", $1/1024/1024 }'
+        fi
+    fi
+}
+
+install_pythia8() {
+    local v="$PYTHIA_DESIRED_VERSION"
+    local short; short="${v//./}"     # 8.317 → 8317
+    local stem="pythia${short}"
+    local dest="$SCRIPT_DIR/$stem"
+    local tarball="$SCRIPT_DIR/${stem}.tgz"
+
+    # ----- Shortcut 1: an already-installed Homebrew Pythia. -----
+    # Many users have `brew install pythia8` already; if so we don't have to
+    # download / compile anything. The `setup-cap` detector picks this up too,
+    # so we only get here when the user explicitly chose "Install fresh".
+    for brew_root in /opt/homebrew/opt/pythia8 /usr/local/opt/pythia8; do
+        if [ -f "$brew_root/include/Pythia8/Pythia.h" ]; then
+            cap_log INFO "Found existing Homebrew Pythia at $brew_root — using it."
+            echo "$brew_root"
+            return 0
+        fi
+    done
+
+    # ----- Shortcut 2: another in-tree pythia8XYZ already built. -----
+    for d in "$SCRIPT_DIR"/pythia8[0-9]*; do
+        if [ -d "$d" ] && [ -f "$d/Makefile.inc" ] && \
+           ( [ -f "$d/lib/libpythia8.dylib" ] || [ -f "$d/lib/libpythia8.so" ] ); then
+            cap_log INFO "Found existing in-tree Pythia at $d — using it."
+            echo "$d"
+            return 0
+        fi
+    done
+
+    # ----- Shortcut 3: pre-downloaded tarball the user dropped in. -----
+    if [ -d "$dest" ] && [ -f "$dest/Makefile.inc" ]; then
+        cap_log INFO "$dest already exists and looks configured — skipping download."
+    elif [ -f "$tarball" ] && tar -tzf "$tarball" >/dev/null 2>&1; then
+        cap_log INFO "Found pre-downloaded $tarball; reusing."
+    else
+        cap_log INFO "Downloading Pythia $v …"
+        local urls=(
+            "https://pythia.org/download/pythia83/${stem}.tgz"
+            "https://www.pythia.org/download/pythia83/${stem}.tgz"
+            "https://www.hepforge.org/archive/MCnet/Pythia8/${stem}.tgz"
+            "https://pythia.hepforge.org/archive/${stem}.tgz"
+        )
+        if ! _download_first_working "$tarball" "${urls[@]}"; then
+            cat >&2 <<EOF
+
+${RED}${BOLD}Could not download Pythia $v automatically.${RESET}
+
+Three ways to proceed:
+
+${BOLD}Option A — install via Homebrew (simplest if pythia.org is unreachable):${RESET}
+  brew install pythia8
+  # then re-run ./setup-cap (it will detect the Homebrew install)
+
+${BOLD}Option B — drop a pre-downloaded tarball into the repo:${RESET}
+  1. From any machine that can reach pythia.org, download:
+       https://pythia.org/download/pythia83/${stem}.tgz
+  2. Transfer it to:
+       ${tarball}
+  3. Re-run:
+       ./setup-cap --install pythia
+       (or click "Configure & Build" again in the GUI)
+
+${BOLD}Option C — point at an existing Pythia install:${RESET}
+  export CAP_PYTHIA8_PATH=/path/to/your/pythia8XYZ
+  ./setup-cap          # then pick the env-var entry from the menu
+
+Full diagnostic log:
+  ${CAP_LOG_FILE}
+EOF
+            return 1
+        fi
+    fi
+
+    if [ ! -d "$dest" ]; then
+        cap_log_run "extract ${stem}.tgz" tar -xzf "$tarball" -C "$SCRIPT_DIR" \
+            || { cap_log ERROR "Extraction failed."; return 1; }
+        rm -f "$tarball"
+    fi
+
+    cap_log_section "Configuring Pythia $v"
+    ( cd "$dest" && cap_log_run "pythia configure" ./configure --enable-shared ) \
+        || { cap_log ERROR "Pythia configure failed. See $CAP_LOG_FILE."; return 1; }
+    cap_log_section "Building Pythia $v (this takes 2-5 minutes)"
+    ( cd "$dest" && cap_log_run "pythia make" make -j"${MAKE_JOBS:-4}" ) \
+        || { cap_log ERROR "Pythia build failed. See $CAP_LOG_FILE."; return 1; }
+
+    cap_log INFO "Pythia $v installed at $dest"
+    echo "$dest"
+}
+
+install_fastjet() {
+    local src; src="$(ls -d "$SCRIPT_DIR"/fastjet-[0-9]* 2>/dev/null | head -n1)"
+    [ -z "$src" ] && { cap_log ERROR "No vendored fastjet-*/ directory found in repo root."; return 1; }
+    local prefix="$src/install"
+    if [ -f "$prefix/lib/libfastjet.dylib" ] || [ -f "$prefix/lib/libfastjet.so" ]; then
+        cap_log INFO "FastJet already built at $prefix — skipping."
+        echo "$prefix"
+        return 0
+    fi
+    cap_log_section "Building vendored FastJet at $src (prefix=$prefix)"
+    ( cd "$src" \
+        && cap_log_run "fastjet configure" ./configure --prefix="$prefix" --enable-shared \
+        && cap_log_run "fastjet make"      make -j"${MAKE_JOBS:-4}" \
+        && cap_log_run "fastjet install"   make install ) \
+        || { cap_log ERROR "FastJet build failed. See $CAP_LOG_FILE."; return 1; }
+    cap_log INFO "FastJet installed at $prefix"
+    echo "$prefix"
+}
+
+# =============================================================================
+#  Modes
+# =============================================================================
+case "$MODE" in
+list)
+    header "ROOT";    detect_root    | column -ts $'\t' || true
+    header "Pythia8"; detect_pythia8 | column -ts $'\t' || true
+    header "FastJet"; detect_fastjet | column -ts $'\t' || true
+    exit 0
+    ;;
+json)
+    # Machine-readable detection output (consumed by setup-cap-gui).
+    # Emits a single JSON document of shape:
+    #   { "root":[...], "pythia":[...], "fastjet":[...] }
+    # Each element: { "kind":..., "source":..., "version":..., "path":... }
+    emit_json_array() {
+        local lines="$1"
+        local first=1
+        printf '['
+        while IFS=$'\t' read -r kind source version path; do
+            [ -z "$kind" ] && continue
+            [ "$first" = "1" ] || printf ','
+            first=0
+            # Escape backslashes and double-quotes minimally.
+            local k="${kind//\\/\\\\}";    k="${k//\"/\\\"}"
+            local s="${source//\\/\\\\}";  s="${s//\"/\\\"}"
+            local v="${version//\\/\\\\}"; v="${v//\"/\\\"}"
+            local p="${path//\\/\\\\}";    p="${p//\"/\\\"}"
+            printf '{"kind":"%s","source":"%s","version":"%s","path":"%s"}' "$k" "$s" "$v" "$p"
+        done <<< "$lines"
+        printf ']'
+    }
+    cap_log INFO "Emitting JSON detection summary"
+    {
+        printf '{'
+        printf '"root":';    emit_json_array "$(detect_root)"
+        printf ',"pythia":'; emit_json_array "$(detect_pythia8)"
+        printf ',"fastjet":'; emit_json_array "$(detect_fastjet)"
+        printf '}\n'
+    }
+    exit 0
+    ;;
+install)
+    case "$INSTALL_TARGET" in
+        pythia|pythia8) cap_log_section "Installing Pythia 8 ${PYTHIA_DESIRED_VERSION}"
+                        install_pythia8 || exit $? ;;
+        fastjet)        cap_log_section "Building vendored FastJet"
+                        install_fastjet || exit $? ;;
+        *) fail "Unknown --install target: '$INSTALL_TARGET' (use pythia or fastjet)" ;;
+    esac
+    exit 0
+    ;;
+esac
+
+# =============================================================================
+#  Interactive / auto
+# =============================================================================
+header "CAP setup — detecting available dependencies"
+say "Detected platform: $(uname -s) $(uname -m)"
+say "Repo root        : $SCRIPT_DIR"
+
+readarray -t ROOT_OPTS    < <(detect_root    | sed '/^$/d')
+readarray -t PYTHIA_OPTS  < <(detect_pythia8 | sed '/^$/d')
+readarray -t FASTJET_OPTS < <(detect_fastjet | sed '/^$/d')
+
+# ROOT --------------------------------------------------------------------------
+EXTRA_INSTALL_MSG=""  ROOT_CHOICE=$(choose "ROOT" "${ROOT_OPTS[@]}")
+case "$ROOT_CHOICE" in
+    SKIP)         fail "ROOT is required — cannot skip." ;;
+    CUSTOM:*)     ROOT_PATH="${ROOT_CHOICE#CUSTOM:}" ;;
+    *)            IFS=$'\t' read -r _k _s _v ROOT_PATH <<< "$ROOT_CHOICE" ;;
+esac
+
+# Pythia ------------------------------------------------------------------------
+EXTRA_INSTALL_MSG="Install fresh in-tree (Pythia ${PYTHIA_DESIRED_VERSION}, downloads ~50 MB)"
+PY_CHOICE=$(choose "Pythia 8" "${PYTHIA_OPTS[@]}")
+case "$PY_CHOICE" in
+    SKIP)         PYTHIA_PATH="" ;;
+    INSTALL)      PYTHIA_PATH="$(install_pythia8)" ;;
+    CUSTOM:*)     PYTHIA_PATH="${PY_CHOICE#CUSTOM:}" ;;
+    *)            IFS=$'\t' read -r _k _s _v PYTHIA_PATH <<< "$PY_CHOICE" ;;
+esac
+
+# FastJet -----------------------------------------------------------------------
+EXTRA_INSTALL_MSG="Build the vendored FastJet source in-tree"
+FJ_CHOICE=$(choose "FastJet" "${FASTJET_OPTS[@]}")
+case "$FJ_CHOICE" in
+    SKIP)         FASTJET_PATH="" ;;
+    INSTALL)      FASTJET_PATH="$(install_fastjet)" ;;
+    CUSTOM:*)     FASTJET_PATH="${FJ_CHOICE#CUSTOM:}" ;;
+    *)            IFS=$'\t' read -r _k _s _v FASTJET_PATH <<< "$FJ_CHOICE"
+                  # If user picked "in-tree-src" (source only, not built), build it now.
+                  if [ "$_k" = "in-tree-src" ]; then
+                      warn "Selected FastJet is source-only; building it now."
+                      FASTJET_PATH="$(install_fastjet)"
+                  fi ;;
+esac
+
+# =============================================================================
+#  Persist choices
+# =============================================================================
+{
+    echo "# CAP dependency choices saved by setup-cap on $(date -u +%FT%TZ)"
+    echo "# Sourced automatically by SetupCAP.sh."
+    echo "export ROOTSYS=\"$ROOT_PATH\""
+    [ -n "$PYTHIA_PATH" ]  && echo "export CAP_PYTHIA8_PATH=\"$PYTHIA_PATH\""
+    [ -n "$FASTJET_PATH" ] && echo "export CAP_FASTJET_PATH=\"$FASTJET_PATH\""
+    echo "# CMake flags derived from the choices above:"
+    if [ -n "$PYTHIA_PATH" ]; then
+        echo "export CAP_CMAKE_FLAGS_PYTHIA=\"-DCAP_ENABLE_PYTHIA=ON -DCAP_PYTHIA8_PATH=$PYTHIA_PATH\""
+    else
+        echo "export CAP_CMAKE_FLAGS_PYTHIA=\"-DCAP_ENABLE_PYTHIA=OFF\""
+    fi
+    # Jets default: OFF.  The shipped Jets module has unresolved upstream
+    # issues (see JETS_KNOWN_ISSUES.md), so do NOT auto-enable it just
+    # because FastJet was found.  A user who really wants Jets must opt
+    # in explicitly via CAP_ENABLE_JETS=ON in the environment, or by
+    # passing --enable-jets to setup-cap.
+    enable_jets="${CAP_ENABLE_JETS:-OFF}"
+    if [ "$ENABLE_JETS_FLAG" = "1" ]; then enable_jets="ON"; fi
+    if [ "$enable_jets" = "ON" ] && [ -n "$FASTJET_PATH" ]; then
+        echo "export CAP_CMAKE_FLAGS_JETS=\"-DCAP_ENABLE_JETS=ON -DCAP_FASTJET_PATH=$FASTJET_PATH\""
+    else
+        # Still record the FastJet path so anyone who later flips Jets on
+        # doesn't have to re-run setup-cap.
+        if [ -n "$FASTJET_PATH" ]; then
+            echo "export CAP_CMAKE_FLAGS_JETS=\"-DCAP_ENABLE_JETS=OFF -DCAP_FASTJET_PATH=$FASTJET_PATH\""
+        else
+            echo "export CAP_CMAKE_FLAGS_JETS=\"-DCAP_ENABLE_JETS=OFF\""
+        fi
+    fi
+} > "$CONFIG_FILE"
+
+header "Saved to $CONFIG_FILE"
+cat "$CONFIG_FILE"
+
+cat <<EOF
+
+${GREEN}${BOLD}Next steps:${RESET}
+   1. ${BOLD}source ./SetupCAP.sh${RESET}      (loads the saved choices into your shell)
+   2. ${BOLD}cmake -S . -B build \$CAP_CMAKE_FLAGS_PYTHIA \$CAP_CMAKE_FLAGS_JETS${RESET}
+   3. ${BOLD}cmake --build build -j${RESET}
+   4. ${BOLD}cmake --install build${RESET}
+
+To re-run this picker:        ${DIM}./setup-cap${RESET}
+To see all detected options:  ${DIM}./setup-cap --list${RESET}
+To wipe choices:              ${DIM}./setup-cap --reset${RESET}
+EOF

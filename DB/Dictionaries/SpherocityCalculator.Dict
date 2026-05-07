@@ -1,0 +1,15 @@
+Spherocity:HistogramsScale                                   : BOOL       : 1
+Spherocity:HistogramsForceRewrite                            : BOOL       : 1
+Spherocity:HistogramsImportPath                              : STRING     : Default
+Spherocity:HistogramsImportFile                              : STRING     : Default
+Spherocity:HistogramsExportPath                              : STRING     : Default
+Spherocity:HistogramsExportFile                              : STRING     : Default
+Spherocity:HistogramBaseName                                 : STRING     : Spherocity
+Spherocity:FillCorrelationHistos                             : BOOL       : 0
+Spherocity:FillS0                                            : BOOL       : 1
+Spherocity:FillS1                                            : BOOL       : 0
+Spherocity:FillS1VsS0                                        : BOOL       : 0
+Spherocity:nSteps                                            : INTEGER    : 1000
+Spherocity:nBins_spherocity                                  : INTEGER    : 100
+Spherocity:Min_spherocity                                    : BOOL       : 0
+Spherocity:Max_spherocity                                    : BOOL       : 1

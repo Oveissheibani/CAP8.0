@@ -1,0 +1,97 @@
+\documentclass{beamer}
+%\usetheme{Boadilla}
+\usetheme{Warsaw}
+\title{Test}
+\subtitle{Using Beamer}
+\author{Claude Pruneau}
+\institute{Wayne State University}
+\date{\today}
+
+
+\begin{document}
+
+\begin{frame}
+	\titlepage
+\end{frame}
+
+\begin{frame}
+	\frametitle{Outline}
+	\tableofcontents
+\end{frame}
+
+\section{Definitions}
+
+\subsection{Blablablae}
+\begin{frame}
+	\frametitle{Slide 1}
+	Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+\end{frame}
+
+
+\subsection{DDDDDDDe}
+\begin{frame}
+	\frametitle{Slide 2}
+	WOWOWWOOWOWOWOWWa.
+\end{frame}
+
+\begin{frame}
+	\frametitle{List}
+	\begin{itemize}
+		\item Point A
+		\item Point B
+		\begin{itemize}
+			\item part 1
+			\item part 2
+		\end{itemize}
+		\item Point C
+		\item Point D
+	\end{itemize}
+\end{frame}
+
+\begin{frame}
+	\frametitle{Using Columns}
+	\begin{columns}
+		\column{0.5\textwidth}
+		This is a text
+		\column{0.5\textwidth}
+		This is another text
+	\end{columns}
+\end{frame}
+
+
+\begin{frame}
+	\frametitle{Pictures}
+	\begin{figure}
+	%	\includegraphics[scale=0.5]{lion}
+		\caption{lion!!}
+	\end{figure}
+	\begin{description}
+		\item[API] Application Programming Interface
+		\item[LAN] Local Area Network
+		\item[ASCII] American Standard Code for Information Interchange
+	\end{description}
+\end{frame}
+
+
+\begin{table}
+	\begin{tabular}{l | c | c | c | c }
+		Competitor Name & Swim & Cycle & Run & Total \\
+		\hline \hline
+		John T & 13:04 & 24:15 & 18:34 & 55:53 \\ 
+		Norman P & 8:00 & 22:45 & 23:02 & 53:47\\
+		Alex K & 14:00 & 28:00 & n/a & n/a\\
+		Sarah H & 9:22 & 21:10 & 24:03 & 54:35 
+	\end{tabular}
+	\caption{Triathlon results}
+\end{table}
+
+\begin{block}{Block Title}
+	Lorem ipsum dolor sit amet, consectetur adipisicing elit, 
+	sed do eiusmod tempor incididunt ut labore et 
+	dolore magna aliqua.
+\end{block}
+\hyperlink{contents}{click here}
+
+
+\end{document}
+

@@ -1,0 +1,6 @@
+SubSample:HistogramsScale                                    : BOOL       : 1
+SubSample:HistogramsForceRewrite                             : BOOL       : 1
+SubSample:HistogramsImportPath                               : STRING     : Default
+SubSample:HistogramsImportFile                               : STRING     : Default
+SubSample:HistogramsExportPath                               : STRING     : Default
+SubSample:HistogramsExportFile                               : STRING     : Default
