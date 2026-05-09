@@ -153,7 +153,7 @@ public:
   //!\endverbatim
   //!in which obs_first and obs_second represent two distinc pair combinations of the given observable. This function is useful to
   //!compute differences of pair histograms such as obs_1Bar_2 and obs_1_2Bar which is expected to be null in the context
-  //!of particle production at very large sqrt(s). For instance, n2(proton,kaon-) could be very similar to n2(proton-bar,kaon+).
+  //!of particle production at very large std::sqrt(s). For instance, n2(proton,kaon-) could be very similar to n2(proton-bar,kaon+).
   //!
   //!@param histoBaseName Base name of the histograms (should usually correspond to the pair label
   //!@param eventClassName Name of the event filter used to select the events used to fill the given histograms

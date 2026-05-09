@@ -127,7 +127,7 @@ namespace CAP
   {
   switch (_type)
     {
-      case 0:  return exp(-chemicalPotential(t) / temperature);
+      case 0:  return std::exp(-chemicalPotential(t) / temperature);
       case 2:  return 1.0/fugacity(t);
       default: return 1.0;
     }
@@ -141,7 +141,7 @@ namespace CAP
   {
   switch (_type)
     {
-      case 1:  return exp(- chemicalPotentialAt(t,aX,aY,aZ)/temperature);
+      case 1:  return std::exp(- chemicalPotentialAt(t,aX,aY,aZ)/temperature);
       case 3:  return 1.0/fugacityAt(t,aX,aY,aZ);
       default: return 1.0;
     }

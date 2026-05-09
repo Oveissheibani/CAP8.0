@@ -13,7 +13,7 @@ double computeJt(TVector3 partP, TVector3 jetP )
   double jTx = partP.X() - dotProdN*jetPxHat;
   double jTy = partP.Y() - dotProdN*jetPyHat;
   double jTz = partP.Z() - dotProdN*jetPzHat;
-  return sqrt( jTx*jTx + jTy*jTy + jTz*jTz );
+  return std::sqrt( jTx*jTx + jTy*jTy + jTz*jTz );
 }
 
 void calculateJtTheta(double jet_px,
@@ -34,8 +34,8 @@ void calculateJtTheta(double jet_px,
   double jTx = part_px - dotProdN*jetPxHat;
   double jTy = part_py - dotProdN*jetPyHat;
   double jTz = part_pz - dotProdN*jetPzHat;
-  part_jt = sqrt( jTx*jTx + jTy*jTy + jTz*jTz );
-  part_theta = acos(dotProdN/part_p);
+  part_jt = std::sqrt( jTx*jTx + jTy*jTy + jTz*jTz );
+  part_theta = std::acos(dotProdN/part_p);
 }
 
 } // namespace CAP

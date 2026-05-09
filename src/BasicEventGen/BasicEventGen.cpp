@@ -148,7 +148,7 @@ void BasicEventGen::execute()
       r        = gRandom->Rndm();
       rapidity = rapidityMin + r*(rapidityMax-rapidityMin);
       pt       = gRandom->Exp(ptSlope);
-      mt       = sqrt(massSq[iType] + pt*pt);
+      mt       = std::sqrt(massSq[iType] + pt*pt);
       momentum.setTXYZ(mt*std::cosh(rapidity),pt*std::cos(phi),pt*std::sin(phi),mt*std::sinh(rapidity));
       Particle & particle = Particle::factory().nextObject();
       particle.reset();

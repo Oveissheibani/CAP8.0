@@ -168,11 +168,11 @@ Complex<T>  log(const Complex<T> & c)
 
 template <typename T>
 Complex<T>  log2(const Complex<T> & c)
-{return log(c)/std::log(2);}
+{return std::log(c)/std::log(2);}
 
 template <typename T>
 Complex<T>  log10(const Complex<T> & c)
-{return log(c)/std::log(10);}
+{return std::log(c)/std::log(10);}
 
 template <typename T>
 Complex<T>  sin(const Complex<T> & c)
@@ -186,19 +186,19 @@ Complex<T>  cos(const Complex<T> & c)
 
 template <typename T>
 Complex<T>  tan(const Complex<T> & c)
-{Complex<T>  cc=cos(c); return sin(c)*conjugate(cc)/cc.modulus2();}
+{Complex<T>  cc=std::cos(c); return std::sin(c)*conjugate(cc)/cc.modulus2();}
 
 template <typename T>
 Complex<T>  asin(const Complex<T> & c)
-{return -Complex<T>::I()*log(Complex<T>::I()*c+sign(1.,c.Im())*sqrt(1.-c*c));}
+{return -Complex<T>::I()*std::log(Complex<T>::I()*c+sign(1.,c.Im())*std::sqrt(1.-c*c));}
 
 template <typename T>
 Complex<T>  acos(const Complex<T> & c)
-{return -Complex<T>::I()*log(c+sign(1.,c.Im())*sqrt(c*c-1.));}
+{return -Complex<T>::I()*std::log(c+sign(1.,c.Im())*std::sqrt(c*c-1.));}
 
 template <typename T>
 Complex<T>  atan(const Complex<T> & c)
-{return -0.5*Complex<T>::I()*log((1.+Complex<T>::I()*c)/(1.-Complex<T>::I()*c));}
+{return -0.5*Complex<T>::I()*std::log((1.+Complex<T>::I()*c)/(1.-Complex<T>::I()*c));}
 
 template <typename T>
 Complex<T>  sinh(const Complex<T> & c)
@@ -212,19 +212,19 @@ Complex<T>  cosh(const Complex<T> & c)
 
 template <typename T>
 Complex<T>  tanh(const Complex<T> & c)
-{Complex<T>  cc=cosh(c); return sinh(c)*conjugate(cc)/cc.modulus2();}
+{Complex<T>  cc=std::cosh(c); return std::sinh(c)*conjugate(cc)/cc.modulus2();}
 
 template <typename T>
 Complex<T>  asinh(const Complex<T> & c)
-{return log(c+sign(1.,c.Im())*sqrt(c*c+1.));}
+{return std::log(c+sign(1.,c.Im())*std::sqrt(c*c+1.));}
 
 template <typename T>
 Complex<T>  acosh(const Complex<T> & c)
-{return log(c+sign(1.,c.Im())*sqrt(c*c-1.));}
+{return std::log(c+sign(1.,c.Im())*std::sqrt(c*c-1.));}
 
 template <typename T>
 Complex<T>  atanh(const Complex<T> & c)
-{return 0.5*log((1.+c)/(1.-c));}
+{return 0.5*std::log((1.+c)/(1.-c));}
 
 template <typename T>
 T absolute(const Complex<T> & c)
@@ -240,7 +240,7 @@ Complex<T>  power(const Complex<T> & x, const Complex<N> & y)
 
 template <typename T>
 Complex<T>  power(const Complex<T>& x, double y)
-{return Complex<T> (pow(x.modulus(),y),x.theta()*y,true);}
+{return Complex<T> (std::pow(x.modulus(),y),x.theta()*y,true);}
 
 template <typename T>
 Complex<T>  power(double x, const Complex<T> & y)
@@ -251,7 +251,7 @@ Complex<T>  power(double x, const Complex<T> & y)
 
 template <typename T>
 Complex<T>  power(const Complex<T> & x, int y)
-{return Complex<T> (pow(x.modulus(),y),x.theta()*y,true);}
+{return Complex<T> (std::pow(x.modulus(),y),x.theta()*y,true);}
 
 
 template <typename T, typename N>

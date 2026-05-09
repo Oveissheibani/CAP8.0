@@ -77,7 +77,7 @@ namespace CAP
 
   float quadSum(float x, float y)
   {
-  return sqrt(x*x + y*y);
+  return std::sqrt(x*x + y*y);
   }
 
   //!
@@ -86,7 +86,7 @@ namespace CAP
   bool equal(float x1, float ex1, float x2, float ex2, float nSigma=2.0)
   {
   float dx = abs(x2-x1);
-  float error = sqrt(ex1*ex1 + ex2*ex2);
+  float error = std::sqrt(ex1*ex1 + ex2*ex2);
   if (dx<nSigma*error) return true
   }
 
@@ -250,7 +250,7 @@ namespace CAP
     double uncertainty1 = count1*_uncertainties[k];
     double uncertainty2 = 0;
     double value = (value1 * value2)/count;
-    double uncertainty = sqrt(uncertainty1*uncertainty1 + uncertainty2*uncertainty2)/count;
+    double uncertainty = std::sqrt(uncertainty1*uncertainty1 + uncertainty2*uncertainty2)/count;
     _entries[k] = count;
     _values[k]  = value;
     _uncertainties[k] = uncertainty;
@@ -269,7 +269,7 @@ namespace CAP
     double uncertainty1 = count1*_uncertainties[k];
     double uncertainty2 = 0;
     double value = (value1 * value2)/count;
-    double uncertainty = sqrt(uncertainty1*uncertainty1 + uncertainty2*uncertainty2)/count;
+    double uncertainty = std::sqrt(uncertainty1*uncertainty1 + uncertainty2*uncertainty2)/count;
     _entries[k] = count;
     _values[k]  = value;
     _uncertainties[k] = uncertainty;
@@ -317,7 +317,7 @@ namespace CAP
     double uncertainty2 = coefficient*count2*rhs._uncertainties[k];
     double count = count1 + count2;
     double value = (value1 * value2)/count;
-    double uncertainty = sqrt(uncertainty1*uncertainty1 + uncertainty2*uncertainty2)/count;
+    double uncertainty = std::sqrt(uncertainty1*uncertainty1 + uncertainty2*uncertainty2)/count;
     _entries[k] = count;
     _values[k]  = value;
     _uncertainties[k] = uncertainty;
@@ -341,7 +341,7 @@ namespace CAP
     double uncertainty2 = coefficient*count2*rhs._uncertainties[k];
     double count = count1 + count2;
     double value = (value1 / value2)/count;
-    double uncertainty = sqrt(uncertainty1*uncertainty1 + uncertainty2*uncertainty2)/count;
+    double uncertainty = std::sqrt(uncertainty1*uncertainty1 + uncertainty2*uncertainty2)/count;
     _entries[k] = count;
     _values[k]  = value;
     _uncertainties[k] = uncertainty;
@@ -404,7 +404,7 @@ namespace CAP
     double uncertainty2 = coefficient2*count2*h2._uncertainties[k];
     double count = count1 + count2;
     double value = (value1 + value2)/count;
-    double uncertainty = sqrt(uncertainty1*uncertainty1 + uncertainty2*uncertainty2)/count;
+    double uncertainty = std::sqrt(uncertainty1*uncertainty1 + uncertainty2*uncertainty2)/count;
     _entries[k] = count;
     _values[k]  = value;
     _uncertainties[k] = uncertainty;
@@ -446,7 +446,7 @@ namespace CAP
       double uncertainty2 = coefficient[iHisto]*count*histograms[iHisto]->_uncertainties[k];
       double count = count1 + count2;
       double value = (value1 + value2)/count;
-      double uncertainty = sqrt(uncertainty1*uncertainty1 + uncertainty2*uncertainty2)/count;
+      double uncertainty = std::sqrt(uncertainty1*uncertainty1 + uncertainty2*uncertainty2)/count;
       _entries[k] = count;
       _values[k]  = value;
       _uncertainties[k] = uncertainty;
@@ -473,7 +473,7 @@ namespace CAP
     double uncertainty2 = coefficient2*count2*h2._uncertainties[k];
     double count = count1 + count2;
     double value = (value1 * value2)/count;
-    double uncertainty = sqrt(uncertainty1*uncertainty1 + uncertainty2*uncertainty2)/count;
+    double uncertainty = std::sqrt(uncertainty1*uncertainty1 + uncertainty2*uncertainty2)/count;
     _entries[k] = count;
     _values[k]  = value;
     _uncertainties[k] = uncertainty;
@@ -513,7 +513,7 @@ namespace CAP
       double uncertainty2 = coefficient[iHisto]*count*histograms[iHisto]->_uncertainties[k];
       double count = count1 + count2;
       double value = (value1 * value2)/count;
-      double uncertainty = sqrt(uncertainty1*uncertainty1 + uncertainty2*uncertainty2)/count;
+      double uncertainty = std::sqrt(uncertainty1*uncertainty1 + uncertainty2*uncertainty2)/count;
       _entries[k] = count;
       _values[k]  = value;
       _uncertainties[k] = uncertainty;
@@ -541,7 +541,7 @@ namespace CAP
     double uncertainty2 = coefficient2*count2*h2._uncertainties[k];
     double count = count1 + count2;
     double value = (value1 / value2)/count;
-    double uncertainty = sqrt(uncertainty1*uncertainty1 + uncertainty2*uncertainty2)/count;
+    double uncertainty = std::sqrt(uncertainty1*uncertainty1 + uncertainty2*uncertainty2)/count;
     _entries[k] = count;
     _values[k]  = value;
     _uncertainties[k] = uncertainty;

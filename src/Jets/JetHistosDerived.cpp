@@ -130,7 +130,7 @@ void calculateRms(const TH1 * valueSqVsX, const TH1 * valueVsX, TH1 * rmsVsX)
     v    = valueVsX->GetBinContent(i1);
     rmsSq  = vSq - v*v;
     if (rms>0.0)
-      rms = sqrt(rmsSq);
+      rms = std::sqrt(rmsSq);
     else
       rms = 0.0;
     rmsVsX->SetBinContent(i1,rms); rmsVsX->SetBinError(i1,0.0);

@@ -441,11 +441,11 @@ void ParticlePair3DDerivedHistos::calculateDerivedHistograms(ParticleSingleDeriv
       phi1 = evPhi1[iParticle1];
       pt1  = evPt1[iParticle1];
       y1   = evY1[iParticle1];
-      mt1  = sqrt(mass1*mass1+pt1*pt1);
-      pa[0] = mt1*cosh(y1);
-      pa[1] = pt1*cos(phi1);
-      pa[2] = pt1*sin(phi1);
-      pa[3] = mt1*sinh(y1);
+      mt1  = std::sqrt(mass1*mass1+pt1*pt1);
+      pa[0] = mt1*std::cosh(y1);
+      pa[1] = pt1*std::cos(phi1);
+      pa[2] = pt1*std::sin(phi1);
+      pa[3] = mt1*std::sinh(y1);
 
       for (unsigned long iParticle2=0; iParticle2<evPhi2.size(); iParticle2++)
         {
@@ -453,11 +453,11 @@ void ParticlePair3DDerivedHistos::calculateDerivedHistograms(ParticleSingleDeriv
         phi2 = evPhi2[iParticle2];
         pt2  = evPt2[iParticle2];
         y2   = evY2[iParticle2];
-        mt2  = sqrt(mass2*mass2+pt2*pt2);
-        pb[0] = mt2*cosh(y2);
-        pb[1] = pt2*cos(phi2);
-        pb[2] = pt2*sin(phi2);
-        pb[3] = mt2*sinh(y2);
+        mt2  = std::sqrt(mass2*mass2+pt2*pt2);
+        pb[0] = mt2*std::cosh(y2);
+        pb[1] = pt2*std::cos(phi2);
+        pb[2] = pt2*std::sin(phi2);
+        pb[3] = mt2*std::sinh(y2);
         qinv=0.0;
         s=0.0;
         for(int alpha=0;alpha<4;alpha++)
@@ -467,14 +467,14 @@ void ParticlePair3DDerivedHistos::calculateDerivedHistograms(ParticleSingleDeriv
           q[alpha]=pa[alpha]-pb[alpha];
           qinv-=g[alpha]*q[alpha]*q[alpha];
           }
-        pt=sqrt(ptot[1]*ptot[1]+ptot[2]*ptot[2]);
-        Mlong=sqrt(s+pt*pt);
-        roots=sqrt(s);
+        pt=std::sqrt(ptot[1]*ptot[1]+ptot[2]*ptot[2]);
+        Mlong=std::sqrt(s+pt*pt);
+        roots=std::sqrt(s);
 
         qside=(ptot[1]*q[2]-ptot[2]*q[1])/pt;
         qlong=(ptot[0]*q[3]-ptot[3]*q[0])/Mlong;
         qout=(roots/Mlong)*(ptot[1]*q[1]+ptot[2]*q[2])/pt;
-        qinv=sqrt(qinv);
+        qinv=std::sqrt(qinv);
         h_n1n1_Qinv->Fill(qinv,weight);
         h_n1n1_DeltaP->Fill(qside,qout,qlong,weight);
         }

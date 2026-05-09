@@ -42,7 +42,7 @@ namespace CAP
   
   double SmearingProfile::evaluate(double x)
   {
-  return x*exp(-x*x/_twoNucleonSigmaSq);
+  return x*std::exp(-x*x/_twoNucleonSigmaSq);
   }
   
 }  // namespace CAP

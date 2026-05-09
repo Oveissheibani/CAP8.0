@@ -57,12 +57,12 @@ namespace CAP
 
   inline double gammaAtBeta(double beta)
   {
-  return 1.0/sqrt(1-beta*beta);
+  return 1.0/std::sqrt(1-beta*beta);
   }
 
   inline double gammaAtBetaSq(double betaSq)
   {
-  return 1.0/sqrt(1-betaSq);
+  return 1.0/std::sqrt(1-betaSq);
   }
 
   inline double gammaAtV(double v)

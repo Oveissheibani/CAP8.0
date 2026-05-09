@@ -172,18 +172,18 @@ void Particle::setPidPxPyPzE(long _pid, double p_x, double p_y, double p_z, doub
 
 void Particle::setRThetaPhiT(double r, double theta, double phi,double t)
 {
-  double rsinTh = r*sin(theta);
-  double x = rsinTh*cos(phi);
-  double y = rsinTh*sin(phi);
-  double z = r*cos(theta);
+  double rsinTh = r*std::sin(theta);
+  double x = rsinTh*std::cos(phi);
+  double y = rsinTh*std::sin(phi);
+  double z = r*std::cos(theta);
   _position.SetXYZT (x,y,z,t);
 }
 
 void Particle::setRCosThetaPhiT(double r, double cosTheta, double phi,double t)
 {
-  double rsinTh = r*sqrt(1.0-cosTheta*cosTheta);
-  double x = rsinTh*cos(phi);
-  double y = rsinTh*sin(phi);
+  double rsinTh = r*std::sqrt(1.0-cosTheta*cosTheta);
+  double x = rsinTh*std::cos(phi);
+  double y = rsinTh*std::sin(phi);
   double z = r*cosTheta;
   _position.SetXYZT (x,y,z,t);
 }
@@ -206,9 +206,9 @@ void Particle::boostRapidity(double boost)
   double py = momentum.y();
   double pz = momentum.z();
   double e  = momentum.t();
-  double mt = sqrt(e*e - pz*pz);
-  pz = mt * sinh(rapidity);
-  e  = mt * cosh(rapidity);
+  double mt = std::sqrt(e*e - pz*pz);
+  pz = mt * std::sinh(rapidity);
+  e  = mt * std::cosh(rapidity);
   momentum.SetPxPyPzE (px,py,pz,e);
   unsigned int nChildren = children.size();
   for (unsigned int iChildren=0; iChildren<nChildren; iChildren++)
@@ -228,7 +228,7 @@ double Particle::distanceXYZSq(Particle  * otherParticle)  const
 
 double Particle::distanceXYZ(Particle * otherParticle)  const
 {
-  return sqrt(distanceXYZSq(otherParticle));
+  return std::sqrt(distanceXYZSq(otherParticle));
 }
 
 
@@ -241,7 +241,7 @@ double Particle::distanceXYSq(Particle * otherParticle)  const
 
 double Particle::distanceXY(Particle * otherParticle)  const
 {
-  return sqrt(distanceXYSq(otherParticle));
+  return std::sqrt(distanceXYSq(otherParticle));
 }
 
 int Particle::factorySize = 5000;

@@ -54,7 +54,7 @@ namespace CAP
   double xr = x/_nnXSectLambda;
   double ss = _nnXSectOmega*_nnXSectOmega;
   double aa = xr/_nnXSect-1.0;
-  return (xr/(xr+_nnXSect))*exp(-aa*aa/ss)/_nnXSectLambda;
+  return (xr/(xr+_nnXSect))*std::exp(-aa*aa/ss)/_nnXSectLambda;
   }
 
   double PTotProfile::random()

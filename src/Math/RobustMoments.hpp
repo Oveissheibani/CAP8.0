@@ -85,9 +85,9 @@ public:
   moments[2] = nn*(oldM2 + deviate*deviate/n/n);
 
   T mean() const { return moments[1]; }
-  T meanUncertainty() const { return rms()/sqrt(n); }
+  T meanUncertainty() const { return rms()/std::sqrt(n); }
   T var() const { return moments[2]; }
-  T rms() const { return sqrt(moments[2]); }
+  T rms() const { return std::sqrt(moments[2]); }
 
 
 

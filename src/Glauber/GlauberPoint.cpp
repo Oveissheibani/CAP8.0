@@ -66,7 +66,7 @@ namespace CAP
   {
     float dx = _x - rhs._x;
     float dy = _y - rhs._y;
-    return sqrt(dx*dx + dy*dy);
+    return std::sqrt(dx*dx + dy*dy);
   }
   
     //!
@@ -84,7 +84,7 @@ namespace CAP
   {
     float dx = _x - rhs._x;
     float dy = _y - rhs._y;
-    return sqrt(dx*dx + dy*dy)<=maxDistance;
+    return std::sqrt(dx*dx + dy*dy)<=maxDistance;
   }
   
     //!
@@ -92,8 +92,8 @@ namespace CAP
     //!
   void   GlauberPoint::rotateXY(float phi)
   {
-    float cosPhi = cos(phi);
-    float sinPhi = sin(phi);
+    float cosPhi = std::cos(phi);
+    float sinPhi = std::sin(phi);
     float x = _x*cosPhi - _y*sinPhi;
     float y = _x*sinPhi + _y*cosPhi;
     _x = x;

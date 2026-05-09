@@ -111,13 +111,13 @@ namespace CAP
   double dPt       = 1.0/(zetac*zetac);
   double pPhi      = twoPi() * gRandom->Rndm();
   double pRapidity = _pRapidityRange * (gRandom->Rndm() - 0.5);
-  double mT        = sqrt(mass2+pT*pT);
-  double e         = mT * cosh(pRapidity);
-  _momentum.setTXYZ(e,pT*cos(pPhi),pT*sin(pPhi),mT*sinh(pRapidity));
+  double mT        = std::sqrt(mass2+pT*pT);
+  double e         = mT * std::cosh(pRapidity);
+  _momentum.setTXYZ(e,pT*std::cos(pPhi),pT*std::sin(pPhi),mT*std::sinh(pRapidity));
 
   double pDotU   = 1.0;
   double dSigmaP = 1.0;
-  double denom = stat + exp( (pDotU-chemPotential)/_temperature.value() );
+  double denom = stat + std::exp( (pDotU-chemPotential)/_temperature.value() );
   double integrand = sf*pT*dPt*dSigmaP/(denom*twoPiCube());
   hadron.setIntegrand(integrand);
   return integrand;
@@ -164,12 +164,12 @@ namespace CAP
 
         default:
         case 2: // Gaussian fluctuations
-        hadron.setMultiplicity(TMath::Max(0, int(gRandom->Gaus(mean,sqrt(mean)))));
+        hadron.setMultiplicity(TMath::Max(0, int(gRandom->Gaus(mean,std::sqrt(mean)))));
         break;
 
         case 3:  // Poisson or Gaussian fluctuations
         if (mean>20)
-          hadron.setMultiplicity(TMath::Max(0, int(gRandom->Gaus(mean,sqrt(mean)))));
+          hadron.setMultiplicity(TMath::Max(0, int(gRandom->Gaus(mean,std::sqrt(mean)))));
         else
           hadron.setMultiplicity(TMath::Max(0, int(gRandom->Poisson(mean))));
         break;

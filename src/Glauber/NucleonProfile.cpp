@@ -35,7 +35,7 @@ namespace CAP
 
   double NucleonProfile::evaluate(double x)
   {
-  return x*x*exp(-x/_nucleonRadius);
+  return x*x*std::exp(-x/_nucleonRadius);
   }
 
 }  // namespace CAP

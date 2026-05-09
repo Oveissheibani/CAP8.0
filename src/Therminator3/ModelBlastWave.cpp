@@ -25,7 +25,7 @@ namespace CAP
   double sPhi      = twoPi() * gRandom->Rndm();
   double sRapidity = _sRapidityRange * (gRandom->Rndm() - 0.5);
   double tau       = _tauI;
-  _position.setTXYZ(tau*cosh(sRapidity),rho*cos(sPhi),rho*sin(sPhi),tau*sinh(sRapidity));
+  _position.setTXYZ(tau*std::cosh(sRapidity),rho*std::cos(sPhi),rho*std::sin(sPhi),tau*std::sinh(sRapidity));
 
   double zeta      = gRandom->Rndm();
   double zetac     = (zeta>0.9999999) ? 0.00000001 : 1.00-zeta;
@@ -33,14 +33,14 @@ namespace CAP
   double dPt       = 1.0/(zetac*zetac);
   double pPhi      = twoPi() * gRandom->Rndm();
   double pRapidity = _pRapidityRange * (gRandom->Rndm() - 0.5);
-  double mT        = sqrt(mass2+pT*pT);
-  double e         = mT*cosh(pRapidity);
-  _momentum.setTXYZ(e,pT*cos(pPhi),pT*sin(pPhi),mT*sinh(pRapidity));
+  double mT        = std::sqrt(mass2+pT*pT);
+  double e         = mT*std::cosh(pRapidity);
+  _momentum.setTXYZ(e,pT*std::cos(pPhi),pT*std::sin(pPhi),mT*std::sinh(pRapidity));
 
-  double mTcoshDiff = mT * (cosh(sRapidity - pRapidity));
-  double pDotU      = _tGamma * (mTcoshDiff - _tVelocity*pT * cos(sPhi-pPhi));
+  double mTcoshDiff = mT * (std::cosh(sRapidity - pRapidity));
+  double pDotU      = _tGamma * (mTcoshDiff - _tVelocity*pT * std::cos(sPhi-pPhi));
   double dSigmaP    = tau*rho*mTcoshDiff;
-  double denom      = stat + exp( (pDotU-chemPotential)/_temperature.value() );
+  double denom      = stat + std::exp( (pDotU-chemPotential)/_temperature.value() );
   double integrand = sf*pT*dPt*dSigmaP/(denom*twoPiCube());
   hadron.setIntegrand(integrand);
   return integrand;

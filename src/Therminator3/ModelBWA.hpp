@@ -35,7 +35,7 @@ namespace CAP
  * </table>
  * <ul>
  *   <li> linearized transverse flow: @f$ v^{lin}_{T}(\_rho) = \frac{\_rho / \rho_{ampx}}{v_T + \_rho / \rho_{ampx}} @f$
- *   <li> delayed emission time: @f$ t(X) = t_0 + \_lambda * \log(X) @f$
+ *   <li> delayed emission time: @f$ t(X) = t_0 + \_lambda * \std::log(X) @f$
  *        where random variable @f$ X \in (0,1) @f$ and @f$ t_0 @f$ is the particle time on the hypersurface </li>
  *   <li> space foramption: @f$ x_{i}(t(X)) = x^{0}_{i} + \frac{p_{i}}{E} \,t @f$
  *        where @f$ x^{0}_{i} @f$ - particle _position on the hypersurface,
@@ -46,8 +46,8 @@ namespace CAP
  * @f{eqnarray}{
  *   I			&=& \frac{2 s+1}{\left(2\pi\right)^3} \,d\Sigamp_\mu p^\mu \left[ \exp \left( \frac{p_\mu u^\mu - \mu_{ch}}{T}\right) \pm 1\right]^{-1} p_T \,dp_T \,d\phi_p \,dy \nonumber \\
  *   \nonumber\\ \nonumber\\
- *   d\Sigamp_\mu p^\mu	&=& \left[ m_T \cosh(\eta_\parallel - y) - A  \,p_T \cos(\phi - \phi_p) \right] \left( \_tau  + A \,\_rho \right) \,\_rho \,d\_rho \,d\phi \,d\eta_\parallel \nonumber \nonumber \\
- *   p_\mu u^\mu	&=& \frac{1}{\sqrt{1-v_T^2}} \left[ m_T \cosh(\eta_\parallel - y) - v_T \,p_T \cos(\phi - \phi_p)\right] \nonumber
+ *   d\Sigamp_\mu p^\mu	&=& \left[ m_T \std::cosh(\eta_\parallel - y) - A  \,p_T \std::cos(\phi - \phi_p) \right] \left( \_tau  + A \,\_rho \right) \,\_rho \,d\_rho \,d\phi \,d\eta_\parallel \nonumber \nonumber \\
+ *   p_\mu u^\mu	&=& \frac{1}{\std::sqrt{1-v_T^2}} \left[ m_T \std::cosh(\eta_\parallel - y) - v_T \,p_T \std::cos(\phi - \phi_p)\right] \nonumber
  * @f}
  * where (link to all variable tables)
  *

@@ -35,8 +35,8 @@ namespace CAP
   double dPt       = 1.0/(zetac*zetac);
   double pPhi      = twoPi() * gRandom->Rndm();
   double pRapidity = _pRapidityRange * (gRandom->Rndm() - 0.5);
-  double mT        = sqrt(mass2+pT*pT);
-  //double e         = mT*cosh(pRapidity);
+  double mT        = std::sqrt(mass2+pT*pT);
+  //double e         = mT*std::cosh(pRapidity);
 
   double vT;
   switch (_modelSubtype)
@@ -52,29 +52,29 @@ namespace CAP
     }
   // Invariants
   double gammaT     = gammaAtBeta(vT);
-  double mTcoshDiff = mT*(cosh(sRapidity-pRapidity));
-  double cosDphi    = cos(sPhi-pPhi);
+  double mTcoshDiff = mT*(std::cosh(sRapidity-pRapidity));
+  double cosDphi    = std::cos(sPhi-pPhi);
 
   // Return values
-  double Xt = tau * cosh(sRapidity);
-  double Xx = rho * cos(sPhi);
-  double Xy = rho * sin(sPhi);
-  double Xz = tau * sinh(sRapidity);
+  double Xt = tau * std::cosh(sRapidity);
+  double Xx = rho * std::cos(sPhi);
+  double Xy = rho * std::sin(sPhi);
+  double Xz = tau * std::sinh(sRapidity);
 
-  double Pe = mT  * cosh(pRapidity);
-  double Px = pT  * cos(pPhi);
-  double Py = pT  * sin(pPhi);
-  double Pz = mT  * sinh(pRapidity);
+  double Pe = mT  * std::cosh(pRapidity);
+  double Px = pT  * std::cos(pPhi);
+  double Py = pT  * std::sin(pPhi);
+  double Pz = mT  * std::sinh(pRapidity);
 
   switch (_modelSubtype)
     {
       default: break;
       case 3:
       case 5:
-      Xt += -_delay * log(gRandom->Rndm()); break;
+      Xt += -_delay * std::log(gRandom->Rndm()); break;
       case 6:
-      double energy = sqrt(mT*mT + Pz*Pz);
-      Xt += -_delay * log(gRandom->Rndm());
+      double energy = std::sqrt(mT*mT + Pz*Pz);
+      Xt += -_delay * std::log(gRandom->Rndm());
       Xx += Xt * Px / energy;
       Xy += Xt * Py / energy;
       Xz += Xt * Pz / energy;
@@ -84,7 +84,7 @@ namespace CAP
   _momentum.setTXYZ(Pe,Px,Py,Pz);
   double pDotU   = gammaT*(mTcoshDiff - vT*pT*cosDphi);
   double dSigmaP = tau*rho*(mTcoshDiff - _amp*pT*cosDphi);
-  double denom   = stat + exp( (pDotU-chemPotential)/_temperature.value() );
+  double denom   = stat + std::exp( (pDotU-chemPotential)/_temperature.value() );
   double integrand = sf*pT*dPt*dSigmaP/(denom*twoPiCube());
   hadron.setIntegrand(integrand);
   return integrand;

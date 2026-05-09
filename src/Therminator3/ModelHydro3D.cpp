@@ -31,10 +31,10 @@ namespace CAP
   double uxFluidVelocity       = uxFluidVelocityField.interpolate(zeta,sPhi,theta);
   double uyFluidVelocity       = uyFluidVelocityField.interpolate(zeta,sPhi,theta);
   double rapidityFluidVelocity = rapidityFluidField.interpolate(zeta,sPhi,theta);
-  double tau       = _tauI + dhs*sin(theta)*sin(zeta);
-  double rho       = dhs * sin(theta)*cos(zeta);
-  double sRapidity = dhs * cos(theta)/_lambda;
-  _position.setTXYZ(tau *cosh(sRapidity),rho*cos(sPhi),rho*sin(sPhi),tau *sinh(sRapidity));
+  double tau       = _tauI + dhs*std::sin(theta)*std::sin(zeta);
+  double rho       = dhs * std::sin(theta)*std::cos(zeta);
+  double sRapidity = dhs * std::cos(theta)/_lambda;
+  _position.setTXYZ(tau *std::cosh(sRapidity),rho*std::cos(sPhi),rho*std::sin(sPhi),tau *std::sinh(sRapidity));
 
   zeta             = gRandom->Rndm();
   double zetac     = (zeta>0.9999999) ? 0.00000001 : 1.00-zeta;
@@ -42,18 +42,18 @@ namespace CAP
   double dPt       = 1.0/(zetac*zetac);
   double pPhi      = twoPi() * gRandom->Rndm();
   double pRapidity = _pRapidityRange * (gRandom->Rndm() - 0.5);
-  double mT        = sqrt(mass2+pT*pT);
-  double e         = mT*cosh(pRapidity);
-  _momentum.setTXYZ(e,pT*cos(pPhi),pT*sin(pPhi),mT*sinh(pRapidity));
+  double mT        = std::sqrt(mass2+pT*pT);
+  double e         = mT*std::cosh(pRapidity);
+  _momentum.setTXYZ(e,pT*std::cos(pPhi),pT*std::sin(pPhi),mT*std::sinh(pRapidity));
 
-  double pDotU = sqrt(1.0 + uxFluidVelocity * uxFluidVelocity + uyFluidVelocity*uyFluidVelocity)*mT*cosh(rapidityFluidVelocity - pRapidity) - pT*(uxFluidVelocity*cos(pPhi) + uyFluidVelocity*sin(pPhi));
-  double dSigmaP =  dhs*dhs*sin(theta) *
+  double pDotU = std::sqrt(1.0 + uxFluidVelocity * uxFluidVelocity + uyFluidVelocity*uyFluidVelocity)*mT*std::cosh(rapidityFluidVelocity - pRapidity) - pT*(uxFluidVelocity*std::cos(pPhi) + uyFluidVelocity*std::sin(pPhi));
+  double dSigmaP =  dhs*dhs*std::sin(theta) *
   ( tau  / _lambda * (
-                       dDdZeta * cos(zeta)* (-mT * cos(zeta) * cosh(pRapidity-sRapidity) + pT*sin(zeta)*cos(sPhi-pPhi))
-                       + (dhs*sin(theta) - dDdTheta*cos(theta))*cos(zeta)*sin(theta)*(mT*sin(zeta)*cosh(pRapidity-sRapidity) + pT*cos(zeta)*cos(sPhi-pPhi))
-                       + dDdPhi*pT*sin(sPhi-pPhi)
+                       dDdZeta * std::cos(zeta)* (-mT * std::cos(zeta) * std::cosh(pRapidity-sRapidity) + pT*std::sin(zeta)*std::cos(sPhi-pPhi))
+                       + (dhs*std::sin(theta) - dDdTheta*std::cos(theta))*std::cos(zeta)*std::sin(theta)*(mT*std::sin(zeta)*std::cosh(pRapidity-sRapidity) + pT*std::cos(zeta)*std::cos(sPhi-pPhi))
+                       + dDdPhi*pT*std::sin(sPhi-pPhi)
                        )
-   +   (dhs * cos(theta) + dDdTheta*sin(theta))*sin(theta)*mT*cos(zeta)*sinh(pRapidity-sRapidity)
+   +   (dhs * std::cos(theta) + dDdTheta*std::sin(theta))*std::sin(theta)*mT*std::cos(zeta)*std::sinh(pRapidity-sRapidity)
    );
   if (_backFlow)
     {
@@ -65,7 +65,7 @@ namespace CAP
     // disable particle emission back to the hydro-region
     if (dSigmaP < 0.0) dSigmaP = 0.0;
     }
-  double denom = stat + exp( (pDotU-chemPotential)/_temperature.value() );
+  double denom = stat + std::exp( (pDotU-chemPotential)/_temperature.value() );
   double integrand = sf*pT*dPt*dSigmaP/(denom*twoPiCube());
   hadron.setIntegrand(integrand);
   return integrand; }

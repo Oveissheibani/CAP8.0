@@ -1,4 +1,5 @@
 #include "MathBase.hpp"
+#include "MathConstants.hpp"
 #include <Math/SpecFuncMathCore.h>
 #include <Math/PdfFuncMathCore.h>
 #include <Math/ProbFuncMathCore.h>
@@ -201,13 +202,13 @@ double  betaPdf(double  x, double  p, double  q)
 //    {
 //    if (a < 1) return  std::numeric_limits<double>::infinity();
 //    else if (a > 1) return  0;
-//    else if ( a == 1) return b; // to avoid a nan from log(0)*0
+//    else if ( a == 1) return b; // to avoid a nan from std::log(0)*0
 //    }
 //  if (x == 1 )
 //    {
 //    if (b < 1) return  std::numeric_limits<double>::infinity();
 //    else if (b > 1) return  0;
-//    else if ( b == 1) return a; // to avoid a nan from log(0)*0
+//    else if ( b == 1) return a; // to avoid a nan from std::log(0)*0
 //    }
 //  return std::exp( lgamma(a + b) - lgamma(a) - lgamma(b) +
 //                  std::log(x) * (a -1.) + log1p(-x ) * (b - 1.) );
@@ -380,8 +381,8 @@ static double C[] = {
 
 //!
 //! Logarithm of gamma function */
-//! A[]: Stirling's formula expansion of log gamma
-//! B[], C[]: log gamma function between 2 and 3
+//! A[]: Stirling's formula expansion of std::log gamma
+//! B[], C[]: std::log gamma function between 2 and 3
 //!
 double lnGamma(double x )
 {
@@ -500,18 +501,18 @@ static double gammaStirling(double x)
   double y, w, v;
   w = 1.0/x;
   w = 1.0 + w * Polynomialeval( w, STIR, 4 );
-  y = exp(x);
+  y = std::exp(x);
   if( x > kMAXSTIR )
     { /* Avoid overflow in pow() */
-      v = pow( x, 0.5 * x - 0.25 );
+      v = std::pow( x, 0.5 * x - 0.25 );
       y = v * (v / y);
     }
   else
     {
-    y = pow( x, x - 0.5 ) / y;
+    y = std::pow( x, x - 0.5 ) / y;
     }
-  y = SQTPI * y * w;
-  return( y );
+  y = CAP::MATH::sqrtPi() * y * w;
+  return y;
 }
 
 
@@ -531,7 +532,7 @@ double gammaPdf(double x, double alpha, double beta)
 {
   if (alpha<=0.0 || beta<=0.0) throw MathException("gammaPdf() alpha<=0.0 || beta<=0.0");
   double arg =  alpha*std::log(beta) + (alpha-1)*std::log(x) - beta*x - lnGamma(alpha);
-  return exp(arg);
+  return std::exp(arg);
 }
 
 double gammaCdf(double x, double alpha, double beta)
@@ -577,7 +578,7 @@ double  gamCf(double  a,double  x)
     if (absolute(del-1) < eps) break;
     //if (i==itmax) std::cout << "*gamCf(a,x)* a too large or itmax too small" << std::endl;
   }
-  double  v = exp(-x+a*log(x)-gln)*h;
+  double  v = std::exp(-x+a*std::log(x)-gln)*h;
   return (1-v);
 }
 
@@ -605,7 +606,7 @@ double  GamSer(double  a,double  x)
     if (absolute(del) < absolute(sum*eps)) break;
     //if (n==itmax) std::cout << "*GamSer(a,x)* a too large or itmax too small" << std::endl;
   }
-  double  v = sum*exp(-x+a*log(x)-gln);
+  double  v = sum*std::exp(-x+a*std::log(x)-gln);
   return v;
 }
 
@@ -683,7 +684,7 @@ double  erfInverse(double  x)
 {
   int     kMaxit    = 50;
   double  kEps   = 1e-14;
-  double  kConst = 0.8862269254527579;     // sqrt(pi)/2.0
+  double  kConst = 0.8862269254527579;     // std::sqrt(pi)/2.0
 
   if(absolute(x) <= kEps) return kConst*x;
 
@@ -715,7 +716,7 @@ double  erfInverse(double  x)
 //!
 double  erfcInverse(double  x)
 {
-  // erfc-1(x) = - 1/sqrt(2) * normal_quantile( 0.5 * x)
+  // erfc-1(x) = - 1/std::sqrt(2) * normal_quantile( 0.5 * x)
   return - 0.70710678118654752440 * normQuantile( 0.5 * x);
 }
 
@@ -725,33 +726,33 @@ double  erfcInverse(double  x)
 double  standardNormalPdf(double x)
   {
   if (x < -39.0 || x > 39.0) return 0.0;
-  return exp(-0.5*x*x)/sqrtTwoPi();
+  return std::exp(-0.5*x*x)/std::sqrtTwoPi();
   }
 
 //!
 //! Computation of the CDF of the standard normal  PDF
-//! i.e.,  (1/sqrt(2pi)) Integral(exp(-t^2/2))dt between -infinity and x.
+//! i.e.,  (1/std::sqrt(2pi)) Integral(exp(-t^2/2))dt between -infinity and x.
 ///
 double standardNormalCdf(double  x)
 {
   if (x < -1.0)
-    return 0.5*erfc(-x);
+    return 0.5*std::erfc(-x);
   else
-    return 0.5*(1.0+erf(x));
+    return 0.5*(1.0+std::erf(x));
 }
 
 double standardNormalCdfC(double x);
 {
   if (x > 1.)
-    return 0.5*erfc(x);
+    return 0.5*std::erfc(x);
   else
-    return 0.5*(1.-erf(x));
+    return 0.5*(1.-std::erf(x));
 }
 
 //!
 //! Calculates the value of a normal (gaussian) function with mean and sigma at the give value of x.
 //! If norm=true (default is false) the result is divided
-//! by sqrt(2*Pi)*sigma.
+//! by std::sqrt(2*Pi)*sigma.
 //!
 double  normalPdf(double  x, double  mean, double  sigma)
 {
@@ -761,7 +762,7 @@ double  normalPdf(double  x, double  mean, double  sigma)
 
 //!
 //! Computation of the CDF of the normal  PDF
-//! i.e.,  (1/sqrt(2pi) sigma) Integral(exp(- (x-mean)^2/(2sigma^2))dx between -infinity and x.
+//! i.e.,  (1/std::sqrt(2pi) sigma) Integral(exp(- (x-mean)^2/(2sigma^2))dx between -infinity and x.
 ///
 double normalCdf(double  x)
 {
@@ -771,7 +772,7 @@ double normalCdf(double  x)
 
 //!
 //! Computation of the complement of the  CDF of the normal  PDF
-//! i.e.,  (1/sqrt(2pi) sigma) Integral(exp(- (x-mean)^2/(2sigma^2))dx between -infinity and x.
+//! i.e.,  (1/std::sqrt(2pi) sigma) Integral(exp(- (x-mean)^2/(2sigma^2))dx between -infinity and x.
 ///
 double normalCdf(double  x)
 {
@@ -854,7 +855,7 @@ double  normQuantile(double  p)
     if (r<=0)
       quantile=0;
     else {
-      r=sqrt(-log(r));
+      r=std::sqrt(-std::log(r));
       if (r<=split2) {
         r=r-konst2;
         quantile=(((((((c7 * r + c6) * r + c5) * r + c4) * r + c3)
@@ -890,12 +891,12 @@ double  normQuantile(double  p)
 double logNormalPdf(double  x, double  sigma, double  theta, double  m)
 {
   if ((x<theta) || (sigma<=0) || (m<=0)) throw MathException("logNormalPdf() illegal parameter values");
-  return logNormalPdf_pdf(x, log(m), sigma, theta);
+  return logNormalPdf_pdf(x, std::log(m), sigma, theta);
 }
 
 double logNormalCdf(double x, double sigma, double theta=0, double m=1)
 {
-  double z = (std::log((x-x0))-m)/(s*sqrtTwo());
+  double z = (std::log((x-x0))-m)/(s*std::sqrtTwo());
   if (z < -1.)
     return 0.5*erfc(-z);
   else
@@ -904,7 +905,7 @@ double logNormalCdf(double x, double sigma, double theta=0, double m=1)
 
 double logNormalCdfC(double x, double sigma, double theta=0, double m=1)
 {
-  double z = (std::log((x-x0))-m)/(s*sqrtTwo());
+  double z = (std::log((x-x0))-m)/(s*std::sqrtTwo());
   if (z > 1.)  return 0.5*erfc(z);
   else         return 0.5*(1.0 - erf(z));
 }
@@ -945,7 +946,7 @@ double breitwignerCdfC(double x, double gamma=1, double x0=0)
 
 //!
 //! Calculates a Relativistic Breit Wigner function with median and gamma.
-// \f$ BW(E) = \frac{2\sqrt{2}}{\pi}\frac{M^{2}\gamma\sqrt{M^{2} + \gamma^{2}}}{\left(\sqrt{M^{2}+M\sqrt{M^{2} + \gamma^{2}}}\right)\left(\left(E^{2} - M^{2}\right)^{2} + M^{2}\gamma^{2}\right)} \f$
+// \f$ BW(E) = \frac{2\std::sqrt{2}}{\pi}\frac{M^{2}\gamma\std::sqrt{M^{2} + \gamma^{2}}}{\left(\std::sqrt{M^{2}+M\std::sqrt{M^{2} + \gamma^{2}}}\right)\left(\left(E^{2} - M^{2}\right)^{2} + M^{2}\gamma^{2}\right)} \f$
 //! \param[in] x
 //! \param[in] median
 //! \param[in] gamma
@@ -955,8 +956,8 @@ double  breitWignerRelativisticPdf(double  x, double  median, double  gamma)
   double  gg = gamma*gamma;
   double  mg = median*gamma;
   double  xxMinusmm = x*x - mm;
-  double  y = sqrt(mm * (mm + gg));
-  double  k = (0.90031631615710606*mg*y)/(sqrt(mm+y)); //2*sqrt(2)/pi = 0.90031631615710606
+  double  y = std::sqrt(mm * (mm + gg));
+  double  k = (0.90031631615710606*mg*y)/(std::sqrt(mm+y)); //2*std::sqrt(2)/pi = 0.90031631615710606
   double  bw = k/(xxMinusmm*xxMinusmm + mg*mg);
   return bw;
 }
@@ -1052,29 +1053,29 @@ double  chiSquareQuantile(double  p, double  ndf)
   double  g = lnGamma(0.5*ndf);
   double  xx = 0.5 * ndf;
   double  cp = xx - 1;
-  if (ndf >= log(p)*(-c[5]))
+  if (ndf >= std::log(p)*(-c[5]))
     {
     //starting approximation for ndf less than or equal to 0.32
     if (ndf > c[3]) {
       x = normQuantile(p);
       //starting approximation using Wilson and Hilferty estimate
       p1=c[2]/ndf;
-      ch = ndf*power((x*sqrt(p1) + 1 - p1), 3);
+      ch = ndf*power((x*std::sqrt(p1) + 1 - p1), 3);
       if (ch > c[6]*ndf + 6)
-        ch = -2 * (log(1-p) - cp * log(0.5 * ch) + g);
+        ch = -2 * (std::log(1-p) - cp * std::log(0.5 * ch) + g);
     } else {
       ch = c[4];
-      a = log(1-p);
+      a = std::log(1-p);
       do{
         q = ch;
         p1 = 1 + ch * (c[7]+ch);
         p2 = ch * (c[9] + ch * (c[8] + ch));
         t = -0.5 + (c[7] + 2 * ch) / p1 - (c[9] + ch * (c[10] + 3 * ch)) / p2;
-        ch = ch - (1 - exp(a + g + 0.5 * ch + cp * aa) *p2 / p1) / t;
+        ch = ch - (1 - std::exp(a + g + 0.5 * ch + cp * aa) *p2 / p1) / t;
       }while (absolute(q/ch - 1) > c[1]);
     }
   } else {
-    ch = power((p * xx * exp(g + xx * aa)),(1./xx));
+    ch = power((p * xx * std::exp(g + xx * aa)),(1./xx));
     if (ch < e) return ch;
   }
   //call to algorithm AS 239 and calculation of seven term  Taylor series
@@ -1083,7 +1084,7 @@ double  chiSquareQuantile(double  p, double  ndf)
     p1 = 0.5 * ch;
     p2 = p - gamma(xx, p1);
 
-    t = p2 * exp(xx * aa + g + p1 - cp * log(ch));
+    t = p2 * std::exp(xx * aa + g + p1 - cp * std::log(ch));
     b = t / ch;
     a = 0.5 * t - b * cp;
     s1 = (c[19] + a * (c[17] + a * (c[14] + a * (c[13] + a * (c[12] +c[11] * a))))) / c[24];
@@ -1102,7 +1103,7 @@ double  chiSquareQuantile(double  p, double  ndf)
     //! Probability density function of the Landau distribution:
     //! \f[ p(x) = \frac{1}{\xi} \phi (\lambda) \f]
     //! with
-    //! \f[  \phi(\lambda) = \frac{1}{2 \pi i}\int_{c-i\infty}^{c+i\infty} e^{\lambda s + s \log{s}} ds\f]
+    //! \f[  \phi(\lambda) = \frac{1}{2 \pi i}\int_{c-i\infty}^{c+i\infty} e^{\lambda s + s \std::log{s}} ds\f]
     //! where \f$\lambda = (x-_x0)/\xi\f$. For a detailed description see
     //! K.S. K&ouml;lbig and B. Schorr, A program package for the Landau distribution,
     //! <A HREF="http://dx.doi.org/10.1016/0010-4655(84)90085-7">Computer Phys. Comm. 31 (1984) 97-111</A>
@@ -1424,7 +1425,7 @@ double landauXm2(double x, double xi, double x0)
   else
     {
     double u = v-v*std::log(v)/(v+1);
-    v        = 1/(u-u*(u+log(u)-v)/(u+1));
+    v        = 1/(u-u*(u+std::log(u)-v)/(u+1));
     u        = -std::log(v);
     xm2lan   = (1/v+u*u+a0[0]+a0[1]*u+(-u*u+a0[2]*u+a0[3]+
                                        (a0[4]*u*u+a0[5]*u+a0[6])*v)*v)/(1-(1-a0[4]*v)*v);
@@ -1449,9 +1450,9 @@ double  poissonPdf(double  x, double  mean) throw MathException
   if (x < 0)
     return 0;
   else if (x == 0.0 )
-    return exp(-mean);
+    return std::exp(-mean);
   else
-    return exp( x * log(mean) - lnGamma(x + 1.) - mean);
+    return std::exp( x * std::log(mean) - lnGamma(x + 1.) - mean);
 }
 
 //!
@@ -1548,13 +1549,13 @@ double fDistributionCdfC(double x, double n, double m, double x0)
 //! Physics', pp 269-270).
 ///
 //! This function returns the confidence level for the null hypothesis, where:
-//!  - \f$ z = dn \sqrt{n} \f$, and
+//!  - \f$ z = dn \std::sqrt{n} \f$, and
 //!     - \f$ dn \f$  is the maximum deviation between a hypothetical distribution
 //!           function and an experimental distribution with
 //!     - \f$ n \f$  events
 ///
 //! NOTE: To compare two experimental distributions with m and n events,
-//!       use \f$ z = \sqrt{m n/(m+n)) dn} \f$
+//!       use \f$ z = \std::sqrt{m n/(m+n)) dn} \f$
 ///
 //! Accuracy: The function is far too accurate for any imaginable application.
 //!           Probabilities less than \f$ 10^{-15} \f$ are returned as zero.
@@ -1577,7 +1578,7 @@ double  KolmogorovProb(double  z)
     p = 1;
   } else if (u < 0.755) {
     double  v = 1./(u*u);
-    p = 1 - w*(exp(c1*v) + exp(c2*v) + exp(c3*v))/u;
+    p = 1 - w*(std::exp(c1*v) + std::exp(c2*v) + std::exp(c3*v))/u;
   } else if (u < 6.8116) {
     r[1] = 0;
     r[2] = 0;
@@ -1585,7 +1586,7 @@ double  KolmogorovProb(double  z)
     double  v = u*u;
     int  maxj = Max(1,Nint(3./u));
     for (int  j=0; j<maxj;j++) {
-      r[j] = exp(fj[j]*v);
+      r[j] = std::exp(fj[j]*v);
     }
     p = 2*(r[0] - r[1] +r[2] - r[3]);
   } else {
@@ -1620,7 +1621,7 @@ double  KolmogorovProb(double  z)
 //! ### Method:
 //! The Kolmogorov test is used. The test statistic is the maximum deviation
 //! between the two integrated distribution functions, multiplied by the
-//! normalizing factor (rdmax*sqrt(na*nb/(na+nb)).
+//! normalizing factor (rdmax*std::sqrt(na*nb/(na+nb)).
 ///
 //!  Code adapted by Rene Brun from CERNLIB routine TKOLMO (Fred James)
 //!   (W.T. Eadie, D. Drijard, F.E. James, M. Roos and B. Sadoulet,
@@ -1694,7 +1695,7 @@ double  KolmogorovTest(int  na, const double  *a, int  nb, const double  *b, con
   if (ok)
     {
     rdmax = Max(rdmax,absolute(rdiff));
-    double  z = rdmax * sqrt(rna*rnb/(rna+rnb));
+    double  z = rdmax * std::sqrt(rna*rnb/(rna+rnb));
     prob = KolmogorovProb(z);
   }
   // debug printout
@@ -1718,7 +1719,7 @@ double  laplacePdf(double  x, double  alpha, double  beta)
 {
   if (beta<=0.0) throw MathException("laplacePdf() beta<=0.0");
   double arg = x-alpha;
-  return exp(-absolute(arg/beta)) / (2.*beta);
+  return std::exp(-absolute(arg/beta)) / (2.*beta);
 }
 
 //!
@@ -1731,9 +1732,9 @@ double  laplaceCdf(double  x, double  alpha, double  beta)
   if (beta<=0.0) throw MathException("laplaceCdf() beta<=0.0");
   double arg = x-alpha;
   if (arg<=0.0)
-    return 0.5*exp(arg/beta);
+    return 0.5*std::exp(arg/beta);
   else
-    return 1.0 - 0.5*exp(-arg/beta);
+    return 1.0 - 0.5*std::exp(-arg/beta);
 }
 
 //!
@@ -1746,9 +1747,9 @@ double  laplaceCdfC(double  x, double  alpha, double  beta)
   if (beta<=0.0) throw MathException("laplaceCdfC() beta<=0.0");
   double arg = x-alpha;
   if (arg<=0.0)
-    return 1.0 -0.5*exp(arg/beta);
+    return 1.0 -0.5*std::exp(arg/beta);
   else
-    return 0.5*exp(-arg/beta);
+    return 0.5*std::exp(-arg/beta);
 }
 
 double laplaceQuantile(double F, double alpha=0, double beta=1)
@@ -1778,7 +1779,7 @@ double laplaceQuantile(double F, double alpha=0, double beta=1)
 //! Example: suppose we have a random sample of size n drawn from normal
 //! distribution with mean Mu and st.deviation Sigma. Then the variable
 ///
-//!   t = (sample_mean - Mu)/(sample_deviation / sqrt(n))
+//!   t = (sample_mean - Mu)/(sample_deviation / std::sqrt(n))
 ///
 //! has Student's t-distribution with n-1 degrees of freedom.
 ///
@@ -1794,7 +1795,7 @@ double studentPdf(double  T, double  ndf)
   double  r   = ndf;
   double  rh  = 0.5*r;
   double  rh1 = rh + 0.5;
-  double  denom = sqrt(r*Pi())*gamma(rh)*power(1+T*T/r, rh1);
+  double  denom = std::sqrt(r*Pi())*gamma(rh)*power(1+T*T/r, rh1);
   return gamma(rh1)/denom;
 }
 
@@ -1860,12 +1861,12 @@ double studentQuantile(double  p, double  ndf, bool lower_tail)
     quantile = Cos(temp)/Sin(temp);
   } else {
     if ((ndf-2)<1e-8) {
-      quantile = sqrt(2./(q*(2-q))-2);
+      quantile = std::sqrt(2./(q*(2-q))-2);
     } else {
       double  a=1./(ndf-0.5);
       double  b=48./(a*a);
       double  c=((20700*a/b -98)*a-16)*a+96.36;
-      double  d=((94.5/(b+c)-3.)/b+1)*sqrt(a*PiOver2())*ndf;
+      double  d=((94.5/(b+c)-3.)/b+1)*std::sqrt(a*PiOver2())*ndf;
       double  x=q*d;
       double  y=power(x, (2./ndf));
       if (y>0.05+a){
@@ -1876,13 +1877,13 @@ double studentQuantile(double  p, double  ndf, bool lower_tail)
         c+=(((0.05*d*x-5.)*x-7.)*x-2.)*x +b;
         y=(((((0.4*y+6.3)*y+36.)*y+94.5)/c - y-3.)/b+1)*x;
         y=a*y*y;
-        if(y>0.002) y  = exp(y)-1;
+        if(y>0.002) y  = std::exp(y)-1;
         else        y += 0.5*y*y;
       } else {
         y=((1./(((ndf+6.)/(ndf*y)-0.089*d-0.822)*(ndf+2.)*3)+0.5/(ndf+4.))*y-1.)*
         (ndf+1.)/(ndf+2.)+1/y;
       }
-      quantile = sqrt(ndf*y);
+      quantile = std::sqrt(ndf*y);
     }
   }
   if(neg) quantile=-quantile;
@@ -2098,18 +2099,18 @@ void vavilovSet(double  rkappa, double  beta2, bool mode, double  *WCM, double  
   if (rkappa >= 0.29) {
     itype = 1;
     npt = 100;
-    double  wk = 1./sqrt(rkappa);
+    double  wk = 1./std::sqrt(rkappa);
 
     AC[0] = (-0.032227*beta2-0.074275)*rkappa + (0.24533*beta2+0.070152)*wk + (-0.55610*beta2-3.1579);
     AC[8] = (-0.013483*beta2-0.048801)*rkappa + (-1.6921*beta2+8.3656)*wk + (-0.73275*beta2-3.5226);
     DRK[1] = wk*wk;
-    DSIGM[1] = sqrt(rkappa/(1-0.5*beta2));
+    DSIGM[1] = std::sqrt(rkappa/(1-0.5*beta2));
     for (j=1; j<=4; j++) {
       DRK[j+1] = DRK[1]*DRK[j];
       DSIGM[j+1] = DSIGM[1]*DSIGM[j];
       ALFA[j+1] = (FNINV[j]-beta2*FNINV[j+1])*DRK[j];
     }
-    HC[0]=log(rkappa)+beta2+0.42278434;
+    HC[0]=std::log(rkappa)+beta2+0.42278434;
     HC[1]=DSIGM[1];
     HC[2]=ALFA[3]*DSIGM[3];
     HC[3]=(3*ALFA[2]*ALFA[2] + ALFA[4])*DSIGM[4]-3;
@@ -2125,7 +2126,7 @@ void vavilovSet(double  rkappa, double  beta2, bool mode, double  *WCM, double  
     itype = 2;
     npt = 150;
     x = 1+(rkappa-BKMXX3)*FBKX3;
-    y = 1+(sqrt(beta2)-BKMXY3)*FBKY3;
+    y = 1+(std::sqrt(beta2)-BKMXY3)*FBKY3;
     xx = 2*x;
     yy = 2*y;
     x2 = xx*x-1;
@@ -2156,7 +2157,7 @@ void vavilovSet(double  rkappa, double  beta2, bool mode, double  *WCM, double  
     itype = 3;
     npt = 200;
     x = 1 + (rkappa-BKMXX2)*FBKX2;
-    y = 1 + (sqrt(beta2)-BKMXY2)*FBKY2;
+    y = 1 + (std::sqrt(beta2)-BKMXY2)*FBKY2;
     xx = 2*x;
     yy = 2*y;
     x2 = xx*x-1;
@@ -2191,7 +2192,7 @@ void vavilovSet(double  rkappa, double  beta2, bool mode, double  *WCM, double  
     if (rkappa >=0.02) itype = 3;
     npt = 200;
     x = 1+(rkappa-BKMXX1)*FBKX1;
-    y = 1+(sqrt(beta2)-BKMXY1)*FBKY1;
+    y = 1+(std::sqrt(beta2)-BKMXY1)*FBKY1;
     xx = 2*x;
     yy = 2*y;
     x2 = xx*x-1;
@@ -2228,10 +2229,10 @@ void vavilovSet(double  rkappa, double  beta2, bool mode, double  *WCM, double  
   AC[10] = 1./AC[9];
   if (itype == 3) {
     x = (AC[7]-AC[8])/(AC[7]*AC[8]);
-    y = 1./log(AC[8]/AC[7]);
+    y = 1./std::log(AC[8]/AC[7]);
     p2 = AC[7]*AC[7];
-    AC[11] = p2*(AC[1]*exp(-AC[2]*(AC[7]+AC[5]*p2)-
-                                  AC[3]*exp(-AC[4]*(AC[7]+AC[6]*p2)))-0.045*y/AC[7])/(1+x*y*AC[7]);
+    AC[11] = p2*(AC[1]*std::exp(-AC[2]*(AC[7]+AC[5]*p2)-
+                                  AC[3]*std::exp(-AC[4]*(AC[7]+AC[6]*p2)))-0.045*y/AC[7])/(1+x*y*AC[7]);
     AC[12] = (0.045+x*AC[11])*y;
   }
   if (itype == 4) AC[13] = 0.995/landauI(AC[8]);
@@ -2277,16 +2278,16 @@ double  vavilovDenEval(double  rlam, double  *AC, double  *HC, int  itype)
     s = 1 + HC[7]*h[9];
     for (k=2; k<=6; k++)
       s+=HC[k]*h[k+1];
-    v = HC[8]*exp(-0.5*x*x)*Max(s, 0.);
+    v = HC[8]*std::exp(-0.5*x*x)*Max(s, 0.);
   }
   else if (itype == 2) {
     x = rlam*rlam;
-    v = AC[1]*exp(-AC[2]*(rlam+AC[5]*x) - AC[3]*exp(-AC[4]*(rlam+AC[6]*x)));
+    v = AC[1]*std::exp(-AC[2]*(rlam+AC[5]*x) - AC[3]*std::exp(-AC[4]*(rlam+AC[6]*x)));
   }
   else if (itype == 3) {
     if (rlam < AC[7]) {
       x = rlam*rlam;
-      v = AC[1]*exp(-AC[2]*(rlam+AC[5]*x)-AC[3]*exp(-AC[4]*(rlam+AC[6]*x)));
+      v = AC[1]*std::exp(-AC[2]*(rlam+AC[5]*x)-AC[3]*std::exp(-AC[4]*(rlam+AC[6]*x)));
     } else {
       x = 1./rlam;
       v = (AC[11]*x + AC[12])*x;
@@ -2302,7 +2303,7 @@ double  vavilovDenEval(double  rlam, double  *AC, double  *HC, int  itype)
 //! Computation of voigtPdf function (normalised).
 //! voigtPdf is a convolution of the two functions:
 //! \f[
-//! gauss(xx) = \frac{1}{(\sqrt{2\pi} sigma)} e^{\frac{xx^{2}}{(2 sigma{^2})}}
+//! gauss(xx) = \frac{1}{(\std::sqrt{2\pi} sigma)} e^{\frac{xx^{2}}{(2 sigma{^2})}}
 //! \f]
 //! and
 //! \f[
@@ -2334,7 +2335,7 @@ double  voigtPdf(double  xx, double  sigma, double  lg, int  r)
   }
 
   if (lg == 0) {   //pure gauss
-    return 0.39894228 / sigma * exp(-xx*xx / (2*sigma*sigma));
+    return 0.39894228 / sigma * std::exp(-xx*xx / (2*sigma*sigma));
   }
 
   double  x, y, k;
@@ -2346,8 +2347,8 @@ double  voigtPdf(double  xx, double  sigma, double  lg, int  r)
   if (r < 2) r = 2;
   if (r > 5) r = 5;
 
-  r0=1.51 * exp(1.144 * (double )r);
-  r1=1.60 * exp(0.554 * (double )r);
+  r0=1.51 * std::exp(1.144 * (double )r);
+  r1=1.60 * std::exp(0.554 * (double )r);
 
   // Constants
 
@@ -2509,10 +2510,10 @@ double  voigtPdf(double  xx, double  sigma, double  lg, int  r)
         + (c[j] * (pq[j] * pf[j] - y0 * yp[j])
            - s[j] * yf * xp[j]) / (pq[j]+y0q);
       }
-      k = y * k + exp( -xq );
+      k = y * k + std::exp( -xq );
     }
   }
-  return k / 2.506628 / sigma; // Normalize by dividing by sqrt(2*pi)*sigma.
+  return k / 2.506628 / sigma; // Normalize by dividing by std::sqrt(2*pi)*sigma.
 }
 
 
@@ -2735,7 +2736,7 @@ double crystalBallPdf(double x, double alpha, double n, double sigma, double mea
 //!
 //! Probability density function of the normal (Gaussian) distribution.
 //!
-//! \f[ p(x) = {1 \over \sqrt{2 \pi \sigma^2}} e^{-x^2 / 2\sigma^2} \f]
+//! \f[ p(x) = {1 \over \std::sqrt{2 \pi \sigma^2}} e^{-x^2 / 2\sigma^2} \f]
 //!
 //! For detailed description see
 //! <A HREF="http://mathworld.wolfram.com/NormalDistribution.html">
@@ -2755,7 +2756,7 @@ double crystalBallPdf(double x, double alpha, double n, double sigma, double mea
     //!
     //! Probability density function of the bi-dimensional (Gaussian) distribution.
     //!
-    //! \f[ p(x) = {1 \over 2 \pi \sigma_x \sigma_y \sqrt{1-\rho^2}} \exp (-((x-x0)^2/\sigma_x^2 + (y-y0)^2/\sigma_y^2 - 2 \rho x y/(\sigma_x\sigma_y))/2(1-\rho^2)) \f]
+    //! \f[ p(x) = {1 \over 2 \pi \sigma_x \sigma_y \std::sqrt{1-\rho^2}} \exp (-((x-x0)^2/\sigma_x^2 + (y-y0)^2/\sigma_y^2 - 2 \rho x y/(\sigma_x\sigma_y))/2(1-\rho^2)) \f]
     //!
     //! For detailed description see
     //! <A HREF="http://mathworld.wolfram.com/BivariateNormalDistribution.html">
@@ -2785,7 +2786,7 @@ double crystalBallPdf(double x, double alpha, double n, double sigma, double mea
     //!
     //! Probability density function of the lognormal distribution.
     //!
-    //! \f[ p(x) = {1 \over x \sqrt{2 \pi s^2} } e^{-(\ln{x} - m)^2/2 s^2} \f]
+    //! \f[ p(x) = {1 \over x \std::sqrt{2 \pi s^2} } e^{-(\ln{x} - m)^2/2 s^2} \f]
     //!
     //! for x>0. For detailed description see
     //! <A HREF="http://mathworld.wolfram.com/LogNormalDistribution.html">
@@ -2800,7 +2801,7 @@ double crystalBallPdf(double x, double alpha, double n, double sigma, double mea
       // Inlined to enable clad-auto-derivation for this function.
       if ((x-x0) <= 0) MathException("logNormalPdf() (x-x0) <= 0 ")
       double arg = (std::log((x-x0)) - m)/s;
-      return 1.0 / ((x-x0) * std::fabs(s) * sqrtTwoPi()) * std::exp(-(arg*arg) /2);
+      return 1.0 / ((x-x0) * std::fabs(s) * std::sqrtTwoPi()) * std::exp(-(arg*arg) /2);
     }
 
 
@@ -2824,7 +2825,7 @@ double crystalBallPdf(double x, double alpha, double n, double sigma, double mea
     //!
     //!Probability density function of Student's t-distribution.
     //!
-    //! \f[ p_{r}(x) = \frac{\Gamma(\frac{r+1}{2})}{\sqrt{r \pi}\Gamma(\frac{r}{2})} \left( 1+\frac{x^2}{r}\right)^{-(r+1)/2}  \f]
+    //! \f[ p_{r}(x) = \frac{\Gamma(\frac{r+1}{2})}{\std::sqrt{r \pi}\Gamma(\frac{r}{2})} \left( 1+\frac{x^2}{r}\right)^{-(r+1)/2}  \f]
     //!
     //! for \f$k \geq 0\f$. For detailed description see
     //! <A HREF="http://mathworld.wolfram.com/Studentst-Distribution.html">

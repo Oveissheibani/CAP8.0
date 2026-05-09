@@ -51,8 +51,8 @@ void EposEventReader::execute()
   if (useRandomizeEventPlane())
     {
     eventPhi = getRandomEventPlaneAngle();
-    cosPhi = cos(eventPhi);
-    sinPhi = sin(eventPhi);
+    cosPhi = std::cos(eventPhi);
+    sinPhi = std::sin(eventPhi);
     }
   
   VectorLorentz & sourcePosition = parentInteraction->position();
@@ -86,7 +86,7 @@ void EposEventReader::execute()
       p_y  = py[iParticle];
       }
     p_z  = pz[iParticle];
-    p_e  = sqrt(p_x*p_x + p_y*p_y + p_z*p_z + mass*mass);
+    p_e  = std::sqrt(p_x*p_x + p_y*p_y + p_z*p_z + mass*mass);
     particle->set(type,p_x,p_y,p_z,p_e,r_x,r_y,r_z,r_t,true);
     if (!particleFilters[0].accept(*particle)) continue;
     incrementNacceptedParticles();

@@ -112,12 +112,12 @@ double EfficiencyFunction::efficiency(double pt, double eta, double phi __attrib
   if (eta<etaLowEdge)
   {
     arg = eta-etaLowEdge;
-    etaEff = exp(-0.5*arg*arg/etaLowSigma2);
+    etaEff = std::exp(-0.5*arg*arg/etaLowSigma2);
   }
   else if (eta>=etaHighEdge)
   {
     arg = eta-etaHighEdge;
-    etaEff = exp(-0.5*arg*arg/etaHighSigma2);
+    etaEff = std::exp(-0.5*arg*arg/etaHighSigma2);
   }
   else
   {

@@ -129,8 +129,8 @@ void SpherocityAnalyzer::execute()
       double  refPhi  = 0.0;
       for(int k = 0; k < nSteps; k++)
         {
-        nx = cos(refPhi); // x component of a unitary vector n
-        ny = sin(refPhi); // y component of a unitary vector n
+        nx = std::cos(refPhi); // x component of a unitary vector n
+        ny = std::sin(refPhi); // y component of a unitary vector n
         num0 = 0;
         num1 = 0;
         for (auto particleSelected : particlesSelected)

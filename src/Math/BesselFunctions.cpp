@@ -30,7 +30,7 @@ double  besselI0(double  x)
     result = p1+y*(p2+y*(p3+y*(p4+y*(p5+y*(p6+y*p7)))));
   } else {
     y = k1/ax;
-    result = (exp(ax)/sqrt(ax))*(q1+y*(q2+y*(q3+y*(q4+y*(q5+y*(q6+y*(q7+y*(q8+y*q9))))))));
+    result = (std::exp(ax)/std::sqrt(ax))*(q1+y*(q2+y*(q3+y*(q4+y*(q5+y*(q6+y*(q7+y*(q8+y*q9))))))));
   }
   return result;
 }
@@ -55,10 +55,10 @@ double  besselK0(double  x)
   double  y=0, result=0;
   if (x <= 2) {
     y = x*x/4;
-    result = (-log(x/2.)*besselI0(x))+(p1+y*(p2+y*(p3+y*(p4+y*(p5+y*(p6+y*p7))))));
+    result = (-std::log(x/2.)*besselI0(x))+(p1+y*(p2+y*(p3+y*(p4+y*(p5+y*(p6+y*p7))))));
   } else {
     y = 2/x;
-    result = (exp(-x)/sqrt(x))*(q1+y*(q2+y*(q3+y*(q4+y*(q5+y*(q6+y*q7))))));
+    result = (std::exp(-x)/std::sqrt(x))*(q1+y*(q2+y*(q3+y*(q4+y*(q5+y*(q6+y*q7))))));
   }
   return result;
 }
@@ -92,7 +92,7 @@ double  besselI1(double  x)
     result = x*(p1+y*(p2+y*(p3+y*(p4+y*(p5+y*(p6+y*p7))))));
   } else {
     y = k1/ax;
-    result = (exp(ax)/sqrt(ax))*(q1+y*(q2+y*(q3+y*(q4+y*(q5+y*(q6+y*(q7+y*(q8+y*q9))))))));
+    result = (std::exp(ax)/std::sqrt(ax))*(q1+y*(q2+y*(q3+y*(q4+y*(q5+y*(q6+y*(q7+y*(q8+y*q9))))))));
     if (x < 0) result = -result;
   }
   return result;
@@ -119,10 +119,10 @@ double  besselK1(double  x)
 
   if (x <= 2) {
     y = x*x/4;
-    result = (log(x/2.)*besselI1(x))+(1./x)*(p1+y*(p2+y*(p3+y*(p4+y*(p5+y*(p6+y*p7))))));
+    result = (std::log(x/2.)*besselI1(x))+(1./x)*(p1+y*(p2+y*(p3+y*(p4+y*(p5+y*(p6+y*p7))))));
   } else {
     y = 2/x;
-    result = (exp(-x)/sqrt(x))*(q1+y*(q2+y*(q3+y*(q4+y*(q5+y*(q6+y*q7))))));
+    result = (std::exp(-x)/std::sqrt(x))*(q1+y*(q2+y*(q3+y*(q4+y*(q5+y*(q6+y*q7))))));
   }
   return result;
 }
@@ -172,7 +172,7 @@ double  besselI(int  n,double  x)
   double  bip = 0, bim = 0;
   double  bi  = 1;
   double  result = 0;
-  int  m = 2*((n+int (sqrt(float(iacc*n)))));
+  int  m = 2*((n+int (std::sqrt(float(iacc*n)))));
   for (int  j=m; j>=1; j--) {
     bim = bip+double (j)*tox*bi;
     bip = bi;
@@ -222,7 +222,7 @@ double  besselJ0(double  x)
     xx = ax-q1;
     result1 = 1  + y*(q2 + y*(q3 + y*(q4 + y*q5)));
     result2 = q6 + y*(q7 + y*(q8 + y*(q9 - y*q10)));
-    result  = sqrt(q11/ax)*(cos(xx)*result1-z*sin(xx)*result2);
+    result  = std::sqrt(q11/ax)*(std::cos(xx)*result1-z*std::sin(xx)*result2);
   }
   return result;
 }
@@ -257,7 +257,7 @@ double  besselJ1(double  x)
     xx = ax-q1;
     result1 = 1  + y*(q2 + y*(q3 + y*(q4 + y*q5)));
     result2 = q6 + y*(q7 + y*(q8 + y*(q9 + y*q10)));
-    result  = sqrt(q11/ax)*(cos(xx)*result1-z*sin(xx)*result2);
+    result  = std::sqrt(q11/ax)*(std::cos(xx)*result1-z*std::sin(xx)*result2);
     if (x < 0) result = -result;
   }
   return result;
@@ -285,14 +285,14 @@ double  besselY0(double  x)
     y = x*x;
     result1 = p1 + y*(p2 + y*(p3 + y*(p4  + y*(p5  + y*p6))));
     result2 = p7 + y*(p8 + y*(p9 + y*(p10 + y*(p11 + y))));
-    result  = (result1/result2) + p12*besselJ0(x)*log(x);
+    result  = (result1/result2) + p12*besselJ0(x)*std::log(x);
   } else {
     z  = 8/x;
     y  = z*z;
     xx = x-q1;
     result1 = 1  + y*(q2 + y*(q3 + y*(q4 + y*q5)));
     result2 = q6 + y*(q7 + y*(q8 + y*(q9 + y*q10)));
-    result  = sqrt(q11/x)*(sin(xx)*result1+z*cos(xx)*result2);
+    result  = std::sqrt(q11/x)*(std::sin(xx)*result1+z*std::cos(xx)*result2);
   }
   return result;
 }
@@ -321,14 +321,14 @@ double  besselY1(double  x)
     y=x*x;
     result1 = x*(p1 + y*(p2 + y*(p3 + y*(p4 + y*(p5  + y*p6)))));
     result2 = p7 + y*(p8 + y*(p9 + y*(p10 + y*(p11  + y*(p12+y)))));
-    result  = (result1/result2) + p13*(besselJ1(x)*log(x)-1/x);
+    result  = (result1/result2) + p13*(besselJ1(x)*std::log(x)-1/x);
   } else {
     z  = 8/x;
     y  = z*z;
     xx = x-q1;
     result1 = 1  + y*(q2 + y*(q3 + y*(q4 + y*q5)));
     result2 = q6 + y*(q7 + y*(q8 + y*(q9 + y*q10)));
-    result  = sqrt(q11/x)*(sin(xx)*result1+z*cos(xx)*result2);
+    result  = std::sqrt(q11/x)*(std::sin(xx)*result1+z*std::cos(xx)*result2);
   }
   return result;
 }
@@ -445,7 +445,7 @@ double  struveH1(double  x)
     y = v*v;
     r = 1;
     h = 1;
-    i1 = (int )(-8. / log10(v));
+    i1 = (int )(-8. / std::log10(v));
     for (i = 1; i <= i1; ++i) {
       h = -h*y / ((2*i+ 1)*(2*i + 3));
       r += h;
@@ -508,7 +508,7 @@ double  struveL0(double  x)
       s+=r;
       if(absolute(r/s)<1.0e-12) break;
     }
-    a1=exp(x)/sqrt(twoPi()*x);
+    a1=std::exp(x)/std::sqrt(twoPi()*x);
     r=1.0;
     bi0=1.0;
     for (i=1; i<=16; i++) {
@@ -552,7 +552,7 @@ double  struveL1(double  x)
       if(absolute(r/s)<1.0e-12) break;
     }
     sl1=2.0/pi()*(-1.0+1.0/(x*x)+3.0*s/(x*x*x*x));
-    a1=exp(x)/sqrt(twoPi()*x);
+    a1=std::exp(x)/std::sqrt(twoPi()*x);
     r=1.0;
     bi1=1.0;
     for (i=1; i<=16; i++) {

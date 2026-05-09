@@ -194,18 +194,18 @@ void Particle::print(unsigned int style)  const
 
 void Particle::setTRThetaPhi(double t, double r, double theta, double phi)
 {
-  double rsinTh = r*sin(theta);
-  double x = rsinTh*cos(phi);
-  double y = rsinTh*sin(phi);
-  double z = r*cos(theta);
+  double rsinTh = r*std::sin(theta);
+  double x = rsinTh*std::cos(phi);
+  double y = rsinTh*std::sin(phi);
+  double z = r*std::cos(theta);
   _position.setTXYZ(t,x,y,z);
 }
 
 void Particle::setTRCosThetaPhi(double t, double r, double cosTheta, double phi)
 {
-  double rsinTh = r*sqrt(1.0-cosTheta*cosTheta);
-  double x = rsinTh*cos(phi);
-  double y = rsinTh*sin(phi);
+  double rsinTh = r*std::sqrt(1.0-cosTheta*cosTheta);
+  double x = rsinTh*std::cos(phi);
+  double y = rsinTh*std::sin(phi);
   double z = r*cosTheta;
   _position.setTXYZ (t,x,y,z);
 }
@@ -225,8 +225,8 @@ void Particle::boostRapidity(double boost)
   double pz = _momentum.z();
   double e  = _momentum.t();
   double mt = _momentum.transverseMass();
-  pz = mt * sinh(rapidity);
-  e  = mt * cosh(rapidity);
+  pz = mt * std::sinh(rapidity);
+  e  = mt * std::cosh(rapidity);
   _momentum.setTXYZ (e,px,py,pz);
   for (auto & child : _children) child->boostRapidity(boost);
 }
@@ -250,7 +250,7 @@ double Particle::distanceXYSq(Particle & otherParticle)  const
 
 double Particle::distanceXY(Particle & otherParticle)  const
 {
-  return sqrt(distanceXYSq(otherParticle));
+  return std::sqrt(distanceXYSq(otherParticle));
 }
 
 bool Particle::_defaultOwner = true;

@@ -22,7 +22,7 @@ namespace CAP
   GlauberNucleus & nucleusA = event.nucleusA();
   GlauberNucleus & nucleusB = event.nucleusB();
 
-  double r = 0.5*sqrt(xs/pi()/10.);
+  double r = 0.5*std::sqrt(xs/pi()/10.);
   TEllipse spectEllipse;
   spectEllipse.SetLineStyle(spectLineStyle);
   spectEllipse.SetLineWidth(spectLineWidth);

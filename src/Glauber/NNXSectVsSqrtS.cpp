@@ -11,7 +11,7 @@ using CAP::MATH::power;
 namespace CAP
 {
   //!
-  //! nn_xSection vs sqrt{s}
+  //! nn_xSection vs std::sqrt{s}
   //! _sqrtS [GeV]
   //! nnXset [mb]
   //!
@@ -21,23 +21,23 @@ namespace CAP
   //! Phys.Rev. C97 (2018) 054910; Erratum: Phys.Rev. C99 (2019) 019901
   //! Parameters are from Table 1.
   //!
-  //! s_nn = A + B log^n(s)
+  //! s_nn = A + B std::log^n(s)
   //!
   //! Type    |    A                  |          B                 |     n                  |   chi^2/ndf
   //! ------------------------------------------------
-  //! s_nn = A + B log^n(s)
+  //! s_nn = A + B std::log^n(s)
   //! ln(s)     | -3.33 +- 1/58  |  4.195 +- 0.103    |     1  (fixed)      |   1/.52
   //! ln^2(s) | 25.0 +- 0.9      |  0.146 +- 0.004    |     2  (fixed)      | 0.97
   //! ln^n(s) | 29.8 +- 4.7      |  0.038 +- 0.060     |    2.43 +- 0.50 | 0.98
   //!
-  //!  s_nn  = A+B log^2(s) + C s^{-eta}
+  //!  s_nn  = A+B std::log^2(s) + C s^{-eta}
   //!  A = 24.4\pm 1.4
   //!  B = 0.01008 +- 0.1537
   //!  C = 0.1.454 +- 1.768
   //!  eta = 0.131 +- 0.0180
   //!  chi^2/ndf  1.09
   //!
-  //!  s_nn  A+B log^2(s)+D log(s)
+  //!  s_nn  A+B std::log^2(s)+D std::log(s)
   //!  A = 39.7 +- 1.4
   //!  B = 0.2212 +-0.0708
   //!  D = -2.154 +- 2.035
@@ -122,7 +122,7 @@ namespace CAP
 
       case 4:
       {
-      //!  s_nn  = A+B log^2(s) + C s^{-eta}
+      //!  s_nn  = A+B std::log^2(s) + C s^{-eta}
       //!  A = 24.4\pm 1.4
       //!  B = 0.01008 +- 0.1537
       //!  C = 0.1.454 +- 1.768
@@ -137,7 +137,7 @@ namespace CAP
 
       case 5:
       {
-      //!  s_nn  = A+B log^2(s)+D log(s)
+      //!  s_nn  = A+B std::log^2(s)+D std::log(s)
       //!  A = 39.7 +- 1.4
       //!  B = 0.2212 +-0.0708
       //!  D = -2.154 +- 2.035
@@ -153,7 +153,7 @@ namespace CAP
   }
 
   //!
-  //!Calculate the NN cross section at the given value of x=sqrt(s)
+  //!Calculate the NN cross section at the given value of x=std::sqrt(s)
   //!
   double NNXSectVsSqrtS::evaluate(double x)
   {
@@ -162,45 +162,45 @@ namespace CAP
   {
     case 1: // exponent n == 1
     {
-    result = _a + _b*log(x*x);
+    result = _a + _b*std::log(x*x);
     break;
     }
 
     case 2: // exponent n == 2
     {
-    double z = log(x*x);
+    double z = std::log(x*x);
     result = _a + _b*z*z;
     break;
     }
 
     case 3: // exponent n == 2.43
     {
-    result = _a + _b*power(log(x*x),_n);
+    result = _a + _b*power(std::log(x*x),_n);
     break;
     }
 
     case 4: // Compete collaboration
     {
-    //!  s_nn  = A+B log^2(s) + C s^{-eta}
+    //!  s_nn  = A+B std::log^2(s) + C s^{-eta}
     //!  A = 24.4\pm 1.4
     //!  B = 0.01008 +- 0.1537
     //!  C = 0.1.454 +- 1.768
     //!  eta = 0.131 +- 0.0180
     //!  chi^2/ndf  1.09
     double xx = x*x;
-    double z = log(xx);
+    double z = std::log(xx);
     result = _a + _b*z*z + _c*power(xx,-_eta);
     break;
     }
 
     case 5: // Compete collaboation
     {
-    //!  s_nn  = A+B log^2(s)+D log(s)
+    //!  s_nn  = A+B std::log^2(s)+D std::log(s)
     //!  A = 39.7 +- 1.4
     //!  B = 0.2212 +-0.0708
     //!  D = -2.154 +- 2.035
     double xx = x*x;
-    double z = log(xx);
+    double z = std::log(xx);
     result = _a + _b*z*z + _d*z;
     break;
     }

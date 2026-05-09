@@ -195,8 +195,8 @@ namespace CAP
       {
       smearRadius = 0.5;// fix me radialProfile->GetRandom();
       smearPhi    = twoPi() * gRandom->Rndm();
-      x += smearRadius*cos(smearPhi);
-      y += smearRadius*sin(smearPhi);
+      x += smearRadius*std::cos(smearPhi);
+      y += smearRadius*std::sin(smearPhi);
       }
     moments.fill(x,y);
     }
@@ -210,8 +210,8 @@ namespace CAP
       {
       smearRadius = 0.5;//radialProfile->GetRandom();
       smearPhi    = twoPi() * gRandom->Rndm();
-      x += smearRadius*cos(smearPhi);
-      y += smearRadius*sin(smearPhi);
+      x += smearRadius*std::cos(smearPhi);
+      y += smearRadius*std::sin(smearPhi);
       }
     moments.fill(x,y);
     }

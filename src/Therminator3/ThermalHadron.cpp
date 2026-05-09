@@ -182,7 +182,7 @@ namespace CAP
   double betaMass  = beta*mass;
   //double betaMass2 = betaMass*betaMass;
   double betaMu    = beta*mu;
-  double lambda    = exp(betaMu);
+  double lambda    = std::exp(betaMu);
   double fugacity = 1.0;
   double theta    = -1.0;
 

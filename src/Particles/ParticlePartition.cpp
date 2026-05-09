@@ -112,7 +112,7 @@ double   ParticlePartition::calculatePartitionProbability(vector<int> partition)
 
 double ParticlePartition::multinomial(vector<int> & partition, vecotr<double> probability)
 {
-  return exp(logMultinomial(partition,probability));
+  return std::exp(logMultinomial(partition,probability));
 }
 
 double ParticlePartition::logMultinomial(vector<int> & multiplicities, vecotr<double> probability)

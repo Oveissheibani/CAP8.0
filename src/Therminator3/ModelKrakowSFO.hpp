@@ -34,8 +34,8 @@ namespace CAP
  * @f{eqnarray}{
  *   I			&=& \frac{2 s+1}{\left(2\pi\right)^3} \,d\Sigamp_\mu p^\mu \left[ \exp \left( \frac{p_\mu u^\mu - \mu_{ch}}{T}\right) \pm 1\right]^{-1} p_T \,dp_T \,d\phi_p \,dy \nonumber \\
  *   \nonumber\\ \nonumber\\
- *   d\Sigamp_\mu p^\mu	&=& \left[ \sqrt{\_tau _C^2 + \_rho^2} \cosh(\eta_\parallel - y) - \_rho \,p_T \cos(\phi - \phi_p)\right] \,\_rho \,d\_rho \,d\phi \,d\eta_\parallel \nonumber \nonumber \\
- *   p_\mu u^\mu	&=& \frac{1}{\_tau _C} \left[ \sqrt{\_tau _C^2 + \_rho^2} \cosh(\eta_\parallel - y) - \_rho \,p_T \cos(\phi - \phi_p)\right] \nonumber
+ *   d\Sigamp_\mu p^\mu	&=& \left[ \std::sqrt{\_tau _C^2 + \_rho^2} \std::cosh(\eta_\parallel - y) - \_rho \,p_T \std::cos(\phi - \phi_p)\right] \,\_rho \,d\_rho \,d\phi \,d\eta_\parallel \nonumber \nonumber \\
+ *   p_\mu u^\mu	&=& \frac{1}{\_tau _C} \left[ \std::sqrt{\_tau _C^2 + \_rho^2} \std::cosh(\eta_\parallel - y) - \_rho \,p_T \std::cos(\phi - \phi_p)\right] \nonumber
  * @f}
  * where (link to all variable tables)
  *
@@ -71,9 +71,9 @@ namespace CAP
  * @brief @f$ \rho_{ampx} \,[GeV^{-1}] @f$, size of the fire-cylinder
  *
  * @var double ModelKrakowSFO::_tauC
- * @brief @f$ \_tau _C \sqrt{t^2 - x^2 - y^2 - z^2} \,[GeV^{-1}] @f$, Krakow-_type proper time
+ * @brief @f$ \_tau _C \std::sqrt{t^2 - x^2 - y^2 - z^2} \,[GeV^{-1}] @f$, Krakow-_type proper time
  *
- * The well known proper time can be evaluated as @f$ \_tau  = \sqrt{\_tau _C^2 + \_rho^2} @f$.
+ * The well known proper time can be evaluated as @f$ \_tau  = \std::sqrt{\_tau _C^2 + \_rho^2} @f$.
  *
  * @var Thermodynamics* ModelKrakowSFO::thermodynamics
  * @brief Pointer to the Thermodynamics class.

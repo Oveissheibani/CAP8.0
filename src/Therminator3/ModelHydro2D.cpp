@@ -33,9 +33,9 @@ namespace CAP
   double vT        = _vtFluidField.interpolate(zeta,sPhi,0.0);
   double gammaT    = gammaAtBeta(vT);
   double phiF      = _phiFluidField.interpolate(zeta,sPhi,0.0);
-  double tau       = _tauI + dhs*sin(zeta);
-  double rho       = dhs*cos(zeta);
-  _position.setTXYZ(tau*cosh(sRapidity),rho*cos(sPhi),rho*sin(sPhi),tau*sinh(sRapidity));
+  double tau       = _tauI + dhs*std::sin(zeta);
+  double rho       = dhs*std::cos(zeta);
+  _position.setTXYZ(tau*std::cosh(sRapidity),rho*std::cos(sPhi),rho*std::sin(sPhi),tau*std::sinh(sRapidity));
 
   zeta      = gRandom->Rndm();
   double zetac     = (zeta>0.9999999) ? 0.00000001 : 1.00-zeta;
@@ -43,16 +43,16 @@ namespace CAP
   double dPt       = 1.0/(zetac*zetac);
   double pPhi      = twoPi() * gRandom->Rndm();
   double pRapidity = _pRapidityRange * (gRandom->Rndm() - 0.5);
-  double mT        = sqrt(mass2+pT*pT);
-  double e         = mT * cosh(pRapidity);
-  _momentum.setTXYZ(e,pT*cos(pPhi),pT*sin(pPhi),mT*sinh(pRapidity));
+  double mT        = std::sqrt(mass2+pT*pT);
+  double e         = mT * std::cosh(pRapidity);
+  _momentum.setTXYZ(e,pT*std::cos(pPhi),pT*std::sin(pPhi),mT*std::sinh(pRapidity));
 
-  double pDotU   = gammaT * (mT*cosh(pRapidity-sRapidity) - vT*pT*cos(sPhi-pPhi+phiF));
-  double dSigmaP =  dhs*(_tauI+dhs*sin(zeta))
+  double pDotU   = gammaT * (mT*std::cosh(pRapidity-sRapidity) - vT*pT*std::cos(sPhi-pPhi+phiF));
+  double dSigmaP =  dhs*(_tauI+dhs*std::sin(zeta))
   * (
-     dhs*cos(zeta)*(mT*sin(zeta)*cosh(pRapidity-sRapidity)+pT*cos(zeta)*cos(sPhi-pPhi))
-     + dDdZeta*cos(zeta)*(-mT*cos(zeta)*cosh(pRapidity-sRapidity) + pT*sin(zeta)*cos(sPhi-pPhi))
-     + dDdPhi*pT*sin(sPhi-pPhi)
+     dhs*std::cos(zeta)*(mT*std::sin(zeta)*std::cosh(pRapidity-sRapidity)+pT*std::cos(zeta)*std::cos(sPhi-pPhi))
+     + dDdZeta*std::cos(zeta)*(-mT*std::cos(zeta)*std::cosh(pRapidity-sRapidity) + pT*std::sin(zeta)*std::cos(sPhi-pPhi))
+     + dDdPhi*pT*std::sin(sPhi-pPhi)
      );
   if (_backFlow)
     {
@@ -67,7 +67,7 @@ namespace CAP
     // disable particle emission back to the hydro-region
     if(dSigmaP < 0.0) dSigmaP = 0.0;
     }
-  double denom = stat + exp( (pDotU-chemPotential)/_temperature.value() );
+  double denom = stat + std::exp( (pDotU-chemPotential)/_temperature.value() );
   double integrand = sf*pT*dPt*dSigmaP/(denom*twoPiCube());
   hadron.setIntegrand(integrand);
   return integrand;

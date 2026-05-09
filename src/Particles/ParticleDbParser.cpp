@@ -244,7 +244,7 @@ double ParticleDbParser::clebschGordan(double aJot,  double aEm,
     {
     coef = power(-1, tIter);
     // PRINT_DEBUG_3("\t\t\tcoef1 " << coef);
-    coef *= sqrt( (2*aJot+1)
+    coef *= std::sqrt( (2*aJot+1)
                  * factorials[lrint(aJot1+aEm1)]
                  * factorials[lrint(aJot1-aEm1)]
                  * factorials[lrint(aJot2+aEm2)]
@@ -269,7 +269,7 @@ double ParticleDbParser::clebschGordan(double aJot,  double aEm,
 
 double ParticleDbParser::deltaJ(double aJot1, double aJot2, double aJot)
 {
-  double res = sqrt( 1.0
+  double res = std::sqrt( 1.0
                     * factorials[lrint( aJot1 + aJot2 - aJot)]
                     * factorials[lrint( aJot1 - aJot2 + aJot)]
                     * factorials[lrint(-aJot1 + aJot2 + aJot)]

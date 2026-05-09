@@ -645,14 +645,14 @@ namespace CAP
       {
       String s = "";
       s += iOrder+1;
-      h_sysCosPhiN.push_back( createHistogram(createName(_histogramBaseName,s,"sysCosPhiN"), _cs_nBins,  _cs_min,  _cs_max,  "#cos N#phi","N") );
-      h_sysSinPhiN.push_back( createHistogram(createName(_histogramBaseName,s,"sysSinPhiN"), _cs_nBins,  _cs_min,  _cs_max,  "#sin N#phi","N") );
+      h_sysCosPhiN.push_back( createHistogram(createName(_histogramBaseName,s,"sysCosPhiN"), _cs_nBins,  _cs_min,  _cs_max,  "#std::cos N#phi","N") );
+      h_sysSinPhiN.push_back( createHistogram(createName(_histogramBaseName,s,"sysSinPhiN"), _cs_nBins,  _cs_min,  _cs_max,  "#std::sin N#phi","N") );
       h_sysRnN.push_back(     createHistogram(createName(_histogramBaseName,s,"sysRn"),      _rN_nBins,  _rN_min,  _rN_max,  "r^{n}","N") );
       h_sysPsiN.push_back(    createHistogram(createName(_histogramBaseName,s,"sysPsiN"),    _psiN_nBins,_psiN_min,_psiN_max,"#psi_{n}","N") );
       h_sysEccN.push_back(    createHistogram(createName(_histogramBaseName,s,"sysEccN"),    _eccN_nBins,_eccN_min,_eccN_max,"#epsilon_{n}","N") );
 
-      h_sysCosPhiNVsImpact.push_back( createProfile(createName(_histogramBaseName,s,"sysCosPhiNVsImpact"), _impact_nBins,_impact_min,_impact_max,"b (fm)","#cos N#phi") );
-      h_sysSinPhiNVsImpact.push_back( createProfile(createName(_histogramBaseName,s,"sysSinPhiVsImpact"),  _impact_nBins,_impact_min,_impact_max,"b (fm)","#sin N#phi") );
+      h_sysCosPhiNVsImpact.push_back( createProfile(createName(_histogramBaseName,s,"sysCosPhiNVsImpact"), _impact_nBins,_impact_min,_impact_max,"b (fm)","#std::cos N#phi") );
+      h_sysSinPhiNVsImpact.push_back( createProfile(createName(_histogramBaseName,s,"sysSinPhiVsImpact"),  _impact_nBins,_impact_min,_impact_max,"b (fm)","#std::sin N#phi") );
       h_sysRnNVsImpact.push_back(     createProfile(createName(_histogramBaseName,s,"sysRnVsImpact"),      _impact_nBins,_impact_min,_impact_max,"b (fm)","r^{n}"    ) );
       h_sysPsiNVsImpact.push_back(    createProfile(createName(_histogramBaseName,s, "sysPsiNVsImpact"),   _impact_nBins,_impact_min,_impact_max,"b (fm)","#psi_{n}") );
       h_sysEccNVsImpact.push_back(    createProfile(createName(_histogramBaseName,s, "sysEccNVsImpact"),   _impact_nBins,_impact_min,_impact_max,"b (fm)","#epsilon_{n}") );
@@ -681,7 +681,7 @@ namespace CAP
   float yHalfWidth = 14.0;
   TH2 * h = createNewHistogram(eventName,1, -xHalfWidth, xHalfWidth, 1, -yHalfWidth, yHalfWidth, "x(fm)", "y(fm)","");
   TCanvas * canvas = new TCanvas(eventName,eventName,5,5,800, 800);
-  double protonRadius = 0.5*sqrt(event.eventXSection()/(pi()*10));
+  double protonRadius = 0.5*std::sqrt(event.eventXSection()/(pi()*10));
   h->Draw();
   TEllipse e;
   e.SetFillColor(0);
@@ -968,7 +968,7 @@ namespace CAP
     {
     density += 1;
     if (nucleon.isWounded() && nucleon.square2DDistanceTo(x,y)<=rMaxSq)
-      density += 0.0; //dist.evaluate(sqrt(rSq)); fix me!!!
+      density += 0.0; //dist.evaluate(std::sqrt(rSq)); fix me!!!
     }
   return density;
   }
@@ -1075,15 +1075,15 @@ namespace CAP
 
   double  GlauberHistos::calculateLength()
   {
-  //  const double krhs = sqrt(_xSectionEvent/40./pi());
-  //  const double ksg  = krhs/sqrt(5.0);
+  //  const double krhs = std::sqrt(_xSectionEvent/40./pi());
+  //  const double ksg  = krhs/std::sqrt(5.0);
   //  const double kDL  = 0.1;
   //  TF1 radiusProf("rad","2.0*pi/[0]/[0]*TMath::Exp(-x*x/(2.*[0]*[0]))",0.0,5*ksg);
   //  radiusProf.SetParameter(0,ksg);
   //  const double minval = radiusProf.Eval(5.0*ksg);
   //  double phi0         = gRandom->Uniform(0,twoPi());
-  //  double kcphi0  = cos(phi0);
-  //  double ksphi0  = sin(phi0);
+  //  double kcphi0  = std::cos(phi0);
+  //  double ksphi0  = std::sin(phi0);
   //  double x       = fEv.X0;
   //  double y       = fEv.Y0;
   //  double i0a     = 0;

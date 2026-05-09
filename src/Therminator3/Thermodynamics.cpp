@@ -22,7 +22,7 @@ namespace CAP
   {
   switch (chemistryType())
     {
-      case 0:  return exp( - chemicalPotential(particleType) / _temperature.value() );
+      case 0:  return std::exp( - chemicalPotential(particleType) / _temperature.value() );
       case 2:  return 1.0/fugacity(particleType);
       default: return 1.0;
     }
@@ -31,7 +31,7 @@ namespace CAP
   double Thermodynamics::invFugacityFactorAt(ParticleType & particleType, double aX, double aY, double aZ) const
   {
   switch (chemistryType()) {
-    case 1:  return exp( - chemicalPotentialAt(particleType, aX, aY, aZ) / _temperature.valueAt(aX, aY, aZ) );
+    case 1:  return std::exp( - chemicalPotentialAt(particleType, aX, aY, aZ) / _temperature.valueAt(aX, aY, aZ) );
     case 3:  return 1.0 / fugacityAt(particleType, aX, aY, aZ);
     default: return 1.0;
   }

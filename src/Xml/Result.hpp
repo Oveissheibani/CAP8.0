@@ -225,7 +225,7 @@ protected:
   String  bBeamName;
   String  aBeamTitle;
   String  bBeamTitle;
-  float   sqrtS;
+  float   std::sqrtS;
   String  collisionClassName;
   String  collisionClassTitle;
   vector<String> selectionCriteriaName;

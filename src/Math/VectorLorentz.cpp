@@ -149,7 +149,7 @@ void VectorLorentz::setTPhiRhoZ(const double & t, const double & phi, const doub
 
 void VectorLorentz::setMXYZ(const double & m, const double & x, const double & y, const double & z)
 {
-  _x0 = sqrt(m*m + x*x + y*y + z*z);
+  _x0 = std::sqrt(m*m + x*x + y*y + z*z);
   _x1 = x;
   _x2 = y;
   _x3 = z;
@@ -580,7 +580,7 @@ double VectorLorentz::distance(const VectorLorentz & other) const
   double dsq = dx0*dx0 -(dx1*dx1+dx2*dx2+dx3*dx3);
   if (dsq>=0)
     return std::sqrt(dsq);
-  throw MathDomainException(0.0,1.E100,dsq,"sqrt(arg) w/ arg<0",__FUNCTION__);
+  throw MathDomainException(0.0,1.E100,dsq,"std::sqrt(arg) w/ arg<0",__FUNCTION__);
 }
 
 } // namespace MATH

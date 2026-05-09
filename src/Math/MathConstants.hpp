@@ -95,18 +95,18 @@ namespace CAP
 
 
   //!
-  //! \f$ \sqrt{2\pi}\f$
+  //! \f$ \std::sqrt{2\pi}\f$
   constexpr double sqrtTwoPi()
   {
-  //  return sqrt(twoPi());
+  //  return std::sqrt(twoPi());
   return 2.506628274631000241612355239340104162693;
   }
 
   //!
-  //! \f$1/ \sqrt{2\pi}\f$
+  //! \f$1/ \std::sqrt{2\pi}\f$
   constexpr double oneOverSqrtTwoPi()
   {
-  //  return 1.0/sqrt(twoPi());  this is a test
+  //  return 1.0/std::sqrt(twoPi());  this is a test
   return 0.3989422804014327028632180827116826549172;
   }
 
@@ -126,7 +126,7 @@ namespace CAP
   }
 
   //!
-  //! \f$ \sqrt{2} \f$
+  //! \f$ \std::sqrt{2} \f$
   constexpr double sqrt2()
   {
   return 1.4142135623730950488016887242097;
@@ -140,7 +140,7 @@ namespace CAP
   }
 
   //!
-  //! \f$ 1/\sqrt{2} \f$
+  //! \f$ 1/\std::sqrt{2} \f$
   constexpr double sqrtHalf()
   {
   return 0.707106781186547524401;
@@ -149,7 +149,7 @@ namespace CAP
 
 
   //!
-  //! Base of natural log: \f$ e \f$
+  //! Base of natural std::log: \f$ e \f$
   constexpr double e()
   {
   return 2.71828182845904523536;
@@ -157,21 +157,21 @@ namespace CAP
 
 
   //!
-  //! Natural log of 10 (to convert log to ln)
+  //! Natural std::log of 10 (to convert std::log to ln)
   constexpr double ln2()
   {
   return 0.69314718055994528623;
   }
 
   //!
-  //! Natural log of 10 (to convert log to ln)
+  //! Natural std::log of 10 (to convert std::log to ln)
   constexpr double ln10()
   {
   return 2.30258509299404568402;
   }
 
   //!
-  //! Base-10 log of e  (to convert ln to log)
+  //! Base-10 std::log of e  (to convert ln to std::log)
   constexpr double logE()
   {
   return 0.43429448190325182765;

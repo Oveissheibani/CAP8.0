@@ -65,7 +65,7 @@ namespace CAP
     {
     //printValue("x",x);
     double arg = x/_r;
-    double p = exp(-0.5*arg*arg)/sqrtTwoPi()/_r;
+    double p = std::exp(-0.5*arg*arg)/CAP::MATH::sqrtTwoPi()/_r;
 //    printValue("x",x);
 //    printValue("p",p);
     return p;
@@ -91,7 +91,7 @@ namespace CAP
   {
   _xSection = xSection;
   _r2 = _xSection/(10.0*pi());
-  _r  = sqrt(_r2);
+  _r  = std::sqrt(_r2);
   if ((omega<0) || (omega>1))
     throw InvalidValueGlauberException(omega,"Must have 0.0<omega<=1.0",__FUNCTION__);
   _omega = omega;

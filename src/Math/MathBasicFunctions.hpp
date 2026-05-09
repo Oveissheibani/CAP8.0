@@ -25,7 +25,7 @@ namespace CAP
   //!
   //! Returns the binary (base-2) logarithm of `x`.
   //!
-  inline double log2(double x) {  return log(x)/log(2.0); }
+  inline double log2(double x) {  return std::log(x)/std::log(2.0); }
 
   //inline int
   //inline int  isFinite(float x);
@@ -220,7 +220,7 @@ namespace CAP
 //    {
 //    if (*first == 0) return 0.;
 //    double absolutea = (double) absolute(*first);
-//    logsum += log(absolutea);
+//    logsum += std::log(absolutea);
 //    ++first;
 //    ++n;
 //    }
@@ -267,7 +267,7 @@ namespace CAP
 //    ++first;
 //    ++n;
 //    }
-//  double rms = (n > 1) ? sqrt(tot/(n-1)) : 0.0;
+//  double rms = (n > 1) ? std::sqrt(tot/(n-1)) : 0.0;
 //  return rms;
 //  }
 //
@@ -292,7 +292,7 @@ namespace CAP
 //    ++w;
 //  }
 //  //! use the correction neff/(neff -1) for the unbiased formula
-//  double rms =  sqrt(tot * sumw/ (sumw*sumw - sumw2) );
+//  double rms =  std::sqrt(tot * sumw/ (sumw*sumw - sumw2) );
 //  return rms;
 //  }
 //

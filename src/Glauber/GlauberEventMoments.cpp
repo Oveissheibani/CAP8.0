@@ -144,7 +144,7 @@ namespace CAP
     {
     double xx = x - _meanX;
     double yy = y - _meanY;
-    double r  = sqrt(xx*xx+yy*yy);
+    double r  = std::sqrt(xx*xx+yy*yy);
     _xSum  +=  xx*weight;
     _ySum  +=  yy*weight;
     _x2Sum +=  xx*xx*weight;
@@ -156,12 +156,12 @@ namespace CAP
         {
         int iOrder = k+1;
 
-        double phi  = atan2(yy,xx);
+        double phi  = std::atan2(yy,xx);
         double exponent = (iOrder==1) ? 3.0 : iOrder; // use r^3 weighting for Ecc1/Psi1
         double rr = power(r,exponent);
         double n  = double(iOrder);
-        _cosPhiN[k] += rr*cos(n*phi);
-        _sinPhiN[k] += rr*sin(n*phi);
+        _cosPhiN[k] += rr*std::cos(n*phi);
+        _sinPhiN[k] += rr*std::sin(n*phi);
         _rN[k]      += rr;
         }
       }
@@ -228,16 +228,16 @@ namespace CAP
   _varX   =  _meanX2 - _meanX*_meanX;
   _varY   =  _meanY2 - _meanY*_meanY;
   _varXY  =  _meanXY - _meanX*_meanY;
-  _rmsX   = _varX>=0 ? sqrt(_varX) : -1.0E100;
-  _rmsY   = _varY>=0 ? sqrt(_varY) : -1.0E100;
+  _rmsX   = _varX>=0 ? std::sqrt(_varX) : -1.0E100;
+  _rmsY   = _varY>=0 ? std::sqrt(_varY) : -1.0E100;
   double varDiff = _varY - _varX;
   double varSum  = _varX + _varY;
   if (varSum>0)
     {
     _eccX = varDiff/varSum;
     _eccY = 2.0*_varXY/varSum;
-    _ecc  = sqrt(_eccX*_eccX + _eccY*_eccY);
-    _psi  = atan2(_eccY,_eccX);
+    _ecc  = std::sqrt(_eccX*_eccX + _eccY*_eccY);
+    _psi  = std::atan2(_eccY,_eccX);
     }
   else
     {
@@ -257,15 +257,15 @@ namespace CAP
       cp = _cosPhiN[k];
       if (_rN[k]>0)
         {
-        _psiN[k] = (atan2(sp,cp) + pi())/double(iOrder);
-        _eccN[k] = sqrt(sp*sp + cp*cp) / _rN[k];
+        _psiN[k] = (std::atan2(sp,cp) + pi())/double(iOrder);
+        _eccN[k] = std::sqrt(sp*sp + cp*cp) / _rN[k];
         _cosPhiN[k] /= _sum;
         _sinPhiN[k] /= _sum;
         _rN[k] /= _sum;
         sp = _sinPhiN[k];
         cp = _cosPhiN[k];
-        _psiN[k] = (atan2(sp,cp) + pi())/double(iOrder);
-        _eccN[k] = sqrt(sp*sp + cp*cp)/_rN[k];
+        _psiN[k] = (std::atan2(sp,cp) + pi())/double(iOrder);
+        _eccN[k] = std::sqrt(sp*sp + cp*cp)/_rN[k];
         }
       else
         {
@@ -342,8 +342,8 @@ namespace CAP
   double rho = -1;
   if (_varX>0  &&  _varY>0)
     {
-    rho = _varXY/(sqrt(_varX)*sqrt(_varY));
-    printValue("rho", sqrt(rho));
+    rho = _varXY/(std::sqrt(_varX)*std::sqrt(_varY));
+    printValue("rho", std::sqrt(rho));
     }
   else
     printValue("rho:", "Not defined");

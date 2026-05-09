@@ -122,7 +122,7 @@ namespace CAP
   double dx = _position.x() - x;
   double dy = _position.y() - y;
   double dz = _position.z() - z;
-  return sqrt(dx*dx+dy*dy+dz*dz);
+  return std::sqrt(dx*dx+dy*dy+dz*dz);
   }
   
     //!
@@ -134,7 +134,7 @@ namespace CAP
   double dx = _position.x() - other.x();
   double dy = _position.y() - other.y();
   double dz = _position.z() - other.z();
-  return sqrt(dx*dx+dy*dy+dz*dz);
+  return std::sqrt(dx*dx+dy*dy+dz*dz);
   }
   
     //!
@@ -144,7 +144,7 @@ namespace CAP
   {
   double dx = _position.x() - x;
   double dy = _position.y() - y;
-  return sqrt(dx*dx+dy*dy);
+  return std::sqrt(dx*dx+dy*dy);
   }
   
     //!
@@ -155,7 +155,7 @@ namespace CAP
   const VectorLorentz & other = nucleon.position();
   double dx = _position.x() - other.x();
   double dy = _position.y() - other.y();
-  return sqrt(dx*dx+dy*dy);
+  return std::sqrt(dx*dx+dy*dy);
   }
   
     //!
@@ -284,11 +284,11 @@ namespace CAP
   {
   double phi    = twoPi()*gRandom->Rndm();
   double cosTh  = 2.0*gRandom->Rndm()-1.0;
-  double sinTh  = sqrt(1.0-cosTh*cosTh);
-  double r      = sqrt(maxRadiusSq)*gRandom->Rndm();
+  double sinTh  = std::sqrt(1.0-cosTh*cosTh);
+  double r      = std::sqrt(maxRadiusSq)*gRandom->Rndm();
   double rSinTh = r*sinTh;
-  double x      = rSinTh*cos(phi);
-  double y      = rSinTh*sin(phi);
+  double x      = rSinTh*std::cos(phi);
+  double y      = rSinTh*std::sin(phi);
   double z      = r*cosTh;
 //    printValue("phi",phi);
 //    printValue("cosTh",cosTh);
@@ -303,11 +303,11 @@ namespace CAP
   {
   double phi    = twoPi()*gRandom->Rndm();
   double cosTh  = 2.0*gRandom->Rndm()-1.0;
-  double sinTh  = sqrt(1.0-cosTh*cosTh);
+  double sinTh  = std::sqrt(1.0-cosTh*cosTh);
   double r      = d.random();
   double rSinTh = r*sinTh;
-  double x      = rSinTh*cos(phi);
-  double y      = rSinTh*sin(phi);
+  double x      = rSinTh*std::cos(phi);
+  double y      = rSinTh*std::sin(phi);
   double z      = r*cosTh;
 //  printValue("phi",phi);
 //  printValue("cosTh",cosTh);

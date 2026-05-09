@@ -55,7 +55,7 @@ void  ParticleDecayer::decay2(ParticleType  & parentType,
   //mWidth   = parentType.getWidth();
   tau      = parentType.lifeTime();
   taup     = gamma*tau;
-  timeToDecay = -3.0E23 * taup * log(random->Rndm()); // fm
+  timeToDecay = -3.0E23 * taup * std::log(random->Rndm()); // fm
   r1 = parentPosition;
   r2 = parentPosition;
   VectorLorentz shift;
@@ -82,19 +82,19 @@ void  ParticleDecayer::decay2(ParticleType  & parentType,
 //  cout << "  timeToDecay: " << timeToDecay << endl;
 //  cout << "         temp: " << temp << endl;
 
-  double p_lrf = sqrt(temp*temp - 4*m1*m1*m2*m2)/(2*mp);
+  double p_lrf = std::sqrt(temp*temp - 4*m1*m1*m2*m2)/(2*mp);
   // randomly pick emission angle of particle 1
   double phi      = twoPi*random->Rndm();
-  double cosPhi   = cos(phi);
-  double sinPhi   = sin(phi);
+  double cosPhi   = std::cos(phi);
+  double sinPhi   = std::sin(phi);
   double cosTheta = 2.*random->Rndm() - 1.0;
-  double sinTheta = sqrt(1.00 - cosTheta*cosTheta);
+  double sinTheta = std::sqrt(1.00 - cosTheta*cosTheta);
   // compute daughter particles' energy and momentum in the parent rest frame
-  double e1_lrf   = sqrt(p_lrf*p_lrf + m1*m1);
+  double e1_lrf   = std::sqrt(p_lrf*p_lrf + m1*m1);
   double p1_lrf_x = p_lrf*sinTheta*cosPhi;
   double p1_lrf_y = p_lrf*sinTheta*sinPhi;
   double p1_lrf_z = p_lrf*cosTheta;
-  double e2_lrf   = sqrt(p_lrf*p_lrf + m2*m2);
+  double e2_lrf   = std::sqrt(p_lrf*p_lrf + m2*m2);
   double p2_lrf_x = -p1_lrf_x;
   double p2_lrf_y = -p1_lrf_y;
   double p2_lrf_z = -p1_lrf_z;
@@ -142,7 +142,7 @@ void  ParticleDecayer::decay3(ParticleType & parentType,
   //mWidth   = parentType.getWidth();
   tau      = parentType.lifeTime();
   taup     = gamma*tau;
-  timeToDecay = -3.0E23 * taup * log(random->Rndm()); // fm
+  timeToDecay = -3.0E23 * taup * std::log(random->Rndm()); // fm
   r1 = parentPosition;
   r2 = parentPosition;
   r3 = parentPosition;
@@ -159,38 +159,38 @@ void  ParticleDecayer::decay3(ParticleType & parentType,
       e1_lrf = random->Rndm()*deltaM + m1;
       e2_lrf = random->Rndm()*deltaM + m2;
     } while (e1_lrf + e2_lrf > mp);
-    p1_lrf = sqrt(e1_lrf*e1_lrf - m1*m1);
-    p2_lrf = sqrt(e2_lrf*e2_lrf - m2*m2);
+    p1_lrf = std::sqrt(e1_lrf*e1_lrf - m1*m1);
+    p2_lrf = std::sqrt(e2_lrf*e2_lrf - m2*m2);
     e3_lrf = mp - e1_lrf - e2_lrf;
     cos12_lrf = (e3_lrf*e3_lrf - p1_lrf*p1_lrf - p2_lrf*p2_lrf - m3*m3)/(2.*p1_lrf*p2_lrf);
   } while (cos12_lrf < - 1.0 || cos12_lrf > 1.0);
 
   // compute the momentum of decay daughters
-  double tp2_lrf_x = p2_lrf*sqrt(1. - cos12_lrf*cos12_lrf);
+  double tp2_lrf_x = p2_lrf*std::sqrt(1. - cos12_lrf*cos12_lrf);
   double tp2_lrf_z = p2_lrf*cos12_lrf;
   double tp3_lrf_x = - tp2_lrf_x;
   double tp3_lrf_z = - (p1_lrf + tp2_lrf_z);
   double phi       = twoPi*random->Rndm();
   double ksi       = twoPi*random->Rndm();
   double cos_theta = 2.0*random->Rndm() - 1.0;
-  double sin_phi   = sin(phi);
-  double cos_phi   = cos(phi);
-  double sin_ksi   = sin(ksi);
-  double cos_ksi   = cos(ksi);
-  double sin_theta = sqrt(1. - cos_theta*cos_theta);
+  double sin_phi   = std::sin(phi);
+  double cos_phi   = std::cos(phi);
+  double sin_ksi   = std::sin(ksi);
+  double cos_ksi   = std::cos(ksi);
+  double sin_theta = std::sqrt(1. - cos_theta*cos_theta);
 
   double p1_lrf_x = - p1_lrf*sin_theta*cos_ksi;
   double p1_lrf_y = p1_lrf*sin_theta*sin_ksi;
   double p1_lrf_z = p1_lrf*cos_theta;
-  e1_lrf = sqrt(m1*m1 + p1_lrf_x*p1_lrf_x + p1_lrf_y*p1_lrf_y + p1_lrf_z*p1_lrf_z);
+  e1_lrf = std::sqrt(m1*m1 + p1_lrf_x*p1_lrf_x + p1_lrf_y*p1_lrf_y + p1_lrf_z*p1_lrf_z);
   double p2_lrf_x = (tp2_lrf_x*(cos_phi*cos_theta*cos_ksi - sin_phi*sin_ksi)  - tp2_lrf_z*sin_theta*cos_ksi);
   double p2_lrf_y = (tp2_lrf_x*(-cos_phi*cos_theta*sin_ksi - sin_phi*cos_ksi) + tp2_lrf_z*sin_theta*sin_ksi);
   double p2_lrf_z = tp2_lrf_x*(cos_phi*sin_theta) + tp2_lrf_z*cos_theta;
-  e2_lrf = sqrt(m2*m2 + p2_lrf_x*p2_lrf_x + p2_lrf_y*p2_lrf_y + p2_lrf_z*p2_lrf_z);
+  e2_lrf = std::sqrt(m2*m2 + p2_lrf_x*p2_lrf_x + p2_lrf_y*p2_lrf_y + p2_lrf_z*p2_lrf_z);
   double p3_lrf_x = (tp3_lrf_x*(cos_phi*cos_theta*cos_ksi - sin_phi*sin_ksi) - tp3_lrf_z*sin_theta*cos_ksi);
   double p3_lrf_y = (tp3_lrf_x*(-cos_phi*cos_theta*sin_ksi - sin_phi*cos_ksi) + tp3_lrf_z*(sin_theta*sin_ksi));
   double p3_lrf_z = tp3_lrf_x*cos_phi*sin_theta + tp3_lrf_z*cos_theta;
-  e3_lrf = sqrt(m3*m3 + p3_lrf_x*p3_lrf_x + p3_lrf_y*p3_lrf_y + p3_lrf_z*p3_lrf_z);
+  e3_lrf = std::sqrt(m3*m3 + p3_lrf_x*p3_lrf_x + p3_lrf_y*p3_lrf_y + p3_lrf_z*p3_lrf_z);
 
   double gamma_m_1 = gamma - 1.;
   double vp1 = vx*p1_lrf_x + vy*p1_lrf_y + vz*p1_lrf_z;
@@ -254,7 +254,7 @@ void ParticleDecayer::decay4(ParticleType & parentType,
   //mWidth   = parentType.getWidth();
   tau      = parentType.lifeTime();
   taup     = gamma*tau;
-  lifeTime = -3.0E23 * taup * log(random->Rndm()); // fm
+  lifeTime = -3.0E23 * taup * std::log(random->Rndm()); // fm
   r1 = parentPosition;
   r2 = parentPosition;
   r3 = parentPosition;

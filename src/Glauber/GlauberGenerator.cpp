@@ -295,7 +295,7 @@ namespace CAP
       _xSectOption = _configuration.valueInt(createKey(taskName,objectType,"INTERACTION:XSECT_OPTION"));
       switch (_xSectOption)
         {
-          case 1:// _xSection = function of sqrt(s)
+          case 1:// _xSection = function of std::sqrt(s)
           {
           _sqrtS           = _configuration.valueDouble(createKey(taskName,objectType,"INTERACTION:SQRT_S"));
           _xSectVsSOption  = _configuration.valueInt(createKey(taskName,objectType,   "INTERACTION:SQRT_S_OPTION"));
@@ -375,7 +375,7 @@ namespace CAP
   // printValue("Check",1);
   std::vector<GlauberPoint> & interactionPositions = ev.interactionPositions();
   interactionPositions.clear();
-  double impact = sqrt(_minImpactSq + (_maxImpactSq-_minImpactSq)*gRandom->Rndm());
+  double impact = std::sqrt(_minImpactSq + (_maxImpactSq-_minImpactSq)*gRandom->Rndm());
   ev.setImpactParameter(impact);
 
   // printValue("Check",2);
@@ -436,7 +436,7 @@ namespace CAP
           ev.setEventXSection(_xSection);
 
           // printValue("Check",10);
-          //          double xSect = sqrt( 0.1*_ptotProfile->GetRandom()/pi());
+          //          double xSect = std::sqrt( 0.1*_ptotProfile->GetRandom()/pi());
           //          double bh = TMath::Sqrt(d2*fHardFrac);
           }
 
@@ -445,7 +445,7 @@ namespace CAP
           // printValue("Check",11);
           double xSectA = nucleonA.xSect();
           double xSectB = nucleonB.xSect();
-          double d = sqrt(0.05*(xSectA+xSectB)/pi()); // 0.05 = 0.5/10 --> fm
+          double d = std::sqrt(0.05*(xSectA+xSectB)/pi()); // 0.05 = 0.5/10 --> fm
           if (distanceAB>d) continue;
           double prob = _nnXSectProfile->evaluate(distanceAB);
           if (gRandom->Uniform() > prob) continue;

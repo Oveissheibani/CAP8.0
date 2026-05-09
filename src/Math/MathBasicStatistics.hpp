@@ -150,7 +150,7 @@ template <typename T, typename Iterator> T rms(Iterator first, Iterator last)
     ++first;
     ++n;
     }
-  double rms = (n > 1) ? sqrt(tot/(n-1)) : 0.0;
+  double rms = (n > 1) ? std::sqrt(tot/(n-1)) : 0.0;
   return rms;
 }
 

@@ -218,14 +218,14 @@ namespace CAP
     q[alpha]=pa[alpha]-pb[alpha];
     qinv-=g[alpha]*q[alpha]*q[alpha];
     }
-  pt=sqrt(ptot[1]*ptot[1]+ptot[2]*ptot[2]);
-  Mlong=sqrt(s+pt*pt);
-  roots=sqrt(s);
+  pt=std::sqrt(ptot[1]*ptot[1]+ptot[2]*ptot[2]);
+  Mlong=std::sqrt(s+pt*pt);
+  roots=std::sqrt(s);
 
   qside=(ptot[1]*q[2]-ptot[2]*q[1])/pt;
   qlong=(ptot[0]*q[3]-ptot[3]*q[0])/Mlong;
   qout=(roots/Mlong)*(ptot[1]*q[1]+ptot[2]*q[2])/pt;
-  qinv=sqrt(qinv);
+  qinv=std::sqrt(qinv);
 
   h_n2_Qinv->Fill(qinv,weight);
   h_n2_DeltaP->Fill(qside,qout,qlong,weight);

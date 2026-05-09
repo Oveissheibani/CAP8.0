@@ -41,23 +41,23 @@ double  dilog(double  x)
     if (t <= -2) {
       y = -1/(1+t);
       s = 1;
-      b1= log(-t);
-      b2= log(1+1/t);
+      b1= std::log(-t);
+      b2= std::log(1+1/t);
       a = -pi3+hf*(b1*b1-b2*b2);
     } else if (t < -1) {
       y = -1-t;
       s = -1;
-      a = log(-t);
-      a = -pi6+a*(a+log(1+1/t));
+      a = std::log(-t);
+      a = -pi6+a*(a+std::log(1+1/t));
     } else if (t <= -0.5) {
       y = -(1+t)/t;
       s = 1;
-      a = log(-t);
-      a = -pi6+a*(-hf*a+log(1+t));
+      a = std::log(-t);
+      a = -pi6+a*(-hf*a+std::log(1+t));
     } else if (t < 0) {
       y = -t/(1+t);
       s = -1;
-      b1= log(1+t);
+      b1= std::log(1+t);
       a = hf*b1*b1;
     } else if (t <= 1) {
       y = t;
@@ -66,7 +66,7 @@ double  dilog(double  x)
     } else {
       y = 1/t;
       s = -1;
-      b1= log(t);
+      b1= std::log(t);
       a = pi6+hf*b1*b1;
     }
     h    = y+y-1;

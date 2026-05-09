@@ -60,7 +60,7 @@ void PHSDEventReader::execute()
 
   ParticleType * particleType;
   // read event header
-  *inputFile >> nParticles >> runIndex >> eventIndex >> impact >> impactSamplingMethod >> pdgCodeTarget >> pdgCodeProjectile >> sqrtS;
+  *inputFile >> nParticles >> runIndex >> eventIndex >> impact >> impactSamplingMethod >> pdgCodeTarget >> pdgCodeProjectile >> std::sqrtS;
   *inputFile >> nPart >> psi2 >> epsilon2 >> psi3 >> epsilon3 >> psi4 >> epsilon4 >> psi5 >> epsilon5;
   // read/load particles
   for (int iParticle=0; iParticle<nParticles; iParticle++)

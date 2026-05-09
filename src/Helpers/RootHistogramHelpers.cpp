@@ -16,6 +16,7 @@ namespace CAP
 {
   using MATH::absolute;
   using MATH::VectorLorentz;
+  using MATH::sqrtTwoPi;
 
   bool isValid(const String & name,int n_x, double min_x, double max_x, const String & caller, bool verbose=false)
   {
@@ -254,7 +255,7 @@ namespace CAP
   double sum = weight + sumWeights;
   double rwn = weight/sum;
   double rw  = sumWeights/sum;
-  double sqrtN = sqrt(double(abs(n)));
+  double sqrtN = std::sqrt(double(abs(n)));
   if (h1->IsA()==TH1::Class() || h1->IsA()==TH1F::Class() || h1->IsA()==TH1D::Class() || h1->IsA()==TH1I::Class() )
     {
     int nx = h1->GetNbinsX();
@@ -267,7 +268,7 @@ namespace CAP
       dv      = v - vAvg;
       vAvg    += rwn*dv;
       evSqAvg = rw*(evSqAvg + dv*dv*rwn);
-      evAvg   = n>0 ? sqrt(evSqAvg)/sqrtN : sqrt(evSqAvg);
+      evAvg   = n>0 ? std::sqrt(evSqAvg)/sqrtN : std::sqrt(evSqAvg);
       h1->SetBinContent(ix, vAvg);
       h1->SetBinError(ix, evAvg);
       }
@@ -287,7 +288,7 @@ namespace CAP
         dv      = v - vAvg;
         vAvg    += rwn*dv;
         evSqAvg = rw*(evSqAvg + dv*dv*rwn);
-        evAvg   = n>0 ? sqrt(evSqAvg)/sqrtN : sqrt(evSqAvg);
+        evAvg   = n>0 ? std::sqrt(evSqAvg)/sqrtN : std::sqrt(evSqAvg);
         h1->SetBinContent(ix,iy, vAvg);
         h1->SetBinError(ix,iy,evAvg);
         }
@@ -311,7 +312,7 @@ namespace CAP
           dv      = v - vAvg;
           vAvg    += rwn*dv;
           evSqAvg = rw*(evSqAvg + dv*dv*rwn);
-          evAvg   = n>0 ? sqrt(evSqAvg)/sqrtN : sqrt(evSqAvg);
+          evAvg   = n>0 ? std::sqrt(evSqAvg)/sqrtN : std::sqrt(evSqAvg);
           h1->SetBinContent(ix,iy,iz, vAvg);
           h1->SetBinError(ix,iy,iz,evAvg);
           }
@@ -327,11 +328,11 @@ namespace CAP
       evAvg = h1->GetBinError(ix);
       v     = h2->GetBinContent(ix);
       evSqAvg = evAvg*evAvg;
-      evAvg   = n>0 ? sqrt(evSqAvg)/sqrtN : sqrt(evSqAvg);
+      evAvg   = n>0 ? std::sqrt(evSqAvg)/sqrtN : std::sqrt(evSqAvg);
       dv      = v - vAvg;
       vAvg    += rwn*dv;
       evSqAvg = rw*(evSqAvg + dv*dv*rwn);
-      evAvg   = n>0 ? sqrt(evSqAvg)/sqrtN : sqrt(evSqAvg);
+      evAvg   = n>0 ? std::sqrt(evSqAvg)/sqrtN : std::sqrt(evSqAvg);
       h1->SetBinContent(ix, vAvg);
       h1->SetBinError(ix,evAvg);
       ((TProfile*)h1)->SetBinEntries(ix, 1.0);
@@ -352,7 +353,7 @@ namespace CAP
         dv      = v - vAvg;
         vAvg    += rwn*dv;
         evSqAvg = rw*(evSqAvg + dv*dv*rwn);
-        evAvg   = n>0 ? sqrt(evSqAvg)/sqrtN : sqrt(evSqAvg);
+        evAvg   = n>0 ? std::sqrt(evSqAvg)/sqrtN : std::sqrt(evSqAvg);
         h1->SetBinContent(ix,iy, vAvg);
         h1->SetBinError(ix,iy,evAvg);
         //((TProfile2D*)hAvg)->SetBinEntries(ix,iy, 1.0);
@@ -387,7 +388,7 @@ namespace CAP
       if (v>0)
         {
         r1 = ev1/v1; r2 = ev2/v2;
-        ev = v*sqrt(r1*r1+r2*r2);
+        ev = v*std::sqrt(r1*r1+r2*r2);
         }
       else
         ev = 0.;
@@ -430,7 +431,7 @@ namespace CAP
         {
         r1 = ev1/v1;
         r2 = ev2/v2;
-        ev = v*sqrt(r1*r1+r2*r2);
+        ev = v*std::sqrt(r1*r1+r2*r2);
         }
       else
         ev = 0.;
@@ -475,7 +476,7 @@ namespace CAP
             {
             r1 = ev1/v1;
             r2 = ev2/v2;
-            ev = v*sqrt(r1*r1+r2*r2);
+            ev = v*std::sqrt(r1*r1+r2*r2);
             }
           else
             ev = 0.;
@@ -520,7 +521,7 @@ namespace CAP
           r1 = ev1/v1;
           r2 = ev2/v2;
           r3 = ev3/v3;
-          ev = v*sqrt(r1*r1+r2*r2+r3*r3);
+          ev = v*std::sqrt(r1*r1+r2*r2+r3*r3);
           }
         else
           ev = 0.;
@@ -560,7 +561,7 @@ namespace CAP
           {
           r1 = ev1/v1;
           r2 = ev2/v2; r3 = ev3/v3;
-          ev = v*sqrt(r1*r1+r2*r2+r3*r3);
+          ev = v*std::sqrt(r1*r1+r2*r2+r3*r3);
           }
         else
           ev = 0.;
@@ -620,7 +621,7 @@ namespace CAP
         else
           ev = 0.;
         v = v+v3;
-        ev = sqrt(ev3*ev3+ev);
+        ev = std::sqrt(ev3*ev3+ev);
         target->SetBinContent(dPhi12,dPhi13,v);
         target->SetBinError(dPhi12,dPhi13,ev);
         }
@@ -679,7 +680,7 @@ namespace CAP
           }
 
         v = v+v3;
-        ev = sqrt(ev3*ev3+ev);
+        ev = std::sqrt(ev3*ev3+ev);
         switch (single)
           {
             case 3:
@@ -1069,9 +1070,9 @@ namespace CAP
       double ve = n2->GetBinError(ix+1,iy+1);
 
       double v12 = v/n12_int;
-      double v12e = v12*sqrt(ve/v*ve/v+n12_inter*n12_inter);
+      double v12e = v12*std::sqrt(ve/v*ve/v+n12_inter*n12_inter);
       double v21 = v/n11_int;
-      double v21e = v21*sqrt(ve/v*ve/v+n11_inter*n11_inter);
+      double v21e = v21*std::sqrt(ve/v*ve/v+n11_inter*n11_inter);
 
       bf_12->SetBinContent(ix+1,iy+1,v12);
       bf_12->SetBinError(ix+1,iy+1,v12e);
@@ -1134,17 +1135,17 @@ namespace CAP
   double mPart = 0.13957;
   double mSq   = mPart*mPart;
 
-  double mt1   = sqrt(mSq + pt1*pt1);
-  double px1   = pt1*cos(phi1);
-  double py1   = pt1*sin(phi1);
-  double pz1   = mt1*sinh(eta1);
-  double e1    = sqrt(mSq + pt1*pt1 + pz1*pz1);
+  double mt1   = std::sqrt(mSq + pt1*pt1);
+  double px1   = pt1*std::cos(phi1);
+  double py1   = pt1*std::sin(phi1);
+  double pz1   = mt1*std::sinh(eta1);
+  double e1    = std::sqrt(mSq + pt1*pt1 + pz1*pz1);
 
-  double mt2   = sqrt(mSq + pt2*pt2);
-  double px2   = pt2*cos(phi2);
-  double py2   = pt2*sin(phi2);
-  double pz2   = mt2*sinh(eta2); // broken
-  double e2    = sqrt(mSq + pt2*pt2 + pz2*pz2);
+  double mt2   = std::sqrt(mSq + pt2*pt2);
+  double px2   = pt2*std::cos(phi2);
+  double py2   = pt2*std::sin(phi2);
+  double pz2   = mt2*std::sinh(eta2); // broken
+  double e2    = std::sqrt(mSq + pt2*pt2 + pz2*pz2);
 
   double pt,s,Mlong,roots;
   double ptot[4],q[4];
@@ -1160,9 +1161,9 @@ namespace CAP
   q[2] = py1 - py2;
   q[3] = pz1 - pz2;
   s = ptot[0]*ptot[0] - ptot[1]*ptot[1] - ptot[2]*ptot[2] - ptot[3]*ptot[3];
-  pt=sqrt(ptot[1]*ptot[1]+ptot[2]*ptot[2]);
-  Mlong=sqrt(s+pt*pt);
-  roots=sqrt(s);
+  pt=std::sqrt(ptot[1]*ptot[1]+ptot[2]*ptot[2]);
+  Mlong=std::sqrt(s+pt*pt);
+  roots=std::sqrt(s);
 
   //if ((p1+p2).P()>(p1+p2).t()) return 3;
 
@@ -1189,17 +1190,17 @@ namespace CAP
   double mPart = 0.13957;
   double mSq   = mPart*mPart;
 
-  double mt1   = sqrt(mSq + pt1*pt1);
-  double px1   = pt1*cos(phi1);
-  double py1   = pt1*sin(phi1);
-  double pz1   = mt1*sinh(y1);
-  double e1    = sqrt(mSq + pt1*pt1 + pz1*pz1);
+  double mt1   = std::sqrt(mSq + pt1*pt1);
+  double px1   = pt1*std::cos(phi1);
+  double py1   = pt1*std::sin(phi1);
+  double pz1   = mt1*std::sinh(y1);
+  double e1    = std::sqrt(mSq + pt1*pt1 + pz1*pz1);
 
-  double mt2   = sqrt(mSq + pt2*pt2);
-  double px2   = pt2*cos(phi2);
-  double py2   = pt2*sin(phi2);
-  double pz2   = mt2*sinh(y2);
-  double e2    = sqrt(mSq + pt2*pt2 + pz2*pz2);
+  double mt2   = std::sqrt(mSq + pt2*pt2);
+  double px2   = pt2*std::cos(phi2);
+  double py2   = pt2*std::sin(phi2);
+  double pz2   = mt2*std::sinh(y2);
+  double e2    = std::sqrt(mSq + pt2*pt2 + pz2*pz2);
 
   double pt,s,Mlong,roots;
   double ptot[4],q[4];
@@ -1215,9 +1216,9 @@ namespace CAP
   q[2] = py1 - py2;
   q[3] = pz1 - pz2;
   s = ptot[0]*ptot[0] - ptot[1]*ptot[1] - ptot[2]*ptot[2] - ptot[3]*ptot[3];
-  pt=sqrt(ptot[1]*ptot[1]+ptot[2]*ptot[2]);
-  Mlong=sqrt(s+pt*pt);
-  roots=sqrt(s);
+  pt=std::sqrt(ptot[1]*ptot[1]+ptot[2]*ptot[2]);
+  Mlong=std::sqrt(s+pt*pt);
+  roots=std::sqrt(s);
 
   //  if ((p1+p2).P()>(p1+p2).t()) return 3;
 
@@ -1390,7 +1391,7 @@ namespace CAP
                 //if (er1< 10.5  &&  er2<10.5)
                 //  {
                 v3  = v1*v2;
-                //ev3 = v3*sqrt(er1*er1 + er2*er2);
+                //ev3 = v3*std::sqrt(er1*er1 + er2*er2);
 
                 eta1 = n1_1->GetXaxis()->GetBinCenter(i1x);
                 phi1 = n1_1->GetYaxis()->GetBinCenter(i1y);
@@ -1446,7 +1447,7 @@ namespace CAP
           if (er1< 0.5  &&  er2<0.5)
             {
             v3  = v1/v2 - 1;
-            ev3 = v3*sqrt(er1*er1 + er2*er2);
+            ev3 = v3*std::sqrt(er1*er1 + er2*er2);
             }
           else
             {
@@ -2061,7 +2062,7 @@ namespace CAP
     v1  = a1*n2_12->GetBinContent(i1);    ev1 = a1*n2_12->GetBinError(i1);
     v2  = a2*n1n1_12->GetBinContent(i1);  ev2 = a2*n1n1_12->GetBinError(i1);
     v  = v1-v2;
-    ev = sqrt(ev1*ev1+ev2*ev2);
+    ev = std::sqrt(ev1*ev1+ev2*ev2);
     c2_12->SetBinContent(i1,v); c2_12->SetBinError(i1,ev);
     }
   }
@@ -2086,7 +2087,7 @@ namespace CAP
       v1  = a1*n2_12->GetBinContent(i1,i2);    ev1 = a1*n2_12->GetBinError(i1,i2);
       v2  = a2*n1n1_12->GetBinContent(i1,i2);  ev2 = a2*n1n1_12->GetBinError(i1,i2);
       v  = v1-v2;
-      ev = sqrt(ev1*ev1+ev2*ev2);
+      ev = std::sqrt(ev1*ev1+ev2*ev2);
       c2_12->SetBinContent(i1,i2,v); c2_12->SetBinError(i1,i2,ev);
       }
     }
@@ -2115,7 +2116,7 @@ namespace CAP
         v1  = a1*n2_12->GetBinContent(i1,i2,i3);    ev1 = a1*n2_12->GetBinError(i1,i2,i3);
         v2  = a2*n1n1_12->GetBinContent(i1,i2,i3);  ev2 = a2*n1n1_12->GetBinError(i1,i2,i3);
         v  = v1-v2;
-        ev = sqrt(ev1*ev1+ev2*ev2);
+        ev = std::sqrt(ev1*ev1+ev2*ev2);
         c2_12->SetBinContent(i1,i2,i3,v); c2_12->SetBinError(i1,i2,i3,ev);
         }
       }
@@ -2150,7 +2151,7 @@ namespace CAP
         }
       re1 = ev1/v1;
       re2 = ev2/v2;
-      ev  = v*sqrt(re1*re1+re2*re2);
+      ev  = v*std::sqrt(re1*re1+re2*re2);
       v   -= 1.000;
       }
     else
@@ -2186,7 +2187,7 @@ namespace CAP
           v   = v1/v2;
         re1 = ev1/v1;
         re2 = ev2/v2;
-        ev  = v*sqrt(re1*re1+re2*re2);
+        ev  = v*std::sqrt(re1*re1+re2*re2);
         v   -= 1.;
         }
       else
@@ -2226,7 +2227,7 @@ namespace CAP
             v   = v1/v2;
           re1 = ev1/v1;
           re2 = ev2/v2;
-          ev  = v*sqrt(re1*re1+re2*re2);
+          ev  = v*std::sqrt(re1*re1+re2*re2);
           v   -= 1.;
           }
         else
@@ -2268,7 +2269,7 @@ namespace CAP
           v   = v1/v2;
         re1 = ev1/v1;
         re2 = ev2/v2;
-        ev  = v*sqrt(re1*re1+re2*re2);
+        ev  = v*std::sqrt(re1*re1+re2*re2);
         v   -= 1.;
         }
       else
@@ -2404,7 +2405,7 @@ namespace CAP
     }
   avgValue    = sum/norm;
   avgDensity  = avgValue/MATH::twoPi();
-  eAvgDensity = sqrt(esum)/norm/MATH::twoPi();
+  eAvgDensity = std::sqrt(esum)/norm/MATH::twoPi();
   }
 
   void calculateIntegral(TH1 * h, double xMin, double xMax, double & result, double & resultError, int option)
@@ -2458,7 +2459,7 @@ namespace CAP
       v = v1/v2;
       re1 = ev1/v1;
       re2 = ev2/v2;
-      ev = v*sqrt(re1*re1+re2*re2);
+      ev = v*std::sqrt(re1*re1+re2*re2);
       }
     else
       {
@@ -2489,7 +2490,7 @@ namespace CAP
         v = v1/v2;
         re1 = ev1/v1;
         re2 = ev2/v2;
-        ev = v*sqrt(re1*re1+re2*re2);
+        ev = v*std::sqrt(re1*re1+re2*re2);
         }
       else
         {
@@ -2521,7 +2522,7 @@ namespace CAP
         v = v1/v2;
         re1 = ev1/v1;
         re2 = ev2/v2;
-        ev = v*sqrt(re1*re1+re2*re2);
+        ev = v*std::sqrt(re1*re1+re2*re2);
         }
       else
         {
@@ -2549,7 +2550,7 @@ namespace CAP
       v = v1/v2;
       re1 = ev1/v1;
       re2 = ev2/v2;
-      ev = v*sqrt(re1*re1+re2*re2);
+      ev = v*std::sqrt(re1*re1+re2*re2);
       }
     else
       {
@@ -2585,7 +2586,7 @@ namespace CAP
         v8 = h->GetBinContent(nf-i1,nf-i2,nf-i3);  ev8 = h->GetBinError(nf-i1,nf-i2,nf-i3);
 
         v = (v1+v2+v3+v4+v5+v6+v7+v8)/8.0;
-        ev = sqrt(ev1*ev1+ev2*ev2+ev3*ev3+ev4*ev4+ev5*ev5+ev6*ev6+ev7*ev7+ev8*ev8)/8.0;
+        ev = std::sqrt(ev1*ev1+ev2*ev2+ev3*ev3+ev4*ev4+ev5*ev5+ev6*ev6+ev7*ev7+ev8*ev8)/8.0;
 
         h->SetBinContent(nc+i1,nc+i2,nc+i3,v);  h->SetBinError(nc+i1,nc+i2,nc+i3,ev);
         h->SetBinContent(nc+i1,nc+i2,nf-i3,v);  h->SetBinError(nc+i1,nc+i2,nf-i3,ev);
@@ -2646,12 +2647,12 @@ namespace CAP
       if (ijNormalization)
         {
         sv = (v1+v2+v3+v4)/2.;
-        esv = sqrt(ev1*ev1+ev2*ev2+ev3*ev3+ev4*ev4)/2.;
+        esv = std::sqrt(ev1*ev1+ev2*ev2+ev3*ev3+ev4*ev4)/2.;
         }
       else
         {
         sv = (v1+v2+v3+v4)/4.;
-        esv = sqrt(ev1*ev1+ev2*ev2+ev3*ev3+ev4*ev4)/4.;
+        esv = std::sqrt(ev1*ev1+ev2*ev2+ev3*ev3+ev4*ev4)/4.;
         }
       h->SetBinContent( nEta-iEta, nPhi-iPhi, sv);
       h->SetBinContent( nEta-iEta,   iPhi1+1, sv);
@@ -2675,12 +2676,12 @@ namespace CAP
     if (ijNormalization)
       {
       sv = (v3+v4);
-      esv = sqrt(ev3*ev3+ev4*ev4);
+      esv = std::sqrt(ev3*ev3+ev4*ev4);
       }
     else
       {
       sv = (v3+v4)/2.;
-      esv = sqrt(ev3*ev3+ev4*ev4)/2.;
+      esv = std::sqrt(ev3*ev3+ev4*ev4)/2.;
       }
     h->SetBinContent(     iEta1, nPhi-iPhi, sv);
     h->SetBinContent(     iEta1,   iPhi1+1, sv);
@@ -2699,12 +2700,12 @@ namespace CAP
     if (ijNormalization)
       {
       sv = (v1+v3);
-      esv = sqrt(ev1*ev1+ev3*ev3);
+      esv = std::sqrt(ev1*ev1+ev3*ev3);
       }
     else
       {
       sv = (v1+v3)/2.;
-      esv = sqrt(ev1*ev1+ev3*ev3)/2.;
+      esv = std::sqrt(ev1*ev1+ev3*ev3)/2.;
       }
     h->SetBinContent( nEta-iEta, 1, sv);
     h->SetBinContent(     iEta1, 1, sv);
@@ -2720,12 +2721,12 @@ namespace CAP
     if (ijNormalization)
       {
       sv = (v1+v3);
-      esv = sqrt(ev1*ev1+ev3*ev3);
+      esv = std::sqrt(ev1*ev1+ev3*ev3);
       }
     else
       {
       sv = (v1+v3)/2.;
-      esv = sqrt(ev1*ev1+ev3*ev3)/2.;
+      esv = std::sqrt(ev1*ev1+ev3*ev3)/2.;
       }
     h->SetBinContent( nEta-iEta, iPhi1, sv);
     h->SetBinContent(     iEta1, iPhi1, sv);
@@ -2769,12 +2770,12 @@ namespace CAP
       if (ijNormalization)
         {
         sv = (v1+v2);
-        esv = sqrt(ev1*ev1+ev2*ev2);
+        esv = std::sqrt(ev1*ev1+ev2*ev2);
         }
       else
         {
         sv = (v1+v2)/2.;
-        esv = sqrt(ev1*ev1+ev2*ev2)/2.;
+        esv = std::sqrt(ev1*ev1+ev2*ev2)/2.;
         }
       h->SetBinContent( i_x1, i_y1, sv);
       h->SetBinContent( i_y1, i_x1, sv);
@@ -2842,7 +2843,7 @@ namespace CAP
       ev1   = numeratorErr[index];
       v2    = denominator[index];
       target->SetBinContent(dEta+1,dPhi+1,v1/v2);
-      target->SetBinError(  dEta+1,dPhi+1,sqrt(ev1)/v2);
+      target->SetBinError(  dEta+1,dPhi+1,std::sqrt(ev1)/v2);
       }
     }
   delete [] numerator;
@@ -2943,7 +2944,7 @@ namespace CAP
             v2   = target->GetBinContent(iEta+1,jEta+1);
             ev2  = target->GetBinError(iEta+1,jEta+1);
             v = v1+v2;
-            ev = sqrt(ev1*ev1+ev2*ev2);
+            ev = std::sqrt(ev1*ev1+ev2*ev2);
             target->SetBinContent(iEta+1,jEta+1,v);
             target->SetBinError(iEta+1,jEta+1,ev);
             work[ iEta*nEtaBins+jEta] += 1;
@@ -2996,7 +2997,7 @@ namespace CAP
           v2   = target->GetBinContent(iX+1,jX+1);
           ev2  = target->GetBinError(iX+1,jX+1);
           v = v1+v2;
-          ev = sqrt(ev1*ev1+ev2*ev2);
+          ev = std::sqrt(ev1*ev1+ev2*ev2);
           target->SetBinContent(iX+1,jX+1,v);
           target->SetBinError(iX+1,jX+1,ev);
           ++j;
@@ -3034,7 +3035,7 @@ namespace CAP
           v2   = target->GetBinContent(iY+1,jY+1);
           ev2  = target->GetBinError(iY+1,jY+1);
           v = v1+v2;
-          ev = sqrt(ev1*ev1+ev2*ev2);
+          ev = std::sqrt(ev1*ev1+ev2*ev2);
           target->SetBinContent(iY+1,jY+1,v);
           target->SetBinError(iY+1,jY+1,ev);
           ++j;
@@ -3263,9 +3264,9 @@ namespace CAP
     ref1_1    = ef1_1/f1_1;
     ref1_2    = ef1_2/f1_2;
     ref2_12   = ef2_12/f2_12;
-    eF2_12    = sqrt(f1_1*f1_2*f1_1*f1_2*(ref1_1*ref1_1 + ref1_2*ref1_2) + eF2_12*eF2_12);
+    eF2_12    = std::sqrt(f1_1*f1_2*f1_1*f1_2*(ref1_1*ref1_1 + ref1_2*ref1_2) + eF2_12*eF2_12);
     R2_12     = F2_12/(f1_1*f1_2);
-    eR2_12    = R2_12*sqrt(ref1_1*ref1_1 + ref1_2*ref1_2 + ref2_12*ref2_12);
+    eR2_12    = R2_12*std::sqrt(ref1_1*ref1_1 + ref1_2*ref1_2 + ref2_12*ref2_12);
     }
   }
 
@@ -3297,8 +3298,8 @@ namespace CAP
     eF3_123   += f2_12*f2_12*f1_3*f1_3*(ref2_12*ref2_12 + ref1_3*ref1_3);
     eF3_123   += f2_13*f2_13*f1_2*f1_2*(ref2_13*ref2_13 + ref1_2*ref1_2);
     eF3_123   += f2_23*f2_23*f1_1*f1_1*(ref2_23*ref2_23 + ref1_1*ref1_1);
-    eF3_123   += 4.0*f1_1*f1_1*f1_2*f1_2*f1_3*f1_3*sqrt(ref1_1*ref1_1+ref1_2*ref1_2+ref1_3*ref1_3);
-    eF3_123   = sqrt(eF3_123);
+    eF3_123   += 4.0*f1_1*f1_1*f1_2*f1_2*f1_3*f1_3*std::sqrt(ref1_1*ref1_1+ref1_2*ref1_2+ref1_3*ref1_3);
+    eF3_123   = std::sqrt(eF3_123);
     reF3_123   = eF3_123/F3_123;
     R3_123     = F3_123/(f1_1*f1_2*f1_3);
     eR3_123    = R3_123*reF3_123;
@@ -3354,7 +3355,7 @@ namespace CAP
     + 16.0*f2_13*f2_13*f2_24*f2_24*(ref2_13*ref2_13 + ef2_24*ef2_24)
     + 16.0*f2_14*f2_14*f2_23*f2_23*(ref2_14*ref2_14 + ef2_23*ef2_23);
     // neglect singles term for now..
-    eF4_1234   = sqrt(eF4_1234);
+    eF4_1234   = std::sqrt(eF4_1234);
     //reF4_1234  = 0.0; //eF4_1234/F4_1234;
     R4_1234    = F4_1234/(f1_1*f1_2*f1_3*f1_4);
     eR4_1234   = 0.0; //R4_1234*reF4_1234;
@@ -3369,7 +3370,7 @@ namespace CAP
                       double & nudyn,double & enudyn)
   {
   nudyn = r2_11 + r2_22 - r2_12 - r2_21;
-  enudyn = sqrt(er2_11*er2_11 + er2_22*er2_22 + er2_12*er2_12 + er2_21*er2_21);
+  enudyn = std::sqrt(er2_11*er2_11 + er2_22*er2_22 + er2_12*er2_12 + er2_21*er2_21);
   }
 
   // sanity check functions
@@ -3613,7 +3614,7 @@ namespace CAP
       evRef    = hRef->GetBinError(ix);
       vDiff    = v - vRef;
       evDiffSq = correlatedUncertainties ?  MATH::absolute(ev*ev - evRef*evRef) : ev*ev + evRef*evRef;
-      evDiff   = sqrt(evDiffSq);
+      evDiff   = std::sqrt(evDiffSq);
       hDiff->SetBinContent(ix, vDiff);
       hDiff->SetBinError(ix, evDiff);
       }
@@ -3632,7 +3633,7 @@ namespace CAP
         evRef    = hRef->GetBinError(ix,iy);
         vDiff    = v - vRef;
         evDiffSq = correlatedUncertainties ?  MATH::absolute(ev*ev - evRef*evRef) : ev*ev + evRef*evRef;
-        evDiff   = sqrt(evDiffSq);
+        evDiff   = std::sqrt(evDiffSq);
         hDiff->SetBinContent(ix,iy, vDiff);
         hDiff->SetBinError(ix,iy, evDiff);
         }
@@ -3655,7 +3656,7 @@ namespace CAP
           evRef    = hRef->GetBinError(ix,iy,iz);
           vDiff    = v - vRef;
           evDiffSq = correlatedUncertainties ?  MATH::absolute(ev*ev - evRef*evRef) : ev*ev + evRef*evRef;
-          evDiff   = sqrt(evDiffSq);
+          evDiff   = std::sqrt(evDiffSq);
           hDiff->SetBinContent(ix,iy,iz, vDiff);
           hDiff->SetBinError(ix,iy,iz, evDiff);
           }
@@ -3673,7 +3674,7 @@ namespace CAP
       evRef    = hRef->GetBinError(ix);
       vDiff    = v - vRef;
       evDiffSq = correlatedUncertainties ?  MATH::absolute(ev*ev - evRef*evRef) : ev*ev + evRef*evRef;
-      evDiff   = sqrt(evDiffSq);
+      evDiff   = std::sqrt(evDiffSq);
       hDiff->SetBinContent(ix, vDiff);
       hDiff->SetBinError(ix, evDiff);
       ((TProfile*)hDiff)->SetBinEntries(ix, 1.0);
@@ -3693,7 +3694,7 @@ namespace CAP
         evRef    = hRef->GetBinError(ix,iy);
         vDiff    = v - vRef;
         evDiffSq = correlatedUncertainties ?  MATH::absolute(ev*ev - evRef*evRef) : ev*ev + evRef*evRef;
-        evDiff   = sqrt(evDiffSq);
+        evDiff   = std::sqrt(evDiffSq);
         hDiff->SetBinContent(ix,iy, vDiff);
         hDiff->SetBinError(ix,iy, evDiff);
         //((TProfile*)hDiff)->SetBinEntries(ix,iy, 1.0);
@@ -3725,7 +3726,7 @@ namespace CAP
         {
         vRatio     = v/vRef;
         revRatioSq = correlatedUncertainties ? MATH::absolute(rev*rev - revRef*revRef) : rev*rev + revRef*revRef;
-        revRatio   = sqrt(revRatioSq);
+        revRatio   = std::sqrt(revRatioSq);
         evRatio    = revRatio*vRatio;
         hRatio->SetBinContent(ix, vRatio);
         hRatio->SetBinError(ix, evRatio);
@@ -3750,7 +3751,7 @@ namespace CAP
           {
           vRatio     = v/vRef;
           revRatioSq = correlatedUncertainties ? MATH::absolute(rev*rev - revRef*revRef) : rev*rev + revRef*revRef;
-          revRatio   = sqrt(revRatioSq);
+          revRatio   = std::sqrt(revRatioSq);
           evRatio    = revRatio*vRatio;
           hRatio->SetBinContent(ix,iy, vRatio);
           hRatio->SetBinError(ix,iy, evRatio);
@@ -3779,7 +3780,7 @@ namespace CAP
             {
             vRatio     = v/vRef;
             revRatioSq = correlatedUncertainties ? MATH::absolute(rev*rev - revRef*revRef) : rev*rev + revRef*revRef;
-            revRatio   = sqrt(revRatioSq);
+            revRatio   = std::sqrt(revRatioSq);
             evRatio    = revRatio*vRatio;
             hRatio->SetBinContent(ix,iy,iz, vRatio);
             hRatio->SetBinError(ix,iy,iz, evRatio);
@@ -3803,7 +3804,7 @@ namespace CAP
         {
         vRatio     = v/vRef;
         revRatioSq = correlatedUncertainties ? MATH::absolute(rev*rev - revRef*revRef) : rev*rev + revRef*revRef;
-        revRatio   = sqrt(revRatioSq);
+        revRatio   = std::sqrt(revRatioSq);
         evRatio    = revRatio*vRatio;
         hRatio->SetBinContent(ix, vRatio);
         hRatio->SetBinError(ix, evRatio);
@@ -3829,7 +3830,7 @@ namespace CAP
           {
           vRatio     = v/vRef;
           revRatioSq = correlatedUncertainties ? MATH::absolute(rev*rev - revRef*revRef) : rev*rev + revRef*revRef;
-          revRatio   = sqrt(revRatioSq);
+          revRatio   = std::sqrt(revRatioSq);
           evRatio    = revRatio*vRatio;
           hRatio->SetBinContent(ix, vRatio);
           hRatio->SetBinError(ix, evRatio);
@@ -4088,7 +4089,7 @@ namespace CAP
     x.push_back(x1);
     ex.push_back(ex1);
     y.push_back(y1+y2);
-    ey.push_back(sqrt(ey1*ey1 + ey2*ey2));
+    ey.push_back(std::sqrt(ey1*ey1 + ey2*ey2));
     }
   return makeGraph(x,ex,y,ey);
   }
@@ -4149,7 +4150,7 @@ namespace CAP
   if (sum<=0.0) throw Exception("null sum","calculateRmsWidth");
   mean = xSum/sum;
   meanError = 0;
-  rmsWidth  = sqrt(x2Sum/sum - mean*mean);
+  rmsWidth  = std::sqrt(x2Sum/sum - mean*mean);
   rmsWidthError = 0.0;
   }
 
@@ -4210,9 +4211,9 @@ namespace CAP
   double mean     = par[1];
   double rms      = par[2];
   double a0       = par[3];
-  double norm     = 1.0/(rms*MATH::sqrtTwoPi());
+  double norm     = 1.0/(rms*sqrtTwoPi());
   double arg      = (x-mean)/rms;
-  double peak     = norm * exp(-arg*arg/2.0);
+  double peak     = norm * std::exp(-arg*arg/2.0);
   return a0 + a*peak;
   }
 
@@ -4367,7 +4368,7 @@ namespace CAP
     sum += vk1;
     esum2 += evk1*evk1;
     normalized->SetBinContent(k,sum);
-    normalized->SetBinError(k,sqrt(esum2));
+    normalized->SetBinError(k,std::sqrt(esum2));
     }
   normalized->Draw();
   for (auto & fraction : fractions)

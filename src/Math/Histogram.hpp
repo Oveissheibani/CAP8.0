@@ -23,7 +23,7 @@ namespace CAP
 
   inline double statErrorSum(double & e1, double & e2)
   {
-  return sqrt(e1*e1+e2*e2);
+  return std::sqrt(e1*e1+e2*e2);
   }
 
   inline double statErrorProduct(double & v1, double & e1, double & v2, double & e2)
@@ -31,7 +31,7 @@ namespace CAP
   // do not use relative errors and avoid divisions
   double ep1 = v1*e2;
   double ep2 = v2*e1;
-  return sqrt(ep1*ep1+ep2*ep2);
+  return std::sqrt(ep1*ep1+ep2*ep2);
   }
 
   inline double statErrorRatio(double & v1, double & e1, double & v2, double & e2)
@@ -39,7 +39,7 @@ namespace CAP
   // do not use relative errors and minimize number of divisions
   if (v2==0) return 1.0E100;
   double er2 = e2*v1/v2;
-  return sqrt(e1*e1+er2*er2)/v2;
+  return std::sqrt(e1*e1+er2*er2)/v2;
   }
 
 

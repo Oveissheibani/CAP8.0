@@ -86,7 +86,7 @@ namespace CAP
       //f1->SetParameters(radius,skin,w);
       t1 = x/_radius;
       t2 = (x-_radius)/_skin;
-      result = x*x*(1+_w*t1*t1) / (1+exp(t2));
+      result = x*x*(1+_w*t1*t1) / (1+std::exp(t2));
       break;
       }
 
@@ -98,7 +98,7 @@ namespace CAP
       t1 = x/_radius;
       t2 = (x - _radius)/_skin;
       t3 = (xx - _radius*_radius)/_skin/_skin;
-      result = x*x*(1+_w*t1*t1) / (1+exp(t3));
+      result = x*x*(1+_w*t1*t1) / (1+std::exp(t3));
       break;
       }
 
@@ -113,8 +113,8 @@ namespace CAP
       tm = _radius - _a;
       t1 = _radius*_a*t0;
       t2 = 2*pi()*tm*tm;
-      t3 = exp(-_radius*x);
-      t4 = exp(-_skin*x);
+      t3 = std::exp(-_radius*x);
+      t4 = std::exp(-_skin*x);
       t5 = (t3-t4)/x;
       t6 = t5*t5;
       result = x*x*t1 /t2*t6;
@@ -127,7 +127,7 @@ namespace CAP
       //      f1->SetParameters(radius,skin,0.0); // same as 3pF but setting W to zero
       t1 = x / _radius;
       t2 = (x - _radius)/_skin;
-      result = x*x/(1+exp(t2));
+      result = x*x/(1+std::exp(t2));
       break;
       }
 
@@ -140,9 +140,9 @@ namespace CAP
       case 8: // Deformed nuclei, TF2 method
       {
       t2= 0;
-      //      f2 = new TF2(name,"x*x*TMath::Sin(y)/(1+exp((x-[0]*(1+[2]*0.315*(3*pow(cos(y),2)-1.0)+[3]*0.105*(35*pow(cos(y),4)-30*pow(cos(y),2)+3)))/[1]))",0.0,maxRadius, 0.0,CAP::MATH::pi());
+      //      f2 = new TF2(name,"x*x*TMath::Sin(y)/(1+exp((x-[0]*(1+[2]*0.315*(3*pow(std::cos(y),2)-1.0)+[3]*0.105*(35*pow(std::cos(y),4)-30*pow(std::cos(y),2)+3)))/[1]))",0.0,maxRadius, 0.0,CAP::MATH::pi());
       //      f2->SetParameters(radius,skin,beta2,beta4);
-      result = x*x/(1+exp(t2));
+      result = x*x/(1+std::exp(t2));
       break;
       }
 
@@ -151,7 +151,7 @@ namespace CAP
       //      f1  = new TF1(name,"x*x*exp(-0.5*(x/[0])*(x/[0]))",0.0,maxRadius);
       //      f1->SetParameter(0,skin);
       t1 = x / _skin;
-      result = x*x*exp(-0.5*t1*t1);
+      result = x*x*std::exp(-0.5*t1*t1);
       break;
       }
 
@@ -164,8 +164,8 @@ namespace CAP
       t1 = x/_skin;
       t2 = 0.4*_skin;
       t3 = t2*t2*t2;
-      t4 = _skin*_skin*_skin;
-      result = -10; //xx*((1-_skin)/t4*exp(-t1*t1) + 0.5/t3*exp(-xx/(t2*t2));
+      t4 = _skin*_skin*_skin; // fix me
+      result = -10; //xx*((1-_skin)/t4*std::exp(-t1*t1) + 0.5/t3*std::exp(-xx/(t2*t2));
       break;
       }
 
@@ -174,14 +174,14 @@ namespace CAP
       // 3pF for proton
       //      f1 = new TF1(name,"x*x*(1+[2]*(x/[0])**2)/(1+exp((x-[0])/[1]))",0,maxRadius);
       //      f1->SetParameters(radius,skin,w);
-      result =  -11.0; //xx*((1-[0])/[1]^3*exp(-t1*t1) + 0.5/t3*exp(-xx/(t2*t2));
+      result =  -11.0; //xx*((1-[0])/[1]^3*std::exp(-t1*t1) + 0.5/t3*std::exp(-xx/(t2*t2));
       break;
       }
 
       case 12:
       {
       // reweighted
-      //      f1 = new TF1(name,"x*x*(1+[2]*(x/[0])**2)/(1+exp((x-[0])/[1]))/([3]+[4]*x+[5]*x^2)",0,maxRadius);
+      //      f1 = new TF1(name,"x*x*(1+[2]*(x/[0])**2)/(1+std::exp((x-[0])/[1]))/([3]+[4]*x+[5]*x^2)",0,maxRadius);
       //      f1->SetParameters(radius,skin,w,r0,r1,r2);
       result =  -12.0;
       break;
@@ -190,7 +190,7 @@ namespace CAP
       case 13:
       {
       // Pb for proton and neutrons reweighted
-      //      f1  = new TF1(name,"x*x*(1+[2]*(x/[0])**2)/(1+exp((x-[0])/[1]))/([3]+[4]*x+[5]*x^2)",0,maxRadius);
+      //      f1  = new TF1(name,"x*x*(1+[2]*(x/[0])**2)/(1+std::exp((x-[0])/[1]))/([3]+[4]*x+[5]*x^2)",0,maxRadius);
       //      f1->SetParameters(radius,skin,w,1.00866,-0.000461484,-0.000203571);
       result =  -13.0;
       break;
@@ -198,7 +198,7 @@ namespace CAP
 
       case 14: // Deformed nuclei, TF2 method, reweighted
       {
-      //      f2 = new TF2(name,"x*x*TMath::Sin(y)/(1+exp((x-[0]*(1+[2]*0.315*(3*pow(cos(y),2)-1.0)+[3]*0.105*(35*pow(cos(y),4)-30*pow(cos(y),2)+3)))/[1]))/([4]+[5]*x+[6]*x^2)",0.0,maxRadius,0.0,CAP::MATH::pi());
+      //      f2 = new TF2(name,"x*x*TMath::Sin(y)/(1+std::exp((x-[0]*(1+[2]*0.315*(3*pow(std::cos(y),2)-1.0)+[3]*0.105*(35*pow(std::cos(y),4)-30*pow(std::cos(y),2)+3)))/[1]))/([4]+[5]*x+[6]*x^2)",0.0,maxRadius,0.0,CAP::MATH::pi());
       //      f2->SetParameters(radius,skin,beta2,beta4,r0,r1,r2);
       result =  -14.0;
       break;
@@ -207,7 +207,7 @@ namespace CAP
       case 15:
       {
       // harmonic oscillator model
-      //      f1 = new TF1(name,"x^2*(1+[0]*(x^2/[1]^2))*exp(-x^2/[1]^2)",0.0,maxRadius);
+      //      f1 = new TF1(name,"x^2*(1+[0]*(x^2/[1]^2))*std::exp(-x^2/[1]^2)",0.0,maxRadius);
       //      f1->SetParameters(radius,skin);
       result =  -15.0;
       break;
@@ -309,7 +309,7 @@ namespace CAP
 //    break;
 //
 //  case 8: // Deformed nuclei, TF2 method
-//    f2 = new TF2(name,"x*x*TMath::Sin(y)/(1+exp((x-[0]*(1+[2]*0.315*(3*pow(cos(y),2)-1.0)+[3]*0.105*(35*pow(cos(y),4)-30*pow(cos(y),2)+3)))/[1]))",0.0,maxRadius, 0.0,CAP::MATH::pi());
+//    f2 = new TF2(name,"x*x*TMath::Sin(y)/(1+exp((x-[0]*(1+[2]*0.315*(3*pow(std::cos(y),2)-1.0)+[3]*0.105*(35*pow(std::cos(y),4)-30*pow(std::cos(y),2)+3)))/[1]))",0.0,maxRadius, 0.0,CAP::MATH::pi());
 //    f2->SetParameters(radius,skin,beta2,beta4);
 //    break;
 //
@@ -340,7 +340,7 @@ namespace CAP
 //    break;
 //
 //  case 14: // Deformed nuclei, TF2 method, reweighted
-//    f2 = new TF2(name,"x*x*TMath::Sin(y)/(1+exp((x-[0]*(1+[2]*0.315*(3*pow(cos(y),2)-1.0)+[3]*0.105*(35*pow(cos(y),4)-30*pow(cos(y),2)+3)))/[1]))/([4]+[5]*x+[6]*x^2)",0.0,maxRadius,0.0,CAP::MATH::pi());
+//    f2 = new TF2(name,"x*x*TMath::Sin(y)/(1+exp((x-[0]*(1+[2]*0.315*(3*pow(std::cos(y),2)-1.0)+[3]*0.105*(35*pow(std::cos(y),4)-30*pow(std::cos(y),2)+3)))/[1]))/([4]+[5]*x+[6]*x^2)",0.0,maxRadius,0.0,CAP::MATH::pi());
 //    f2->SetParameters(radius,skin,beta2,beta4,r0,r1,r2);
 //    break;
 //

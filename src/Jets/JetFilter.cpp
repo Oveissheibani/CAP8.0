@@ -48,8 +48,8 @@ bool JetFilter::accept(const fastjet::PseudoJet & pseudoJet)
   double jet_px = pseudoJet.px();
   double jet_py = pseudoJet.py();
   double jet_pz = pseudoJet.pz();
-  double jet_pt = sqrt(jet_px*jet_px + jet_py*jet_py);
-  double jet_p  = sqrt(jet_pt*jet_pt + jet_pz*jet_pz);
+  double jet_pt = std::sqrt(jet_px*jet_px + jet_py*jet_py);
+  double jet_p  = std::sqrt(jet_pt*jet_pt + jet_pz*jet_pz);
   double jet_eta = 0.0;
   double jet_mult = pseudoJet.constituents().size();
 

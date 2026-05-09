@@ -38,7 +38,7 @@ protected:
   int    impactSamplingMethod;
   int    pdgCodeTarget;
   int    pdgCodeProjectile;
-  double sqrtS;
+  double std::sqrtS;
   int    nPart;
   double psi2, epsilon2, psi3, epsilon3, psi4, epsilon4, psi5, epsilon5;
   
