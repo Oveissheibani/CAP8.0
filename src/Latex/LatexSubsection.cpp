@@ -25,12 +25,7 @@ namespace CAP
   void LatexSubsection::writeHeader(std::ofstream & out)
   {
   skipLines(out,2);
-  if (isExcluded())
-    out << "\\subsection*{" << name() << "}" << endl;
-  else
-    out << "\\subsection{" << name() << "}" << endl;
-  if (label().Length()>0)
-    out << "\\label{sec:" << label() << "}" << endl;
+  out << "\\subsection{" << name() << "}" << endl;
   skipLines(out,1);
   }
 

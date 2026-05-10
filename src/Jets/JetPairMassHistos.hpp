@@ -14,7 +14,7 @@
 #include "HistogramGroup.hpp"
 #include "fastjet/ClusterSequence.hh"
 #include "MathConstants.hpp"
-#include "ParticleTypeList.hpp"
+#include "ParticleDb.hpp"
 
 using namespace fastjet;
 
@@ -41,16 +41,16 @@ public:
 
   virtual void fill(PseudoJet& J1, PseudoJet& J2);
   virtual void scaleHistograms(double scale);
-  virtual void setParticleTypeList(ParticleTypeList * selectedParticleTypeList)
+  virtual void setParticleTypeList(ParticleDb * selectedParticleTypeList)
   {
-  ParticleTypeList = selectedParticleTypeList;
+  particleTypeList = selectedParticleTypeList;
   }
 
 protected:
 
   virtual void cloneB(const JetPairMassHistos & source);
 
-  ParticleTypeList * particleTypeList;
+  ParticleDb * particleTypeList;
   
   TH2 *h_jetpair_n2_ptpt;      // jet1 pt vs. jet2 pt
   TH2 *h_jetpair_n2_phiphi;    // jet1 phi vs. jet2 phi

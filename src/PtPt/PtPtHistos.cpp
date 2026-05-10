@@ -111,19 +111,24 @@ namespace CAP
   void PtPtHistos::configure(const String & taskName,
                              const String & objectType,
                              const Configuration & configuration,
-                             unsigned int index __attribute__((unused)))
+                             unsigned int index)
   {
-  evtName   = configuration.valueString(createKey(taskName,objectType,"evtName"));
-  evt_nbins = configuration.valueInt(   createKey(taskName,objectType,"evt_nbins"));
-  evt_min   = configuration.valueDouble(createKey(taskName,objectType,"evt_min"));
-  evt_max   = configuration.valueDouble(createKey(taskName,objectType,"evt_max"));
+  // Same fixes as ParticlePair3DHistos / NuDynHistos: call the base
+  // configure so _histogramBaseName is set, and read binning from
+  // <task>:HISTOGRAM:* (analyzer-level) instead of <task>:HISTOGRAM_1:*.
+  HistogramGroup::configure(taskName, objectType, configuration, index);
+  String type = "HISTOGRAM";
+  evtName   = configuration.valueString(createKey(taskName,type,"evtName"));
+  evt_nbins = configuration.valueInt(   createKey(taskName,type,"evt_nbins"));
+  evt_min   = configuration.valueDouble(createKey(taskName,type,"evt_min"));
+  evt_max   = configuration.valueDouble(createKey(taskName,type,"evt_max"));
   if (reportDebug(__FUNCTION__))
     {
     printCR();
-    printValue(createKey(taskName,objectType,"evtName"),evtName);
-    printValue(createKey(taskName,objectType,"evt_nbins"),evt_nbins);
-    printValue(createKey(taskName,objectType,"evt_min"),evt_min);
-    printValue(createKey(taskName,objectType,"evt_min"),evt_max);
+    printValue(createKey(taskName,type,"evtName"),evtName);
+    printValue(createKey(taskName,type,"evt_nbins"),evt_nbins);
+    printValue(createKey(taskName,type,"evt_min"),evt_min);
+    printValue(createKey(taskName,type,"evt_min"),evt_max);
     printCR();
     }
   }

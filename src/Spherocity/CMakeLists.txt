@@ -27,6 +27,6 @@ target_include_directories(Spherocity  PUBLIC Spherocity Base  Particles  ${EXTR
 add_definitions(-DOPTIMIZEADDBINCONTENT)
 
 
-install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libSpherocity.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libSpherocity_rdict.pcm" DESTINATION "$ENV{CAP_LIB_PATH}")
-install(TARGETS Spherocity  LIBRARY DESTINATION "$ENV{CAP_LIB_PATH}")
+install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libSpherocity.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libSpherocity_rdict.pcm" DESTINATION ${CAP_INSTALL_LIBDIR})
+install(TARGETS Spherocity  LIBRARY DESTINATION ${CAP_INSTALL_LIBDIR})
 

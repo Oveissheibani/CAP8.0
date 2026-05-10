@@ -39,6 +39,6 @@ target_include_directories(Performance  PUBLIC Performance Base  Particles   ${E
 # optimization for big histogram access within the pair inner loop
 add_definitions(-DOPTIMIZEADDBINCONTENT)
 
-install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libPerformance.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libPerformance_rdict.pcm" DESTINATION "$ENV{CAP_LIB_PATH}")
-install(TARGETS Performance  LIBRARY DESTINATION "$ENV{CAP_LIB_PATH}")
+install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libPerformance.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libPerformance_rdict.pcm" DESTINATION ${CAP_INSTALL_LIBDIR})
+install(TARGETS Performance  LIBRARY DESTINATION ${CAP_INSTALL_LIBDIR})
 

@@ -7,43 +7,34 @@ namespace CAP
   LatexFigure::LatexFigure()
   :
   LatexElement(),
+  _fileName(),
   _caption(),
+  _label(),
   _scale(0.75),
-  _height(2),
-  _width(0),
-  _trimLeft(0),
-  _trimBottom(0),
-  _trimRight(0),
-  _trimTop(0)
+  _height(2)
   { }
 
   LatexFigure::LatexFigure(const LatexFigure & src)
   :
   LatexElement(src),
+  _fileName(src._fileName),
   _caption(src._caption),
+  _label(src._label),
   _scale(src._scale),
-  _height(src._height),
-  _width(src._width),
-  _trimLeft(src._trimLeft),
-  _trimBottom(src._trimBottom),
-  _trimRight(src._trimRight),
-  _trimTop(src._trimTop)
+  _height(src._height)
   { }
 
   LatexFigure  & LatexFigure::operator=(const LatexFigure & rhs)
   {
-  //  if (rhs!=*this)
-  //    {
-  LatexElement::operator=(rhs);
-  _caption    = rhs._caption;
-  _scale      = rhs._scale;
-  _height     = rhs._height;
-  _width      = rhs._width;
-  _trimLeft   = rhs._trimLeft;
-  _trimBottom = rhs._trimBottom;
-  _trimRight  = rhs._trimRight;
-  _trimTop    = rhs._trimTop;
-  //    }
+//  if (rhs!=*this)
+//    {
+    LatexElement::operator=(rhs);
+    _fileName  = rhs._fileName;
+    _caption   = rhs._caption;
+    _label     = rhs._label;
+    _scale     = rhs._scale;
+    _height    = rhs._height;
+//    }
   return *this;
   }
 
@@ -58,7 +49,7 @@ namespace CAP
   String h(""); h += _height;
   out << "\\includegraphics[scale=" << s << ",height=" << h << "in]{" << fileName() << "}" << endl;
   out << "\\caption{" << caption() << "}" << endl;
-  out << "\\label{fig:" << label() << "}" << endl;
+  out << "\\label{" << label() << "}" << endl;
   }
 
   void LatexFigure::writeTrailer(std::ofstream & out)

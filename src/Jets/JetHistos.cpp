@@ -25,7 +25,7 @@ namespace CAP
   JetHistos::JetHistos()
   :
   HistogramGroup(),
-  particleTypeList(ParticleTypeList::list()),
+  particleTypeList(nullptr),
   h_jet_count(nullptr),
   h_jet_pt(nullptr),
   h_jet_eta(nullptr),
@@ -71,7 +71,7 @@ namespace CAP
   JetHistos::JetHistos(const JetHistos & source)
   :
   HistogramGroup(source),
-  particleTypeList(ParticleTypeList::list()),
+  particleTypeList(nullptr),
   h_jet_count(nullptr),
   h_jet_pt(nullptr),
   h_jet_eta(nullptr),

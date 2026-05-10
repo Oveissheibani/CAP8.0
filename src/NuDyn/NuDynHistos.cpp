@@ -87,13 +87,22 @@ namespace CAP
   void NuDynHistos::configure(const String & taskName,
                               const String & objectType,
                               const Configuration & configuration,
-                              unsigned int index __attribute__((unused)) )
+                              unsigned int index )
   {
   if (reportDebug(__FUNCTION__)) { printCR();}
-  evtName   = configuration.valueString(createKey(taskName,objectType,"evtName"));
-  evt_nbins = configuration.valueInt(   createKey(taskName,objectType,"evt_nbins"));
-  evt_min   = configuration.valueDouble(createKey(taskName,objectType,"evt_min"));
-  evt_max   = configuration.valueDouble(createKey(taskName,objectType,"evt_max"));
+  // Same pair of fixes applied to ParticlePair3DHistos::configure:
+  //  (1) Call HistogramGroup::configure so _histogramBaseName picks up
+  //      the per-instance BASE_NAME key — otherwise histogram names
+  //      come out as "NOTSET_mult".
+  //  (2) Read binning from <task>:HISTOGRAM:* (analyzer-level), not
+  //      <task>:HISTOGRAM_1:* (per-instance) — that's what the rest of
+  //      CAP and the .ini composer use.
+  HistogramGroup::configure(taskName, objectType, configuration, index);
+  String type = "HISTOGRAM";
+  evtName   = configuration.valueString(createKey(taskName,type,"evtName"));
+  evt_nbins = configuration.valueInt(   createKey(taskName,type,"evt_nbins"));
+  evt_min   = configuration.valueDouble(createKey(taskName,type,"evt_min"));
+  evt_max   = configuration.valueDouble(createKey(taskName,type,"evt_max"));
   }
 
   void NuDynHistos::create()

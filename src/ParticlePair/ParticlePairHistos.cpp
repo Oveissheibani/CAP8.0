@@ -16,6 +16,9 @@
 #include "Configuration.hpp"
 #include "NameHelpers.hpp"
 #include "RootHistogramHelpers.hpp"
+#include <cmath>      // std::isfinite — defensive guards for BF-per-stage
+#include <limits>     // quiet_NaN
+#include <exception>
 
 ClassImp(CAP::ParticlePairHistos);
 
@@ -366,10 +369,22 @@ namespace CAP
   int iGDeltaYDeltaPhi;
 
   VectorLorentz & momentum1 = particle1.momentum();
-  double pt1   = momentum1.perp();  iPt1 = ptBinFor(pt1);
+  double pt1   = momentum1.perp();
+  // Defensive: NaN/inf pt would crash binning math.  Allows safe
+  // BF-per-stage runs on partons / exotic species.
+  if (!std::isfinite(pt1)) return;
+  iPt1 = ptBinFor(pt1);
   double phi1  = momentum1.phi();   if (phi1<0.0) phi1 += CAP::MATH::twoPi(); iPhi1 = phiBinFor(phi1);
-  double eta1  = momentum1.pseudorapidity(); iEta1 = eta_fill      ? getEtaBinFor(eta1) : 0;
-  double y1    = momentum1.rapidity();       iY1   = rapidity_fill ? getYBinFor(y1)     : 0;
+  // pseudorapidity()/rapidity() can throw or return inf for partons
+  // with E ≤ |pz|.  Catch and substitute NaN; the bin lookup will
+  // return the under/overflow bin which we filter via iEta1==0/iY1==0.
+  double eta1, y1;
+  try { eta1 = momentum1.pseudorapidity(); }
+  catch (...) { eta1 = std::numeric_limits<double>::quiet_NaN(); }
+  iEta1 = (eta_fill && std::isfinite(eta1)) ? getEtaBinFor(eta1) : 0;
+  try { y1 = momentum1.rapidity(); }
+  catch (...) { y1 = std::numeric_limits<double>::quiet_NaN(); }
+  iY1 = (rapidity_fill && std::isfinite(y1)) ? getYBinFor(y1) : 0;
   //  printValue("ParticlePairHistos::fill() eta_fill",eta_fill);
   //  printValue("ParticlePairHistos::fill() rapidity_fill",rapidity_fill);
   //  printValue("ParticlePairHistos::fill() pt1",pt1);
@@ -381,10 +396,17 @@ namespace CAP
   //  printValue("ParticlePairHistos::fill() iY1",iY1);
   //  printValue("ParticlePairHistos::fill() iPhi1",iPhi1);
   VectorLorentz & momentum2 = particle2.momentum();
-  double pt2   = momentum2.perp();  iPt2 = ptBinFor(pt2);
+  double pt2   = momentum2.perp();
+  if (!std::isfinite(pt2)) return;
+  iPt2 = ptBinFor(pt2);
   double phi2  = momentum2.phi();   if (phi2<0.0) phi2 += CAP::MATH::twoPi(); iPhi2 = phiBinFor(phi2);
-  double eta2  = momentum2.pseudorapidity(); iEta2 = eta_fill      ? getEtaBinFor(eta2) : 0;
-  double y2    = momentum2.rapidity();       iY2   = rapidity_fill ? getYBinFor(y2)     : 0;
+  double eta2, y2;
+  try { eta2 = momentum2.pseudorapidity(); }
+  catch (...) { eta2 = std::numeric_limits<double>::quiet_NaN(); }
+  iEta2 = (eta_fill && std::isfinite(eta2)) ? getEtaBinFor(eta2) : 0;
+  try { y2 = momentum2.rapidity(); }
+  catch (...) { y2 = std::numeric_limits<double>::quiet_NaN(); }
+  iY2 = (rapidity_fill && std::isfinite(y2)) ? getYBinFor(y2) : 0;
 
   if (iPt1==0  || iPt2==0)  return;
   if (iPhi1==0 || iPhi1==0) return;
@@ -395,8 +417,14 @@ namespace CAP
   int iDeltaPhi  = iPhi1-iPhi2;
   if (iDeltaPhi < 0) iDeltaPhi += phi_nbins;
   //cout <<  "iDeltaY:" << iDeltaY << " iDeltaPhi: " << iDeltaPhi << endl;
-  p2_fill = false;
-  rapidity_fill  = true;
+  // Removed two leftover developer overrides here that unconditionally set
+  // `p2_fill = false; rapidity_fill = true;`.  The rapidity_fill=true
+  // override was a real bug: it forced the rapidity branch (line ~439)
+  // to run for every pair, but the matching histograms (h_n2_yY, ...)
+  // are only allocated by create() when rapidity_fill is already true at
+  // creation time.  Result: a guaranteed nullptr-deref segfault on the
+  // first pair when the user configured rapidity_fill=0.  Keep the
+  // configured values intact instead.
   //  printValue("ParticlePairHistos::fill() iPt1",iPt1);
   //  printValue("ParticlePairHistos::fill() iPt2",iPt2);
   if (!h_n2_ptpt) throw Exception("!h_n2_ptpt",__FUNCTION__);

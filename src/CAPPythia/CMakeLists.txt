@@ -1,17 +1,30 @@
-################################################################################################
-# Project CAP/Pythia
-################################################################################################
+################################################################################
+# CAP / CAPPythia — Pythia 8 event-generator wrapper
+################################################################################
 
-ROOT_GENERATE_DICTIONARY(G__CAPPythia PythiaEventGenerator.hpp PythiaEventReader.hpp LINKDEF CAPPythiaLinkDef.h)
+# NOTE: PythiaEventReader.{hpp,cpp} is broken legacy code (refers to
+# ProcessorSingle, ParticleTypeList::list(), and TTree branches that no longer
+# exist). It's intentionally excluded from the build until somebody decides to
+# either repair or delete it. PythiaEventGenerator covers the live workflow.
+ROOT_GENERATE_DICTIONARY(G__CAPPythia
+    PythiaEventGenerator.hpp
+    LINKDEF CAPPythiaLinkDef.h)
 
-################################################################################################
-# Create a shared library with geneated dictionary
-################################################################################################
-add_library(CAPPythia SHARED PythiaEventGenerator.cpp PythiaEventReader.cpp  G__CAPPythia.cxx)
-target_link_libraries(CAPPythia  Base  Particles  PYTHIA8_LIB  ${ROOT_LIBRARIES} ${EXTRA_LIBS} )
-#target_link_libraries(CAPPythia  Base  Particles    ${ROOT_LIBRARIES} ${EXTRA_LIBS} )
-target_include_directories(CAPPythia  PUBLIC  Base  Particles CAPPythia "$ENV{PYTHIA8_INCLUDE_PATH}" "$ENV{PYTHIA8_INCLUDE_PATH}/Pythia8/"
- ${EXTRA_INCLUDES})
+add_library(CAPPythia SHARED
+    PythiaEventGenerator.cpp
+    G__CAPPythia.cxx)
 
-install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libCAPPythia.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libCAPPythia_rdict.pcm" DESTINATION "$ENV{CAP_LIB_PATH}")
-install(TARGETS CAPPythia  LIBRARY DESTINATION "$ENV{CAP_LIB_PATH}") 
+target_link_libraries(CAPPythia
+    PUBLIC  Base Particles
+            Pythia8::Pythia8
+            ${ROOT_LIBRARIES} ${EXTRA_LIBS})
+
+target_include_directories(CAPPythia
+    PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}
+            ${EXTRA_INCLUDES})
+
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/libCAPPythia.rootmap"
+    "${CMAKE_CURRENT_BINARY_DIR}/libCAPPythia_rdict.pcm"
+    DESTINATION ${CAP_INSTALL_LIBDIR})
+install(TARGETS CAPPythia LIBRARY DESTINATION ${CAP_INSTALL_LIBDIR})

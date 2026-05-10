@@ -60,8 +60,21 @@ void EventIterator::configure(const Configuration & configuration)
 {
   EventProcessor::configure(configuration);
   const String & taskName = Task::name();
+  // Backward compat: shipped .ini files use the legacy keys
+  // <task>:nEventsRequested / <task>:nEventsReport. The new key form is
+  // <task>:EVENT:REQUESTED:N / <task>:EVENT:REPORT:N. Try the new keys
+  // first, then fall back to the legacy keys when the new ones are absent
+  // (valueInt returns 0 when a key is missing).
   _nEventsRequested = configuration.valueInt(createKey(taskName,"EVENT:REQUESTED:N"));
+  if (_nEventsRequested <= 0)
+    _nEventsRequested = configuration.valueInt(createKey(taskName,"nEventsRequested"));
+
   _nEventsReport    = configuration.valueInt(createKey(taskName,"EVENT:REPORT:N"));
+  if (_nEventsReport <= 0)
+    _nEventsReport = configuration.valueInt(createKey(taskName,"nEventsReport"));
+  if (_nEventsReport <= 0)
+    _nEventsReport = 1;   // sensible default — report every event
+
   if (reportDebug(__FUNCTION__))
     {
     printCR();

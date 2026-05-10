@@ -77,7 +77,13 @@ namespace CAP
   {
   if (reportDebug(__FUNCTION__)) { printCR(); }
   file.cd();
-  for (auto & object  : _objects) object->Write();
+  // See sibling HistogramGroup in src/Particles for rationale.
+  for (auto & object  : _objects)
+    {
+    if (!object) continue;
+    object->SetDirectory(&file);
+    object->Write();
+    }
   }
   
   void HistogramGroup::scaleHistograms(double a)

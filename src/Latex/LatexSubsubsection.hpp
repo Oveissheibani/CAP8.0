@@ -20,7 +20,6 @@ namespace CAP
   ClassDef(LatexSubsubsection,0)
   };
 
-
 } // namespace CAP
 
 #endif // !CAP__LatexSubsubsection

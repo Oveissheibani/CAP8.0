@@ -14,7 +14,7 @@
 #include "HistogramGroup.hpp"
 #include "fastjet/ClusterSequence.hh"
 #include "MathConstants.hpp"
-#include "ParticleTypeList.hpp"
+#include "ParticleDb.hpp"
 
 using namespace fastjet;
 
@@ -47,7 +47,7 @@ public:
 
   virtual void  cloneB(const JetSingleHistos & group);
 
-  ParticleTypeList * particleTypeList;
+  ParticleDb * particleTypeList;
 
   TH1 *h_jet_n1_pt;    // pt
   TH1 *h_jet_n1_phi;   // phi - azimuth relative to z axis

@@ -26,7 +26,7 @@ namespace CAP
 JetPairHistos::JetPairHistos()
 :
 HistogramGroup(),
-particleTypeList(ParticleTypeList::list()),
+particleTypeList(nullptr),
 h_jet_n2_ptpt(nullptr),
 h_jet_n2_phiphi(nullptr),
 h_jet_n2_etaeta(nullptr),
@@ -68,7 +68,7 @@ z_max(0)
 JetPairHistos::JetPairHistos(const JetPairHistos & source)
 :
 HistogramGroup(source),
-particleTypeList(ParticleTypeList::list()),
+particleTypeList(nullptr),
 h_jet_n2_ptpt(nullptr),
 h_jet_n2_phiphi(nullptr),
 h_jet_n2_etaeta(nullptr),

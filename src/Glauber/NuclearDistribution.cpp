@@ -71,7 +71,8 @@ namespace CAP
   double NuclearDistribution::evaluate(double x, double theta __attribute__((unused)) )
   {
   double result = -1.0;
-  double t0, t1, t2, t3, t4, t5, t6, tp, tm, xx;
+  double t0, t1, t2, t3, t4, t5, t6, tm, xx;
+  double tp __attribute__((unused));
   switch (_type)
     {
       case 0: // exponential profile

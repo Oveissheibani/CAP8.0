@@ -20,6 +20,6 @@ G__PtPt.cxx)
 target_link_libraries(PtPt Base  Particles  ${ROOT_LIBRARIES} ${EXTRA_LIBS} )
 target_include_directories(PtPt  PUBLIC Base  Particles  PtPt ${EXTRA_INCLUDES} ) 
 
-install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libPtPt.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libPtPt_rdict.pcm" DESTINATION "$ENV{CAP_LIB_PATH}")
-install(TARGETS PtPt  LIBRARY DESTINATION "$ENV{CAP_LIB_PATH}")
+install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libPtPt.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libPtPt_rdict.pcm" DESTINATION ${CAP_INSTALL_LIBDIR})
+install(TARGETS PtPt  LIBRARY DESTINATION ${CAP_INSTALL_LIBDIR})
 

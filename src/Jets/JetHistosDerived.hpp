@@ -14,7 +14,7 @@
 #include "JetHistos.hpp"
 #include "fastjet/ClusterSequence.hh"
 #include "MathConstants.hpp"
-#include "ParticleTypeList.hpp"
+#include "ParticleDb.hpp"
 
 using namespace fastjet;
 

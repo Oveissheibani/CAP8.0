@@ -343,6 +343,40 @@ void ParticlePair3DDerivedHistos::calculateDerivedHistograms(ParticleSingleDeriv
   TH2 * part1_ptY = part1Histos.h_n1_ptY;
   TH2 * part2_ptY = part2Histos.h_n1_ptY;
 
+  // Defensive: any of these can be null when running with non-default
+  // particle keep flags (partons / gauge bosons) where the
+  // ParticleSingleHistos didn't allocate the corresponding histo
+  // because its enable flag (e.g., ptVsRapidity_fill) was off, or
+  // because the IMPORT loaded a file written without that observable.
+  // Without these guards we'd SEGV on GetBinContent / Integral.
+  if (!part1_n1 || !part2_n1)
+    {
+    if (reportInfo(__FUNCTION__))
+      {
+      printCR();
+      printString("Pair3D: part1/2_n1 null — skipping pair");
+      }
+    return;
+    }
+  if (!part1_ptY || !part2_ptY)
+    {
+    if (reportInfo(__FUNCTION__))
+      {
+      printCR();
+      printString("Pair3D: part1/2_ptY null (ptVsRapidity_fill off?) — skipping pair");
+      }
+    return;
+    }
+  if (!pairHistos.h_n2_Qinv || !pairHistos.h_n2_DeltaP)
+    {
+    if (reportInfo(__FUNCTION__))
+      {
+      printCR();
+      printString("Pair3D: pairHistos h_n2_Qinv/h_n2_DeltaP null — skipping pair");
+      }
+    return;
+    }
+
   double v1 = part1_n1->GetBinContent(2);
   part1_n1->SetBinContent(1,v1);
   double v2 = part2_n1->GetBinContent(2);
@@ -360,7 +394,7 @@ void ParticlePair3DDerivedHistos::calculateDerivedHistograms(ParticleSingleDeriv
   int nPart1 = nParticle1;
   int nPart2 = nParticle2;
   Configuration & configuration = parentTask()->configuration();
-  const String & bn  = name();
+  const String & bn  __attribute__((unused)) = name();
   const String & ptn = parentName();
   long nMcSimEvents  = configuration.valueInt(ptn,   "nMcSimEvents");
   double scale = 1.0/double(nMcSimEvents);

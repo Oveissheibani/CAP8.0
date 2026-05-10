@@ -15,5 +15,5 @@ G__BasicEventGen.cxx)
 target_link_libraries(BasicEventGen  Base  Particles   ${ROOT_LIBRARIES} ${EXTRA_LIBS} )
 target_include_directories(BasicEventGen  PUBLIC  Base Math Particles ${EXTRA_INCLUDES})
 
-install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libBasicEventGen.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libBasicEventGen_rdict.pcm" DESTINATION "$ENV{CAP_LIB_PATH}")
-install(TARGETS BasicEventGen  LIBRARY DESTINATION "$ENV{CAP_LIB_PATH}") 
+install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libBasicEventGen.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libBasicEventGen_rdict.pcm" DESTINATION ${CAP_INSTALL_LIBDIR})
+install(TARGETS BasicEventGen  LIBRARY DESTINATION ${CAP_INSTALL_LIBDIR}) 

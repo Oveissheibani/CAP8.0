@@ -68,7 +68,7 @@ namespace CAP
   JetSingleHistos::JetSingleHistos(const JetSingleHistos & source)
   :
   HistogramGroup(source),
-  particleTypeList(ParticleTypeList::list()),
+  particleTypeList(nullptr),
   h_jet_n1_pt(nullptr),
   h_jet_n1_phi(nullptr),
   h_jet_n1_eta(nullptr),

@@ -1,24 +1,30 @@
-################################################################################################
-# Project CAP/Jets
-################################################################################################
+################################################################################
+# CAP / Jets — FastJet-based jet reconstruction
+################################################################################
 
-###include(${ROOT_USE_FILE})
-###include_directories(${CMAKE_SOURCE_DIR} ${ROOT_INCLUDE_DIRS})
-###add_definitions(${ROOT_CXX_FLAGS})
+ROOT_GENERATE_DICTIONARY(G__Jets
+    JetHistos.hpp JetSingleHistos.hpp JetPairHistos.hpp JetAnalyzer.hpp
+    JetHistosDerived.hpp JetSingleHistosDerived.hpp JetPairHistosDerived.hpp
+    LINKDEF JetLinkDef.h)
 
-ROOT_GENERATE_DICTIONARY(G__Jets JetHistos.hpp JetSingleHistos.hpp JetPairHistos.hpp JetAnalyzer.hpp
-JetHistosDerived.hpp JetSingleHistosDerived.hpp JetPairHistosDerived.hpp  LINKDEF JetLinkDef.h)
+add_library(Jets SHARED
+    JetHistos.cpp JetSingleHistos.cpp JetPairHistos.cpp
+    JetHelpers.cpp JetAnalyzer.cpp
+    JetHistosDerived.cpp JetSingleHistosDerived.cpp JetPairHistosDerived.cpp
+    G__Jets.cxx)
 
-################################################################################################
-# Create a shared library with geneated dictionary
-################################################################################################
-add_compile_options(-Wall -Wextra -pedantic)
-add_library(Jets SHARED JetHistos.cpp JetSingleHistos.cpp JetPairHistos.cpp JetHelpers.cpp JetAnalyzer.cpp
-JetHistosDerived.cpp JetSingleHistosDerived.cpp  JetPairHistosDerived.cpp G__Jets.cxx)
+target_link_libraries(Jets
+    PUBLIC  Base Particles CAPPythia
+            FastJet::FastJet
+            Pythia8::Pythia8
+            ${ROOT_LIBRARIES} ${EXTRA_LIBS})
 
-target_link_libraries(Jets Base Particles FASTJET_LIB ${ROOT_LIBRARIES} ${EXTRA_LIBS} )
-target_include_directories(Jets PUBLIC Jets Particles CAPPythia Base Math ${CAP_FASTJET_INCLUDE_PATH} ${CAP_PYTHIA8_LIB_PATH}  ${EXTRA_INCLUDES} )
+target_include_directories(Jets
+    PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}
+            ${EXTRA_INCLUDES})
 
-install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libJets.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libJets_rdict.pcm" DESTINATION "$ENV{CAP_LIB_PATH}")
-install(TARGETS Jets LIBRARY DESTINATION "$ENV{CAP_LIB_PATH}")
-
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/libJets.rootmap"
+    "${CMAKE_CURRENT_BINARY_DIR}/libJets_rdict.pcm"
+    DESTINATION ${CAP_INSTALL_LIBDIR})
+install(TARGETS Jets LIBRARY DESTINATION ${CAP_INSTALL_LIBDIR})

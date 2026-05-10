@@ -27,6 +27,6 @@ target_include_directories(ParticleSingle  PUBLIC Base    Particles ParticleSing
 add_definitions(-DOPTIMIZEADDBINCONTENT)
 
 
-install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libParticleSingle.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libParticleSingle_rdict.pcm" DESTINATION "$ENV{CAP_LIB_PATH}")
-install(TARGETS ParticleSingle  LIBRARY DESTINATION "$ENV{CAP_LIB_PATH}")
+install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libParticleSingle.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libParticleSingle_rdict.pcm" DESTINATION ${CAP_INSTALL_LIBDIR})
+install(TARGETS ParticleSingle  LIBRARY DESTINATION ${CAP_INSTALL_LIBDIR})
 

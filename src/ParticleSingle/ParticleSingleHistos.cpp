@@ -16,6 +16,9 @@
 #include "Configuration.hpp"
 #include "NameHelpers.hpp"
 #include "RootHistogramHelpers.hpp"
+#include <cmath>      // std::isfinite — defensive guards against partons / NaN momenta
+#include <limits>     // quiet_NaN
+#include <exception>
 
 ClassImp(CAP::ParticleSingleHistos);
 
@@ -277,32 +280,58 @@ namespace CAP
   //!
   void ParticleSingleHistos::fill(Particle & particle, double weight)
   {
+  // Defensive: skip particles whose 4-momentum is broken or whose
+  // type pointer is null.  Allows CAP to safely process partons,
+  // gauge bosons, and any other "exotic" PDG that may flow in via
+  // the BF-per-stage workflow (status != 1, etc.).
   VectorLorentz & momentum = particle.momentum();
   float pt   = momentum.perp();
-  float eta  = momentum.pseudorapidity();
+  if (!std::isfinite(pt)) return;
+  // pseudorapidity() can return ±inf for pt=0; rapidity() THROWS a
+  // MathException("arg<=0") when (E+pz)/(E-pz) <= 0 (partons exactly
+  // along beam axis, or off-shell with E < |pz|).  Both are common
+  // when KeepStatuses includes 23/51/52 (partons).  Compute defensively.
+  float eta;
+  try { eta = momentum.pseudorapidity(); }
+  catch (...) { eta = std::numeric_limits<float>::quiet_NaN(); }
   float phi  = momentum.phi();
   if (phi<0) phi += CAP::MATH::twoPi();
-  float rapidity = momentum.rapidity();
+  float rapidity;
+  try { rapidity = momentum.rapidity(); }
+  catch (...) { rapidity = std::numeric_limits<float>::quiet_NaN(); }
   h_n1_pt  ->Fill(pt,weight);
-  h_n1_ptXS->Fill(pt,weight/pt);
+  // ptXS divides by pt — guard against pt==0 (partons exactly along
+  // beam axis can have pt=0).
+  if (pt > 0.0) h_n1_ptXS->Fill(pt,weight/pt);
   if (eta_fill)
     {
-    h_n1_phiEta->Fill(eta,phi,weight);
-    if (p2_fill) h_spt_phiEta->Fill(eta,phi,weight*pt);
+    if (std::isfinite(eta))
+      {
+      h_n1_phiEta->Fill(eta,phi,weight);
+      if (p2_fill) h_spt_phiEta->Fill(eta,phi,weight*pt);
+      }
     }
   if (rapidity_fill)
     {
-    h_n1_phiY->Fill(rapidity,phi,weight);
-    if (p2_fill) h_spt_phiY->Fill(rapidity,phi,weight*pt);
+    if (std::isfinite(rapidity))
+      {
+      h_n1_phiY->Fill(rapidity,phi,weight);
+      if (p2_fill) h_spt_phiY->Fill(rapidity,phi,weight*pt);
+      }
     }
   if (ptVsRapidity_fill)
     {
-    h_n1_ptY->Fill(rapidity,pt);
+    if (std::isfinite(rapidity))
+      h_n1_ptY->Fill(rapidity,pt);
     }
   if (pid_fill)
     {
-    int pdgIndex = particle.type().pdgCode();
-    h_pdgId->Fill(pdgIndex);
+    // type() dereferences _type — null check first.
+    if (particle.typePtr())
+      {
+      int pdgIndex = particle.type().pdgCode();
+      h_pdgId->Fill(pdgIndex);
+      }
     }
   }
 

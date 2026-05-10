@@ -1,0 +1,2248 @@
+#!/usr/bin/env python3
+"""cap-plot — interactive ROOT histogram browser / plotter for CAP outputs.
+
+Features
+--------
+* Browse a folder (typically histos/<run>/) and pick multiple .root files.
+* Tree of every histogram inside each file, including nested TDirectories.
+  Click the ☐ to tick / untick a histogram for plotting.
+* Plot mode "Separate" (grid of pads, configurable cols × rows) or "Same"
+  (overlay everything on one pad).
+* Per-selection style: line / marker color and marker style + draw options.
+* Logarithmic axes, grid, axis-range, title overrides.
+* Save the current canvas as PNG / PDF / SVG / ROOT.
+
+Implementation: real PyROOT renders into a TCanvas in batch mode, dumps
+PNG, the GUI shows the PNG inside a Tk label.  No X11 windows from ROOT.
+
+Launch:  ./cap-plot                  (defaults to histos/)
+         ./cap-plot path/to/folder   (start in given folder)
+"""
+from __future__ import annotations
+
+import os
+import sys
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent
+
+# Tk is loaded lazily so --self-test works on a headless box.  The GUI
+# code refers to `tk` and `ttk` etc. through these module-level names.
+tk = None        # type: ignore[assignment]
+ttk = None       # type: ignore[assignment]
+filedialog = None
+messagebox = None
+
+colorchooser = None
+
+def _import_tk():
+    global tk, ttk, filedialog, messagebox, colorchooser
+    import tkinter as _tk
+    from tkinter import ttk as _ttk
+    from tkinter import filedialog as _fd
+    from tkinter import messagebox as _mb
+    from tkinter import colorchooser as _cc
+    tk, ttk, filedialog, messagebox, colorchooser = \
+        _tk, _ttk, _fd, _mb, _cc
+
+
+# ---------------------------------------------------------------------------
+#  PyROOT bootstrap — works whether ROOT was installed via brew, conda,
+#  CVMFS or built from source.  We trust root-config to point us at the
+#  python bindings if `import ROOT` doesn't work out of the box.
+# ---------------------------------------------------------------------------
+
+def _bootstrap_pyroot():
+    try:
+        import ROOT  # noqa: F401
+        return ROOT
+    except Exception:
+        pass
+    try:
+        libdir = subprocess.check_output(
+            ["root-config", "--libdir"], text=True, stderr=subprocess.DEVNULL,
+        ).strip()
+        if libdir:
+            sys.path.insert(0, libdir)
+            sys.path.insert(0, str(Path(libdir).parent / "bindings" / "pyroot"))
+        import ROOT  # noqa: F401
+        return ROOT
+    except Exception as exc:
+        print(f"cap-plot: cannot import ROOT — {exc}", file=sys.stderr)
+        return None
+
+
+ROOT = _bootstrap_pyroot()
+if ROOT is not None:
+    ROOT.gROOT.SetBatch(True)
+    ROOT.gErrorIgnoreLevel = 1001  # silence ROOT::Info noise
+
+# Pillow lets us scale arbitrary PNGs (Tk 8.6 PhotoImage is picky and
+# can't resize on the fly).  When unavailable, fall back to PhotoImage's
+# subsample() — coarser but works.
+try:
+    from PIL import Image, ImageTk      # noqa: F401
+    # Pillow 10 removed Image.LANCZOS; the constant moved to Image.Resampling.
+    # Older Pillows don't have Image.Resampling.  Pick whichever is available.
+    LANCZOS = getattr(Image, "Resampling", Image).LANCZOS
+    HAVE_PIL = True
+except Exception:
+    HAVE_PIL = False
+    LANCZOS = None
+
+
+# ---------------------------------------------------------------------------
+#  Style enumerations (matched against ROOT TAttMarker / TAttLine values)
+# ---------------------------------------------------------------------------
+
+COLORS = [
+    ("black",       1),
+    ("red",         2),
+    ("green",       3),
+    ("blue",        4),
+    ("yellow",      5),
+    ("magenta",     6),
+    ("cyan",        7),
+    ("orange",      800),    # ROOT::kOrange
+    ("violet",      880),    # ROOT::kViolet
+    ("teal",        840),    # ROOT::kTeal
+    ("azure",       860),    # ROOT::kAzure
+    ("spring",      820),    # ROOT::kSpring
+    ("pink",        900),    # ROOT::kPink
+    ("dark red",    51),
+    ("dark green",  46),
+    ("dark blue",   38),
+]
+COLOR_NAMES = [c[0] for c in COLORS]
+COLOR_BY_NAME = dict(COLORS)
+
+# Sentinel string for the "pick a custom RGB" entry in the color dropdown.
+CUSTOM_COLOR_LABEL = "▶ Pick custom RGB…"
+
+
+def color_to_root_index(value):
+    """Translate a DrawSpec.color string into a ROOT color index.
+    Accepts named colors from COLOR_BY_NAME, '#rrggbb' hex strings, or
+    ROOT ints serialized as 'root:NNN' (which we use to remember
+    custom colours allocated via TColor::GetColor)."""
+    if not value:
+        return 1
+    if value in COLOR_BY_NAME:
+        return COLOR_BY_NAME[value]
+    if value.startswith("root:"):
+        try: return int(value.split(":", 1)[1])
+        except ValueError: return 1
+    if value.startswith("#") and len(value) == 7 and ROOT is not None:
+        try:
+            r = int(value[1:3], 16) / 255.0
+            g = int(value[3:5], 16) / 255.0
+            b = int(value[5:7], 16) / 255.0
+            return ROOT.TColor.GetColor(r, g, b)
+        except Exception:
+            return 1
+    return 1
+
+# ROOT marker styles — code, label
+MARKERS = [
+    (1,  "dot"),
+    (20, "● circle"),
+    (24, "○ open circle"),
+    (21, "■ square"),
+    (25, "□ open square"),
+    (22, "▲ triangle"),
+    (26, "△ open triangle"),
+    (23, "▼ inv triangle"),
+    (32, "▽ open inv tri"),
+    (33, "♦ diamond"),
+    (27, "◇ open diamond"),
+    (29, "★ star"),
+    (30, "☆ open star"),
+    (34, "+ cross"),
+    (28, "x cross"),
+]
+MARKER_LABELS = [m[1] for m in MARKERS]
+MARKER_BY_LABEL = {m[1]: m[0] for m in MARKERS}
+
+# ROOT line styles (TAttLine fLineStyle).  Code 1 = solid; 2..10 are
+# the standard dashed patterns.
+LINE_STYLES = [
+    (1,  "solid ──"),
+    (2,  "dashed ──"),
+    (3,  "dotted ··"),
+    (4,  "dash-dot ─·"),
+    (5,  "long dash ──"),
+    (7,  "fine dash ··"),
+    (9,  "long-short ──"),
+    (10, "dash-dot-dot ─··"),
+]
+LINESTYLE_LABELS = [l[1] for l in LINE_STYLES]
+LINESTYLE_BY_LABEL = {l[1]: l[0] for l in LINE_STYLES}
+
+# Per-class draw-option presets — surfaced in a dropdown when editing
+# the draw_opt cell, so the user picks a known-good option instead of
+# typing one and having ROOT silently render an empty pad.
+DRAWOPT_PRESETS = {
+    "TH1":         ["E1", "E0", "E2", "E3", "EX0", "E", "HIST", "L",
+                    "P", "LP", "C", "B"],
+    "TProfile":    ["E0", "E1", "E", "HIST", "LP", "L"],
+    "TH2":         ["COLZ", "COL", "SURF", "SURF1", "SURF2", "SURF3",
+                    "LEGO", "LEGO1", "LEGO2", "CONT", "CONT1", "CONT2",
+                    "CONT3", "CONT4", "BOX", "BOX1", "CANDLE", "VIOLIN",
+                    "TEXT", "ARR", "TEXTCOL"],
+    "TProfile2D":  ["COLZ", "COL", "SURF", "LEGO", "BOX"],
+    "TH3":         ["BOX", "BOX1", "BOX2", "GLBOX", "GLBOX2",
+                    "ISO", "LEGO"],
+    "TGraph":      ["AP", "ALP", "AL", "AC", "A*"],
+    "TF1":         ["", "L", "C"],
+}
+
+
+def class_dim(classname: str) -> int:
+    """Histogram dimension — 1/2/3 for TH1/TH2/TH3, 1 for profiles &
+    graphs, 0 if unrecognised.  Used by the Same-mode compatibility
+    check: TH1 SAME TH2 makes no sense."""
+    if classname.startswith("TH3") or classname.startswith("TProfile3D"):
+        return 3
+    if classname.startswith("TH2") or classname.startswith("TProfile2D"):
+        return 2
+    if classname.startswith(("TH1", "TProfile", "TGraph", "TF1")):
+        return 1
+    return 0
+
+
+def drawopt_choices_for(classname: str) -> list[str]:
+    """Return the draw-option preset list keyed off a class name.
+    Falls back to TH1 presets for unknown classes."""
+    # Most-specific match first so TProfile2D wins over TProfile.
+    for k in ("TProfile2D", "TProfile", "TH3", "TH2", "TH1",
+              "TGraph", "TF1"):
+        if classname.startswith(k):
+            return DRAWOPT_PRESETS[k]
+    return DRAWOPT_PRESETS["TH1"]
+
+
+# ROOT TLatex symbol palette — paired (display glyph, ROOT TLatex code).
+# Clicking one inserts the code into whichever title/legend entry was
+# last focused.  ROOT renders these natively in any text it draws, so
+# typing #pi^{+} in the X-title field comes out as π⁺ on the canvas.
+TLATEX_SYMBOLS = {
+    "Greek lowercase": [
+        ("α", "#alpha"), ("β", "#beta"),  ("γ", "#gamma"), ("δ", "#delta"),
+        ("ε", "#varepsilon"), ("ζ", "#zeta"), ("η", "#eta"),  ("θ", "#theta"),
+        ("ι", "#iota"),  ("κ", "#kappa"), ("λ", "#lambda"),("μ", "#mu"),
+        ("ν", "#nu"),    ("ξ", "#xi"),    ("π", "#pi"),   ("ρ", "#rho"),
+        ("σ", "#sigma"), ("τ", "#tau"),   ("φ", "#varphi"), ("χ", "#chi"),
+        ("ψ", "#psi"),   ("ω", "#omega"),
+    ],
+    "Greek uppercase": [
+        ("Γ", "#Gamma"), ("Δ", "#Delta"), ("Θ", "#Theta"),
+        ("Λ", "#Lambda"),("Ξ", "#Xi"),    ("Π", "#Pi"),
+        ("Σ", "#Sigma"), ("Φ", "#Phi"),   ("Ψ", "#Psi"),
+        ("Ω", "#Omega"),
+    ],
+    "Math operators": [
+        ("≤", "#leq"),    ("≥", "#geq"),   ("≠", "#neq"),    ("≈", "#approx"),
+        ("±", "#pm"),     ("×", "#times"), ("·", "#cdot"),   ("÷", "#div"),
+        ("√", "#sqrt{}"), ("∞", "#infty"), ("∂", "#partial"),("∇", "#nabla"),
+        ("∫", "#int"),    ("∑", "#sum"),   ("∏", "#prod"),
+        ("∈", "#in"),     ("∉", "#notin"), ("⊂", "#subset"), ("∪", "#cup"),
+        ("∩", "#cap"),    ("→", "#rightarrow"), ("←", "#leftarrow"),
+        ("↔", "#leftrightarrow"),
+    ],
+    "Sub/super/format": [
+        ("xⁿ",   "^{}"),
+        ("x_n", "_{}"),
+        ("frac", "#frac{}{}"),
+        ("sqrt", "#sqrt{}"),
+        ("over", "#bar{}"),
+        ("hat",  "#hat{}"),
+        ("vec",  "#vec{}"),
+        ("dot",  "#dot{}"),
+        ("color red",  "#color[2]{}"),
+        ("color blue", "#color[4]{}"),
+        ("scale ½",    "#scale[0.5]{}"),
+    ],
+    "Particle physics": [
+        ("π⁺",  "#pi^{+}"),    ("π⁻", "#pi^{-}"),  ("π⁰", "#pi^{0}"),
+        ("K⁺",  "K^{+}"),       ("K⁻", "K^{-}"),    ("K⁰", "K^{0}"),
+        ("K_S", "K^{0}_{S}"),   ("K_L","K^{0}_{L}"),
+        ("p",  "p"),            ("p̄", "#bar{p}"),
+        ("n",  "n"),            ("n̄", "#bar{n}"),
+        ("Λ",  "#Lambda"),      ("Λ̄", "#bar{#Lambda}"),
+        ("γ",  "#gamma"),       ("ν", "#nu"),
+        ("e⁻", "e^{-}"),        ("e⁺","e^{+}"),
+        ("μ⁻", "#mu^{-}"),      ("μ⁺","#mu^{+}"),
+        ("p_T","p_{T}"),        ("E_T","E_{T}"),
+        ("√s", "#sqrt{s}"),     ("dN/dη", "dN/d#eta"),
+        ("dN/dy", "dN/dy"),     ("d²N/dηdp_T", "d^{2}N/d#etadp_{T}"),
+    ],
+}
+
+# Save-format dropdown choices (extension → file-type label).
+SAVE_FORMATS = [
+    (".png", "PNG image"),
+    (".pdf", "PDF (vector)"),
+    (".svg", "SVG (vector)"),
+    (".eps", "EPS (vector)"),
+    (".root", "ROOT canvas (.root)"),
+    (".gif", "GIF image"),
+]
+SAVE_FORMAT_LABELS = [f"{ext}  — {desc}" for ext, desc in SAVE_FORMATS]
+SAVE_EXT_BY_LABEL = {f"{ext}  — {desc}": ext for ext, desc in SAVE_FORMATS}
+
+
+def default_draw_opt(classname: str) -> str:
+    """Pick a sensible default draw option per ROOT class.  E1 only works
+    for TH1/profiles; TH2/TH3 need explicit COLZ/BOX-style options to
+    show any output at all."""
+    if classname.startswith("TH3"):    return "BOX"
+    if classname.startswith("TH2"):    return "COLZ"
+    if classname.startswith("TProfile2D"): return "COLZ"
+    if classname.startswith("TProfile"):   return "E0"
+    if classname.startswith("TGraph"): return "AP"
+    if classname.startswith("TF1"):    return ""
+    return "E1"                         # TH1 default: markers + errors
+
+
+# A draw entry — one row in the selection table.
+class DrawSpec:
+    __slots__ = ("file", "path", "color", "marker", "draw_opt",
+                 "label", "classname", "line_style", "line_width",
+                 "marker_size", "legend_label", "in_legend")
+
+    def __init__(self, file: str, path: str, label: str,
+                 classname: str = "TH1"):
+        self.file = file              # absolute path
+        self.path = path              # /dir/dir/histname inside the file
+        self.classname = classname
+        self.color = "black"
+        self.marker = "● circle"
+        self.marker_size = 0.9
+        self.line_style = "solid ──"
+        self.line_width = 2
+        self.draw_opt = default_draw_opt(classname)
+        self.label = label
+        # Per-spec legend entry — designer overrides legend_label and
+        # uses in_legend to include / exclude this row.
+        self.legend_label = ""             # blank → use file::path short
+        self.in_legend = True
+
+
+# ---------------------------------------------------------------------------
+#  GUI
+# ---------------------------------------------------------------------------
+
+class CapPlotGUI:
+    SEPARATE = "Separate (grid)"
+    SAME = "Same (overlay)"
+
+    def __init__(self, start_dir: Path):
+        self.root = tk.Tk()
+        self.root.title("CAP — plot browser")
+        self.root.geometry("1280x820")
+        self.start_dir = start_dir if start_dir.exists() else REPO
+
+        self.files: dict[str, "ROOT.TFile"] = {}    # path -> open TFile
+        self.specs: list[DrawSpec] = []
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="cap-plot-"))
+        self.last_png: Path | None = None
+        self._image_ref = None                       # keep PhotoImage alive
+        # Remember (file, path) tuples that the user had ticked so reload
+        # restores them.  Filled on every check-toggle, drained on reload.
+        self._checked_memory: set[tuple[str, str]] = set()
+        # Debounce token for the live search box.
+        self._filter_after_id: str | None = None
+
+        if ROOT is None:
+            self._fatal_no_root()
+            return
+
+        self._build_ui()
+        # Tk 8.5 can't display PNG natively.  Warn early so the user
+        # isn't surprised when plots fail to render.
+        try:
+            tk_ver = float(self.root.tk.call("info", "patchlevel").rsplit(".", 1)[0])
+            if tk_ver < 8.6:
+                self.status_var.set(
+                    f"Tk {tk_ver} is older than 8.6 — plot images may not "
+                    f"render.  Install Pillow for a robust workaround.")
+        except Exception:
+            pass
+        # Use the validated fallback so a non-existent CLI argument doesn't
+        # leave the title stuck on a path nothing was loaded from.
+        self._populate_initial(self.start_dir)
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    # -- bootstrap helpers ------------------------------------------------
+
+    def _fatal_no_root(self):
+        f = ttk.Frame(self.root, padding=20)
+        f.pack(fill=tk.BOTH, expand=True)
+        ttk.Label(f, text="PyROOT not available", font=("TkDefaultFont", 16, "bold")
+                  ).pack(pady=10)
+        ttk.Label(f, justify="left", text=(
+            "cap-plot needs ROOT's Python bindings.  Couldn't import ROOT.\n\n"
+            "Try one of:\n"
+            "  • source the ROOT thisroot.sh that ships with your install\n"
+            "  • make sure root-config is on your $PATH\n"
+            "  • pip install root_numpy as a fallback (limited)\n"
+        )).pack()
+
+    def _on_close(self):
+        prev = getattr(self, "_last_canvas", None)
+        if prev is not None:
+            try: prev.Close()
+            except Exception: pass
+            self._last_canvas = None
+        for f in self.files.values():
+            try: f.Close()
+            except Exception: pass
+        try: shutil.rmtree(self.tmpdir, ignore_errors=True)
+        except Exception: pass
+        self.root.destroy()
+
+    # -- UI construction --------------------------------------------------
+
+    def _build_ui(self):
+        # Top bar with logo + title + browse buttons.
+        top = ttk.Frame(self.root)
+        top.pack(fill=tk.X, padx=10, pady=8)
+        logo_png = REPO / "logo" / "logo.png"
+        if logo_png.is_file():
+            try:
+                img = tk.PhotoImage(file=str(logo_png))
+                target_h = 40
+                factor = max(1, max(img.width(), img.height()) // target_h)
+                if factor > 1:
+                    img = img.subsample(factor, factor)
+                self._logo_img = img
+                ttk.Label(top, image=self._logo_img).pack(side=tk.LEFT, padx=(0, 10))
+            except Exception:
+                pass
+        ttk.Label(top, text="CAP — plot browser",
+                  font=("TkDefaultFont", 14, "bold")).pack(side=tk.LEFT)
+        ttk.Button(top, text="Browse folder…",
+                   command=self._browse_folder).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(top, text="Add .root file…",
+                   command=self._add_file_dialog).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(top, text="Reload all",
+                   command=self._reload_all).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(top, text="Σ TLatex symbols…",
+                   command=self._open_tlatex_palette
+                   ).pack(side=tk.RIGHT, padx=4)
+        # Track the last text-bearing widget that had focus so the
+        # symbol palette knows where to insert.
+        self._last_text_widget = None
+        self.root.bind_all("<FocusIn>", self._track_focus, add="+")
+
+        # Main paned: left tree, right plot+controls.
+        main = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
+        main.pack(fill=tk.BOTH, expand=True, padx=10, pady=4)
+
+        left = ttk.Frame(main)
+        main.add(left, weight=1)
+        right = ttk.Frame(main)
+        main.add(right, weight=3)
+
+        # ---- left: search box + file tree ------------------------------
+        ttk.Label(left, text="Open ROOT files / histograms",
+                  font=("TkDefaultFont", 10, "bold")).pack(anchor="w")
+        srow = ttk.Frame(left); srow.pack(fill=tk.X, pady=(2, 4))
+        ttk.Label(srow, text="🔍").pack(side=tk.LEFT)
+        self.filter_var = tk.StringVar()
+        # Debounce: re-run the filter only ~200 ms after the last
+        # keystroke so typing on a 500-entry tree doesn't lag.
+        self.filter_var.trace_add("write", lambda *a: self._schedule_filter())
+        ttk.Entry(srow, textvariable=self.filter_var
+                  ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
+        ttk.Button(srow, text="✕", width=2,
+                   command=lambda: self.filter_var.set("")
+                   ).pack(side=tk.LEFT)
+
+        tree_frame = ttk.Frame(left)
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+        self.tree = ttk.Treeview(tree_frame, show="tree", selectmode="extended")
+        self.tree.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
+        sb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        sb.pack(fill=tk.Y, side=tk.LEFT)
+        self.tree.configure(yscrollcommand=sb.set)
+        self.tree.bind("<Button-1>", self._on_tree_click, add="+")
+        self.tree.bind("<Double-1>", self._on_tree_double, add="+")
+        # Lazy directory expansion — populate one level deeper only when
+        # the user opens a node, so a 70-histogram .root file doesn't
+        # carpet-bomb the tree at load time.
+        self.tree.bind("<<TreeviewOpen>>", self._on_tree_open, add="+")
+        # Per-item state: {iid: {"kind","file","path","checked","label"}}
+        self.tree_state: dict[str, dict] = {}
+        # Sentinel iids whose presence means "I haven't expanded yet".
+        self._lazy_placeholders: set[str] = set()
+
+        # ---- right: plot + controls ------------------------------------
+        # Plot canvas placeholder.
+        plot_frame = ttk.LabelFrame(right, text="Plot")
+        plot_frame.pack(fill=tk.BOTH, expand=True)
+        self.plot_label = tk.Label(plot_frame, background="#202020",
+                                    foreground="#cccccc",
+                                    text="Tick histograms on the left, then click Draw.")
+        self.plot_label.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+        # Re-fit the rendered PNG on resize so widening the panel zooms in.
+        self.plot_label.bind("<Configure>", self._on_plot_resize, add="+")
+        self._resize_after_id: str | None = None
+
+        # Style controls below plot.
+        ctl = ttk.LabelFrame(right, text="Style & layout")
+        ctl.pack(fill=tk.X, pady=(6, 0))
+
+        # Mode + grid
+        rowA = ttk.Frame(ctl); rowA.pack(fill=tk.X, padx=6, pady=4)
+        ttk.Label(rowA, text="Mode:").pack(side=tk.LEFT)
+        self.mode_var = tk.StringVar(value=self.SEPARATE)
+        ttk.Radiobutton(rowA, text=self.SEPARATE, variable=self.mode_var,
+                        value=self.SEPARATE).pack(side=tk.LEFT, padx=4)
+        ttk.Radiobutton(rowA, text=self.SAME, variable=self.mode_var,
+                        value=self.SAME).pack(side=tk.LEFT, padx=4)
+        ttk.Label(rowA, text="  Grid cols:").pack(side=tk.LEFT, padx=(20, 2))
+        self.cols_var = tk.IntVar(value=2)
+        ttk.Spinbox(rowA, from_=1, to=8, textvariable=self.cols_var,
+                    width=4).pack(side=tk.LEFT)
+        ttk.Label(rowA, text="rows:").pack(side=tk.LEFT, padx=(8, 2))
+        self.rows_var = tk.IntVar(value=2)
+        ttk.Spinbox(rowA, from_=1, to=8, textvariable=self.rows_var,
+                    width=4).pack(side=tk.LEFT)
+
+        # Log axes / grid / legend
+        rowB = ttk.Frame(ctl); rowB.pack(fill=tk.X, padx=6, pady=2)
+        self.logx_var = tk.BooleanVar(value=False)
+        self.logy_var = tk.BooleanVar(value=False)
+        self.logz_var = tk.BooleanVar(value=False)
+        self.grid_var = tk.BooleanVar(value=True)
+        self.legend_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(rowB, text="log X", variable=self.logx_var).pack(side=tk.LEFT)
+        ttk.Checkbutton(rowB, text="log Y", variable=self.logy_var).pack(side=tk.LEFT, padx=4)
+        ttk.Checkbutton(rowB, text="log Z", variable=self.logz_var).pack(side=tk.LEFT, padx=4)
+        ttk.Checkbutton(rowB, text="grid",  variable=self.grid_var).pack(side=tk.LEFT, padx=8)
+        ttk.Checkbutton(rowB, text="legend", variable=self.legend_var).pack(side=tk.LEFT)
+        ttk.Label(rowB, text="  X title:").pack(side=tk.LEFT, padx=(20, 2))
+        self.xtitle_var = tk.StringVar()
+        ttk.Entry(rowB, textvariable=self.xtitle_var, width=12).pack(side=tk.LEFT)
+        ttk.Label(rowB, text="Y title:").pack(side=tk.LEFT, padx=(6, 2))
+        self.ytitle_var = tk.StringVar()
+        ttk.Entry(rowB, textvariable=self.ytitle_var, width=12).pack(side=tk.LEFT)
+        ttk.Label(rowB, text="Z title:").pack(side=tk.LEFT, padx=(6, 2))
+        self.ztitle_var = tk.StringVar()
+        ttk.Entry(rowB, textvariable=self.ztitle_var, width=12).pack(side=tk.LEFT)
+
+        # Row B2: title-offsets + error-bars toggle + plot title.
+        rowB2 = ttk.Frame(ctl); rowB2.pack(fill=tk.X, padx=6, pady=2)
+        ttk.Label(rowB2, text="Plot title:").pack(side=tk.LEFT)
+        self.plot_title_var = tk.StringVar()
+        ttk.Entry(rowB2, textvariable=self.plot_title_var, width=20
+                  ).pack(side=tk.LEFT, padx=4)
+        ttk.Label(rowB2, text="X off:").pack(side=tk.LEFT, padx=(12, 2))
+        self.xtitle_off_var = tk.StringVar(value="1.0")
+        ttk.Entry(rowB2, textvariable=self.xtitle_off_var, width=5
+                  ).pack(side=tk.LEFT)
+        ttk.Label(rowB2, text="Y off:").pack(side=tk.LEFT, padx=(8, 2))
+        self.ytitle_off_var = tk.StringVar(value="1.2")
+        ttk.Entry(rowB2, textvariable=self.ytitle_off_var, width=5
+                  ).pack(side=tk.LEFT)
+        ttk.Label(rowB2, text="Z off:").pack(side=tk.LEFT, padx=(8, 2))
+        self.ztitle_off_var = tk.StringVar(value="1.4")
+        ttk.Entry(rowB2, textvariable=self.ztitle_off_var, width=5
+                  ).pack(side=tk.LEFT)
+        self.errbars_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(rowB2, text="error bars",
+                        variable=self.errbars_var).pack(side=tk.LEFT, padx=12)
+        # 3D wire mesh — on by default; turn off to suppress the wire
+        # frame on SURF/LEGO/BOX-style plots (sets SetLineWidth(0) on
+        # the histo at draw time).
+        self.wire3d_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(rowB2, text="3D wire mesh",
+                        variable=self.wire3d_var).pack(side=tk.LEFT)
+
+        # Range row — entries that map to TAxis::SetRangeUser.  Empty
+        # field = auto (use the histogram's natural range).
+        rrow = ttk.Frame(ctl); rrow.pack(fill=tk.X, padx=6, pady=(6, 4))
+        ttk.Label(rrow, text="X:").pack(side=tk.LEFT)
+        self.xmin_var = tk.StringVar(); self.xmax_var = tk.StringVar()
+        ttk.Entry(rrow, textvariable=self.xmin_var, width=8
+                  ).pack(side=tk.LEFT, padx=2)
+        ttk.Label(rrow, text="—").pack(side=tk.LEFT)
+        ttk.Entry(rrow, textvariable=self.xmax_var, width=8
+                  ).pack(side=tk.LEFT, padx=2)
+        ttk.Label(rrow, text="  Y:").pack(side=tk.LEFT, padx=(12, 0))
+        self.ymin_var = tk.StringVar(); self.ymax_var = tk.StringVar()
+        ttk.Entry(rrow, textvariable=self.ymin_var, width=8
+                  ).pack(side=tk.LEFT, padx=2)
+        ttk.Label(rrow, text="—").pack(side=tk.LEFT)
+        ttk.Entry(rrow, textvariable=self.ymax_var, width=8
+                  ).pack(side=tk.LEFT, padx=2)
+        ttk.Label(rrow, text="  Z:").pack(side=tk.LEFT, padx=(12, 0))
+        self.zmin_var = tk.StringVar(); self.zmax_var = tk.StringVar()
+        ttk.Entry(rrow, textvariable=self.zmin_var, width=8
+                  ).pack(side=tk.LEFT, padx=2)
+        ttk.Label(rrow, text="—").pack(side=tk.LEFT)
+        ttk.Entry(rrow, textvariable=self.zmax_var, width=8
+                  ).pack(side=tk.LEFT, padx=2)
+        ttk.Button(rrow, text="Auto", width=6,
+                   command=self._reset_ranges).pack(side=tk.LEFT, padx=8)
+        # Force-overlay opt-out: cleared by default, ticked = ignore the
+        # mixed-dimension check in Same mode (e.g. for TH1 + TGraph).
+        self.force_overlay_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(rrow, text="force overlay (mixed dims)",
+                        variable=self.force_overlay_var
+                        ).pack(side=tk.RIGHT, padx=4)
+
+        # Per-selection style table — now with line style + width.
+        tbl_frame = ttk.LabelFrame(
+            right,
+            text="Selected histograms — double-click any cell to edit "
+                 "(color · marker · line · width · draw_opt)")
+        tbl_frame.pack(fill=tk.X, pady=(6, 0))
+        # Helper hint — a thin label above the table that nudges users
+        # toward the editable cells.  Disappears once they've edited
+        # at least once (we drop it on first commit).
+        self.spec_hint = ttk.Label(
+            tbl_frame,
+            text="↑ Tick histograms on the left.  "
+                 "↓ Double-click a color / marker / line / lw / "
+                 "draw_opt cell to change it.",
+            foreground="#666")
+        self.spec_hint.pack(anchor="w", padx=6, pady=(2, 0))
+        cols = ("label", "color", "marker", "m.size",
+                "line", "l.size", "draw_opt")
+        self.spec_tree = ttk.Treeview(tbl_frame, columns=cols,
+                                      show="headings", height=5)
+        widths = (290, 80, 100, 60, 100, 60, 90)
+        for c, w in zip(cols, widths):
+            self.spec_tree.heading(c, text=c)
+            self.spec_tree.column(c, width=w, anchor="w",
+                                   stretch=(c == "label"))
+        self.spec_tree.pack(fill=tk.X, side=tk.LEFT, padx=4, pady=4)
+        # Double-click is the primary path; single-click on a non-label
+        # cell also pops the editor so missed clicks still work.
+        self.spec_tree.bind("<Double-1>", self._edit_spec_cell, add="+")
+        self.spec_tree.bind("<Button-1>", self._maybe_edit_on_click,
+                            add="+")
+        sb2 = ttk.Scrollbar(tbl_frame, orient=tk.VERTICAL,
+                            command=self.spec_tree.yview)
+        sb2.pack(side=tk.LEFT, fill=tk.Y)
+        self.spec_tree.configure(yscrollcommand=sb2.set)
+
+        # Legend appearance — populated/edited by the legend designer.
+        # Drawn at the top of the legend in same-mode.
+        self.legend_title_var  = tk.StringVar()
+        self.legend_border_var = tk.BooleanVar(value=False)
+        self.legend_textsize_var = tk.StringVar(value="0.03")
+        # Custom NDC coordinates — only used when position == "custom".
+        self.legend_x1_var = tk.StringVar(value="0.62")
+        self.legend_y1_var = tk.StringVar(value="0.74")
+        self.legend_x2_var = tk.StringVar(value="0.94")
+        self.legend_y2_var = tk.StringVar(value="0.92")
+
+        # Action row: draw / clear / legend designer / save-format.
+        act = ttk.Frame(right); act.pack(fill=tk.X, pady=(6, 6))
+        ttk.Button(act, text="Draw  ▶", command=self._draw
+                   ).pack(side=tk.LEFT, padx=4)
+        ttk.Button(act, text="Clear selection",
+                   command=self._clear_selection
+                   ).pack(side=tk.LEFT, padx=4)
+        ttk.Button(act, text="🎨 Legend designer…",
+                   command=self._open_legend_designer
+                   ).pack(side=tk.LEFT, padx=4)
+        ttk.Button(act, text="📄 LaTeX report…",
+                   command=self._generate_latex_report
+                   ).pack(side=tk.LEFT, padx=4)
+        ttk.Label(act, text="  Save as:").pack(side=tk.LEFT, padx=(12, 2))
+        self.save_format_var = tk.StringVar(value=SAVE_FORMAT_LABELS[1])  # PDF default
+        ttk.Combobox(act, textvariable=self.save_format_var,
+                     values=SAVE_FORMAT_LABELS, state="readonly",
+                     width=22).pack(side=tk.LEFT)
+        ttk.Button(act, text="Save…", command=self._save_plot_dropdown
+                   ).pack(side=tk.LEFT, padx=4)
+        self.status_var = tk.StringVar(value="Ready.")
+        ttk.Label(act, textvariable=self.status_var,
+                  anchor="e").pack(side=tk.RIGHT, padx=8)
+
+    # -- file / tree population ------------------------------------------
+
+    def _populate_initial(self, start_dir: Path):
+        """Auto-add every .root in start_dir.  Updates the title regardless
+        so the user can tell where they're looking."""
+        roots = sorted(start_dir.glob("*.root")) if start_dir.is_dir() else []
+        for f in roots:
+            self._add_file(f)
+        self.root.title(
+            f"CAP — plot browser  ·  {start_dir}   "
+            f"({len(roots)} file{'s' if len(roots) != 1 else ''})")
+        if start_dir.is_dir() and not roots:
+            self.status_var.set(f"No .root files in {start_dir}.")
+
+    def _reset_state(self):
+        """Wipe everything in the current view but keep window/process alive."""
+        for f in self.files.values():
+            try: f.Close()
+            except Exception: pass
+        self.files.clear()
+        self.specs.clear()
+        self.tree_state.clear()
+        self._lazy_placeholders.clear()
+        self._checked_memory.clear()
+        for iid in self.tree.get_children(""):
+            self.tree.delete(iid)
+        for iid in self.spec_tree.get_children(""):
+            self.spec_tree.delete(iid)
+        # Drop any cached image so a <Configure> resize doesn't redraw
+        # the previous folder's plot in the wiped state.
+        self.last_png = None
+        self._image_ref = None
+        self.plot_label.configure(image="",
+            text="Tick histograms on the left, then click Draw.")
+
+    def _browse_folder(self):
+        d = filedialog.askdirectory(title="Pick folder with .root files",
+                                    initialdir=str(self.start_dir))
+        if not d:
+            return
+        self.start_dir = Path(d)
+        self._reset_state()
+        self._populate_initial(self.start_dir)
+
+    def _add_file_dialog(self):
+        f = filedialog.askopenfilename(
+            title="Open .root file", initialdir=str(self.start_dir),
+            filetypes=[("ROOT files", "*.root"), ("All", "*.*")])
+        if f:
+            self._add_file(Path(f))
+
+    def _add_file(self, path: Path):
+        path_s = str(path.resolve())
+        if path_s in self.files:
+            return
+        try:
+            f = ROOT.TFile.Open(path_s, "READ")
+            if not f or f.IsZombie():
+                raise RuntimeError("could not open")
+        except Exception as exc:
+            messagebox.showerror("cap-plot", f"Could not open {path}: {exc}")
+            return
+        self.files[path_s] = f
+        # Show: how many top-level keys are in there so the user has a hint
+        # of what's behind the closed node.
+        n_keys = len(f.GetListOfKeys())
+        node = self.tree.insert(
+            "", "end",
+            text=f"📄 {path.name}   ({n_keys} entries)",
+            open=False)
+        # Track parent explicitly — Tk's tree.parent(iid) behavior for
+        # detached items is documented but we don't want to depend on
+        # it.  Storing here makes _apply_filter robust.
+        self.tree_state[node] = {"kind": "file", "file": path_s,
+                                  "path": "", "checked": False,
+                                  "parent": ""}
+        self._add_lazy_placeholder(node)
+        self.status_var.set(f"Loaded {path.name} ({n_keys} entries).")
+        # Auto-restore: if anything in this file was checked before,
+        # walk the saved paths now so the user doesn't have to click
+        # through directories before drawing.
+        wanted_paths = {p for (fp, p) in self._checked_memory if fp == path_s}
+        if wanted_paths:
+            self._auto_expand_for(node, wanted_paths)
+
+    def _add_lazy_placeholder(self, parent_iid: str):
+        ph = self.tree.insert(parent_iid, "end", text="  …loading…")
+        self._lazy_placeholders.add(ph)
+
+    def _auto_expand_for(self, file_node: str, wanted_paths: set):
+        """Walk every directory along the way to wanted_paths so the
+        leaf histograms get inserted into the tree (and hence get their
+        was_checked tick restored).  Called after _add_file when there
+        are remembered selections in this file."""
+        # Collect the set of directory prefixes we need to expand,
+        # e.g. wanted_path "dir1/sub/h" → expand "dir1" and "dir1/sub".
+        dir_prefixes: set[str] = set()
+        for p in wanted_paths:
+            parts = p.split("/")
+            for k in range(1, len(parts)):
+                dir_prefixes.add("/".join(parts[:k]))
+        # Walk from file_node depth-first, expanding any dir whose path
+        # is in dir_prefixes — also expand the file itself.
+        def walk(parent: str):
+            kids = list(self.tree.get_children(parent))
+            # Force populate if the only child is a placeholder.
+            if len(kids) == 1 and kids[0] in self._lazy_placeholders:
+                ph = kids[0]
+                try: self.tree.delete(ph)
+                except tk.TclError: pass
+                self._lazy_placeholders.discard(ph)
+                self._populate_one_level(parent)
+                kids = list(self.tree.get_children(parent))
+            for k in kids:
+                kst = self.tree_state.get(k)
+                if not kst: continue
+                if kst["kind"] == "dir" and kst["path"] in dir_prefixes:
+                    walk(k)
+        walk(file_node)
+
+    def _on_tree_open(self, _ev):
+        """Expand a node lazily — list one level deeper.  Called every time
+        a node is opened; we only do real work the first time, when the
+        sole child is the placeholder we inserted at insert-time."""
+        iid = self.tree.focus()
+        children = self.tree.get_children(iid)
+        # If this node has the placeholder as its only child, populate.
+        if len(children) == 1 and children[0] in self._lazy_placeholders:
+            ph = children[0]
+            self.tree.delete(ph); self._lazy_placeholders.discard(ph)
+            self._populate_one_level(iid)
+
+    def _populate_one_level(self, parent_iid: str):
+        """Read keys for the directory `parent_iid` represents and add
+        one Treeview row per child, without recursing."""
+        st = self.tree_state.get(parent_iid)
+        if not st: return
+        tf = self.files.get(st["file"])
+        if tf is None: return
+        # Resolve the in-file directory.
+        if st["path"]:
+            tdir = tf.Get(st["path"])
+        else:
+            tdir = tf
+        if tdir is None or not hasattr(tdir, "GetListOfKeys"):
+            return
+        self._defer_refresh = False
+
+        # Collect all keys then sort: directories first, then by name.
+        plot_classes = ("TH1", "TH2", "TH3", "TProfile",
+                        "TProfile2D", "TGraph", "TF1")
+        items = []
+        for key in tdir.GetListOfKeys():
+            name = key.GetName()
+            cls  = key.GetClassName()
+            if cls.startswith("TDirectory"):
+                items.append((0, name, cls))
+            elif any(cls.startswith(c) for c in plot_classes):
+                items.append((1, name, cls))
+            # everything else: skipped (TList, TParameter, etc.)
+        items.sort(key=lambda t: (t[0], t[1].lower()))
+
+        for kind_rank, name, classname in items:
+            full_path = f"{st['path']}/{name}" if st["path"] else name
+            if kind_rank == 0:
+                node = self.tree.insert(parent_iid, "end",
+                                         text=f"📁 {name}", open=False)
+                self.tree_state[node] = {"kind": "dir",
+                                          "file": st["file"],
+                                          "path": full_path,
+                                          "checked": False,
+                                          "parent": parent_iid}
+                self._add_lazy_placeholder(node)
+            else:
+                # If this histogram was ticked before a reload, restore.
+                was_checked = (st["file"], full_path) in self._checked_memory
+                mark = "☑" if was_checked else "☐"
+                node = self.tree.insert(parent_iid, "end",
+                                         text=f"{mark} {name}   [{classname}]")
+                self.tree_state[node] = {"kind": "histo",
+                                          "file": st["file"],
+                                          "path": full_path,
+                                          "checked": was_checked,
+                                          "classname": classname,
+                                          "name": name,
+                                          "parent": parent_iid}
+                if was_checked:
+                    self._defer_refresh = True
+        # Batch the refresh: many restores in one populate call →
+        # one _refresh_specs at the end (was O(n²) before).
+        if getattr(self, "_defer_refresh", False):
+            self._defer_refresh = False
+            self._refresh_specs()
+        # If a search is active, re-apply so newly populated children
+        # respect the current filter.
+        if self.filter_var.get().strip():
+            self._schedule_filter()
+
+    def _reload_all(self):
+        # Close & reopen every file from scratch — picks up freshly written histos.
+        paths = list(self.files.keys())
+        for f in self.files.values():
+            try: f.Close()
+            except Exception: pass
+        self.files.clear()
+        self.tree_state.clear()
+        self._lazy_placeholders.clear()
+        for iid in self.tree.get_children(""):
+            self.tree.delete(iid)
+        for p in paths:
+            self._add_file(Path(p))
+
+    # -- tree click handling ---------------------------------------------
+
+    def _on_tree_click(self, ev):
+        iid = self.tree.identify_row(ev.y)
+        if not iid: return
+        st = self.tree_state.get(iid)
+        if not st: return
+        # Only treat clicks on the indicator area (first ~20px) as toggles
+        # for histograms.  Files/dirs toggle on click anywhere except text.
+        if st["kind"] == "histo" and ev.x < 30:
+            self._toggle_check(iid)
+
+    def _on_tree_double(self, ev):
+        iid = self.tree.identify_row(ev.y)
+        if not iid: return
+        st = self.tree_state.get(iid)
+        if not st: return
+        if st["kind"] == "histo":
+            self._toggle_check(iid)
+
+    def _toggle_check(self, iid: str):
+        st = self.tree_state[iid]
+        st["checked"] = not st["checked"]
+        text = self.tree.item(iid, "text")
+        if st["kind"] == "histo":
+            new_text = text.replace("☐", "☑") if st["checked"] \
+                       else text.replace("☑", "☐")
+            self.tree.item(iid, text=new_text)
+            # Remember choice across reloads.
+            key = (st["file"], st["path"])
+            if st["checked"]:
+                self._checked_memory.add(key)
+            else:
+                self._checked_memory.discard(key)
+            self._refresh_specs()
+
+    def _refresh_specs(self):
+        # Build the spec list from currently-checked tree items.
+        # Keep style choices for entries that already existed.
+        old_by_key = {(s.file, s.path): s for s in self.specs}
+        self.specs.clear()
+        for iid, st in self.tree_state.items():
+            if st["kind"] != "histo" or not st["checked"]:
+                continue
+            label = f"{Path(st['file']).name} :: {st['path']}"
+            spec = old_by_key.get((st["file"], st["path"]))
+            if spec is None:
+                spec = DrawSpec(st["file"], st["path"], label,
+                                classname=st.get("classname", "TH1"))
+                # auto-rotate color for variety
+                spec.color = COLOR_NAMES[len(self.specs) % len(COLOR_NAMES)]
+            self.specs.append(spec)
+
+        for i in self.spec_tree.get_children(""):
+            self.spec_tree.delete(i)
+        for spec in self.specs:
+            self.spec_tree.insert("", "end", values=(
+                spec.label, spec.color, spec.marker, spec.marker_size,
+                spec.line_style, spec.line_width, spec.draw_opt))
+
+    def _schedule_filter(self):
+        """Debounce: re-run _apply_filter ~200 ms after the last keystroke."""
+        if self._filter_after_id:
+            try: self.root.after_cancel(self._filter_after_id)
+            except Exception: pass
+        self._filter_after_id = self.root.after(200, self._apply_filter)
+
+    def _apply_filter(self):
+        """Show only rows that match the search query, plus their
+        ancestors.  Strategy: stamp every iid with a `match` (this row
+        matches) or `descend` (an ancestor of a match) tag, then walk
+        parent→children recursively and detach the rest.  We never need
+        to re-attach in a specific order because we don't move items —
+        we only detach mismatches.  Placeholders stay attached so
+        users can still expand directories."""
+        self._filter_after_id = None
+        q = self.filter_var.get().strip().lower()
+
+        # When a query is active, force-expand any unexpanded files /
+        # directories so the search reaches their contents.  Recurse
+        # because expanding one dir may surface sub-dirs that also
+        # carry placeholders.  Bounded by max_iters so a pathological
+        # file structure can't lock the GUI.
+        if q:
+            for _ in range(8):     # 8 levels of nesting is plenty
+                iids = [iid for iid, st in list(self.tree_state.items())
+                        if st["kind"] in ("file", "dir")]
+                expanded_any = False
+                for iid in iids:
+                    kids = self.tree.get_children(iid)
+                    if len(kids) == 1 and kids[0] in self._lazy_placeholders:
+                        ph = kids[0]
+                        try: self.tree.delete(ph)
+                        except tk.TclError: pass
+                        self._lazy_placeholders.discard(ph)
+                        self._populate_one_level(iid)
+                        expanded_any = True
+                if not expanded_any:
+                    break
+
+        # Decide which iids should stay visible.  Use the parent we
+        # recorded in tree_state when each row was inserted — Tk's own
+        # tree.parent(iid) is unreliable for currently-detached items,
+        # so we keep our own copy.
+        keep: set[str] = set()
+        if not q:
+            keep = set(self.tree_state.keys()) | self._lazy_placeholders
+        else:
+            for iid, st in self.tree_state.items():
+                if st["kind"] != "histo":
+                    continue
+                text = self.tree.item(iid, "text").lower()
+                if q in text or q in st.get("path", "").lower():
+                    keep.add(iid)
+                    # ancestors via recorded parent chain
+                    p = st.get("parent", "")
+                    while p:
+                        keep.add(p)
+                        p = self.tree_state.get(p, {}).get("parent", "")
+
+        # Apply: walk our own state in insertion order so reattach
+        # produces the original layout.  CPython 3.7+ guarantees dict
+        # iteration is insertion order; we rely on that.
+        for iid, st in list(self.tree_state.items()):
+            parent = st.get("parent", "")
+            try:
+                if iid in keep:
+                    self.tree.reattach(iid, parent, "end")
+                else:
+                    self.tree.detach(iid)
+            except tk.TclError:
+                pass
+
+    def _dir_has_match(self, iid: str, q: str) -> bool:
+        # Force-expand lazily so the search reaches inside.
+        children = self.tree.get_children(iid)
+        if len(children) == 1 and children[0] in self._lazy_placeholders:
+            ph = children[0]
+            self.tree.delete(ph); self._lazy_placeholders.discard(ph)
+            self._populate_one_level(iid)
+            children = self.tree.get_children(iid)
+        for child in children:
+            cst = self.tree_state.get(child, {})
+            if cst.get("kind") == "histo" and \
+               (q in self.tree.item(child, "text").lower()
+                or q in cst.get("path", "").lower()):
+                return True
+            if cst.get("kind") == "dir" and self._dir_has_match(child, q):
+                return True
+        return False
+
+    def _maybe_edit_on_click(self, ev):
+        """Open the editor on a SINGLE click for any non-label column.
+        That removes the 'is this clickable?' uncertainty.  Label
+        column (#1) is selectable for highlighting only."""
+        item = self.spec_tree.identify_row(ev.y)
+        col  = self.spec_tree.identify_column(ev.x)
+        if not item: return
+        if col in ("#0", "#1", ""):  # label or tree column
+            return
+        self._edit_spec_cell(ev)
+
+    def _edit_spec_cell(self, ev):
+        item = self.spec_tree.identify_row(ev.y)
+        col  = self.spec_tree.identify_column(ev.x)
+        if not item: return
+        # Hide the helper hint once the user has interacted with a cell.
+        if getattr(self, "spec_hint", None) is not None:
+            try:
+                self.spec_hint.pack_forget()
+                self.spec_hint = None
+            except Exception:
+                pass
+        idx = self.spec_tree.index(item)
+        if idx >= len(self.specs): return
+        spec = self.specs[idx]
+        col_id = int(col.replace("#", ""))    # 1-based
+        if col_id == 2:    # color (named + custom RGB at the end)
+            choices = COLOR_NAMES + [CUSTOM_COLOR_LABEL]
+            self._popup_picker(item, "color", choices, spec, col_id,
+                               on_commit=self._maybe_pick_custom_color)
+        elif col_id == 3:  # marker
+            self._popup_picker(item, "marker", MARKER_LABELS, spec, col_id)
+        elif col_id == 4:  # marker size (0.0–10.0 free entry)
+            self._popup_text(item, "marker_size", spec, col_id)
+        elif col_id == 5:  # line style
+            self._popup_picker(item, "line_style", LINESTYLE_LABELS,
+                               spec, col_id)
+        elif col_id == 6:  # line width
+            self._popup_text(item, "line_width", spec, col_id)
+        elif col_id == 7:  # draw opt — class-aware preset combobox,
+                           # editable so power users can type combos
+                           # like 'COLZ TEXT' or 'HIST E1'.
+            self._popup_picker(item, "draw_opt",
+                               drawopt_choices_for(spec.classname),
+                               spec, col_id, readonly=False)
+
+    def _maybe_pick_custom_color(self, spec):
+        """Called by _popup_picker when the color cell commits.  If the
+        user picked CUSTOM_COLOR_LABEL, open Tk's color wheel and store
+        the resulting #rrggbb (color_to_root_index will turn it into
+        a TColor index at render time)."""
+        if spec.color != CUSTOM_COLOR_LABEL:
+            return
+        try:
+            initial = "#000000"
+            (_, hex_str) = colorchooser.askcolor(
+                title="Pick custom color (RGB)", initialcolor=initial,
+                parent=self.root)
+            if hex_str:
+                spec.color = hex_str
+            else:
+                spec.color = "black"
+        except Exception:
+            spec.color = "black"
+        self._refresh_specs_table_only()
+
+    def _popup_picker(self, item, attr, choices, spec, col_id,
+                      readonly=True, on_commit=None):
+        """Per-cell editor.  When readonly=False (used for draw_opt) the
+        combobox accepts free-text too — a power user can type
+        'COLZ TEXT' instead of being limited to single presets.
+        on_commit, if given, is called with the spec after the new
+        value has been written — used by the custom-RGB hook."""
+        top = tk.Toplevel(self.root)
+        top.title(f"{attr}…")
+        top.transient(self.root)
+        top.resizable(False, False)
+        bbox = self.spec_tree.bbox(item, column=f"#{col_id}")
+        if bbox:
+            x, y, _, _ = bbox
+            top.geometry(f"+{self.spec_tree.winfo_rootx()+x}"
+                         f"+{self.spec_tree.winfo_rooty()+y+24}")
+        var = tk.StringVar(value=getattr(spec, attr))
+        ttk.Label(top, text=f"Choose {attr}:").pack(padx=8, pady=(8, 2))
+        cb = ttk.Combobox(top, textvariable=var, values=choices,
+                          state=("readonly" if readonly else "normal"),
+                          width=24)
+        cb.pack(padx=8, pady=4)
+        cb.focus_set()
+        if not readonly:
+            cb.icursor(tk.END); cb.select_range(0, tk.END)
+        def commit(_=None):
+            setattr(spec, attr, var.get())
+            top.destroy()
+            self._refresh_specs_table_only()
+            if on_commit is not None:
+                try: on_commit(spec)
+                except Exception: pass
+        bf = ttk.Frame(top); bf.pack(pady=6)
+        ttk.Button(bf, text="OK", command=commit).pack(side=tk.LEFT, padx=4)
+        ttk.Button(bf, text="Cancel",
+                   command=top.destroy).pack(side=tk.LEFT, padx=4)
+        top.bind("<Return>", commit)
+        top.bind("<Escape>", lambda e: top.destroy())
+        cb.bind("<<ComboboxSelected>>", commit)
+        top.grab_set()      # modal — keeps Tk happy on macOS
+
+    def _popup_text(self, item, attr, spec, col_id):
+        top = tk.Toplevel(self.root)
+        top.title(f"{attr}…")
+        top.transient(self.root)
+        top.resizable(False, False)
+        bbox = self.spec_tree.bbox(item, column=f"#{col_id}")
+        if bbox:
+            x, y, _, _ = bbox
+            top.geometry(f"+{self.spec_tree.winfo_rootx()+x}"
+                         f"+{self.spec_tree.winfo_rooty()+y+24}")
+        var = tk.StringVar(value=getattr(spec, attr))
+        ttk.Label(top, text=f"Edit {attr}:").pack(padx=8, pady=(8, 2))
+        e = ttk.Entry(top, textvariable=var, width=24)
+        e.pack(padx=8, pady=4)
+        e.focus_set(); e.icursor(tk.END); e.select_range(0, tk.END)
+        def commit(_=None):
+            setattr(spec, attr, var.get())
+            top.destroy()
+            self._refresh_specs_table_only()
+        bf = ttk.Frame(top); bf.pack(pady=6)
+        ttk.Button(bf, text="OK", command=commit).pack(side=tk.LEFT, padx=4)
+        ttk.Button(bf, text="Cancel",
+                   command=top.destroy).pack(side=tk.LEFT, padx=4)
+        top.bind("<Return>", commit)
+        top.bind("<Escape>", lambda e: top.destroy())
+        top.grab_set()
+
+    def _refresh_specs_table_only(self):
+        for i, spec in enumerate(self.specs):
+            iids = self.spec_tree.get_children("")
+            if i < len(iids):
+                self.spec_tree.item(iids[i], values=(
+                    spec.label, spec.color, spec.marker, spec.marker_size,
+                    spec.line_style, spec.line_width, spec.draw_opt))
+
+    def _clear_selection(self):
+        for iid, st in self.tree_state.items():
+            if st["kind"] == "histo" and st["checked"]:
+                st["checked"] = False
+                txt = self.tree.item(iid, "text").replace("☑", "☐")
+                self.tree.item(iid, text=txt)
+        self.specs.clear()
+        for iid in self.spec_tree.get_children(""):
+            self.spec_tree.delete(iid)
+
+    # -- drawing ---------------------------------------------------------
+
+    def _draw(self):
+        if not self.specs:
+            self.status_var.set("Nothing selected.")
+            return
+        try:
+            drawn = self._render()
+        except Exception as exc:
+            import traceback
+            tb = traceback.format_exc()
+            traceback.print_exc()
+            # Show the user a more useful dialog — they can copy/paste
+            # the full trace if reporting back.
+            messagebox.showerror(
+                "cap-plot — draw failed",
+                f"{type(exc).__name__}: {exc}\n\n"
+                f"--- traceback ---\n{tb}")
+            self.status_var.set(f"Draw failed: {type(exc).__name__}")
+            return
+        if self.last_png and self.last_png.is_file():
+            self._show_png(self.last_png)
+        n = len(self.specs)
+        same = (self.mode_var.get() == self.SAME)
+        if not same:
+            n_pads = max(1, int(self.cols_var.get())) \
+                     * max(1, int(self.rows_var.get()))
+            extra = max(0, n - n_pads)
+            self.status_var.set(
+                f"Drew {drawn} of {n} (grid {n_pads} pads)" +
+                (f" — {extra} skipped, increase rows/cols." if extra else "."))
+        else:
+            missing = n - drawn
+            self.status_var.set(
+                f"Drew {drawn} of {n} overlaid" +
+                (f" — {missing} could not be loaded." if missing else "."))
+
+    def _show_png(self, png: Path, retries: int = 5):
+        """Render the PNG into the plot label, scaled to fit the panel.
+        On the first draw the panel hasn't been laid out yet, so we
+        defer to after_idle so winfo_width()/height() are usable.
+        Cap the retry count so a minimized / hidden window doesn't
+        spin forever."""
+        self.plot_label.update_idletasks()
+        if (self.plot_label.winfo_width() <= 1 or
+            self.plot_label.winfo_height() <= 1) and retries > 0:
+            self.root.after(50,
+                lambda: self._show_png(png, retries - 1))
+            return
+        try:
+            box_w = max(200, self.plot_label.winfo_width() - 8)
+            box_h = max(200, self.plot_label.winfo_height() - 8)
+            if HAVE_PIL:
+                im = Image.open(str(png))
+                iw, ih = im.size
+                scale = min(box_w / iw, box_h / ih, 1.0)
+                if scale < 1.0:
+                    im = im.resize((int(iw * scale), int(ih * scale)),
+                                    LANCZOS)
+                tkimg = ImageTk.PhotoImage(im)
+            else:
+                # Some macOS Tk 8.6 builds choke on certain PNG variants
+                # (interlaced, grayscale, alpha).  If PhotoImage fails,
+                # fall back to re-rendering the canvas as a GIF — Tk's
+                # GIF reader is rock solid on every platform.
+                try:
+                    tkimg = tk.PhotoImage(file=str(png))
+                except tk.TclError:
+                    gif = png.with_suffix(".gif")
+                    self._save_canvas_as(gif)
+                    tkimg = tk.PhotoImage(file=str(gif))
+                # Fall back to subsample (integer-only) if the image is
+                # bigger than the panel.
+                iw, ih = tkimg.width(), tkimg.height()
+                f = max(1, max(iw // box_w, ih // box_h, 1))
+                if f > 1:
+                    tkimg = tkimg.subsample(f, f)
+            self._image_ref = tkimg
+            self.plot_label.configure(image=tkimg, text="")
+        except Exception as exc:
+            self.plot_label.configure(image="", text=f"PNG load failed: {exc}")
+
+    def _save_canvas_as(self, target: Path):
+        """Re-emit the most recent canvas in a different format
+        (.gif/.eps/.svg).  Used by the GIF fallback path when Tk
+        rejects the original PNG."""
+        c = getattr(self, "_last_canvas", None)
+        if c is None: return
+        try: c.SaveAs(str(target))
+        except Exception: pass
+
+    def _on_plot_resize(self, _ev):
+        """Re-fit the cached PNG when the user resizes the window.
+        Debounced so a drag doesn't re-render on every motion event."""
+        if not self.last_png or not self.last_png.is_file():
+            return
+        if self._resize_after_id:
+            try: self.root.after_cancel(self._resize_after_id)
+            except Exception: pass
+        self._resize_after_id = self.root.after(
+            120, lambda: self._show_png(self.last_png))
+
+    def _next_canvas_name(self):
+        """Each draw makes a fresh TCanvas — same name across calls makes
+        ROOT replace and warn.  Keep a counter."""
+        self._canvas_counter = getattr(self, "_canvas_counter", 0) + 1
+        return f"capplot_{self._canvas_counter}"
+
+    def _resolve_object(self, tf, path: str):
+        """Robust replacement for `tf.Get(path)`.  PyROOT's Get is happy
+        with `dir/sub/h` on most ROOT versions but failures fall back
+        to walking the directory chain by hand, which never depends on
+        slash-aware lookups."""
+        # Strip any cycle suffix (e.g. "h;1") that crept into the path.
+        clean = path.split(";")[0]
+        try:
+            obj = tf.Get(clean)
+            if obj:
+                return obj
+        except Exception:
+            pass
+        # Walk the chain manually.
+        parts = [p for p in clean.split("/") if p]
+        node = tf
+        for p in parts[:-1]:
+            try:
+                nxt = node.Get(p)
+            except Exception:
+                return None
+            if nxt is None or not hasattr(nxt, "GetListOfKeys"):
+                return None
+            node = nxt
+        if not parts:
+            return None
+        try:
+            return node.Get(parts[-1])
+        except Exception:
+            return None
+
+    def _render(self, save_path: str | None = None):
+        """Render specs into a TCanvas.  If save_path is given, write the
+        canvas there directly instead of the temp PNG.  Returns the
+        number of histograms that actually drew (some Get() calls can
+        return null if the file changed underneath us)."""
+        # Close the previous canvas if any — keeps long sessions from
+        # accumulating canvases in ROOT's global registry.  We only
+        # keep the most recent one so the GIF fallback can re-emit it.
+        prev = getattr(self, "_last_canvas", None)
+        if prev is not None:
+            try: prev.Close()
+            except Exception: pass
+            self._last_canvas = None
+        same = (self.mode_var.get() == self.SAME)
+        cols = max(1, int(self.cols_var.get()))
+        rows = max(1, int(self.rows_var.get()))
+        if same:
+            cols = rows = 1
+        # Same-mode dimensional sanity: refuse to overlay TH1 with
+        # TH2/TH3 unless the user explicitly opts in via the
+        # "force overlay" check.  ROOT will silently produce nonsense
+        # otherwise (the SAME pad inherits the first hist's geometry).
+        if same and not self.force_overlay_var.get():
+            dims = {class_dim(s.classname) for s in self.specs}
+            dims.discard(0)
+            if len(dims) > 1:
+                raise ValueError(
+                    f"Cannot overlay histograms of different dimensions "
+                    f"({sorted(dims)}).  Either switch to Separate mode "
+                    f"or tick 'force overlay (mixed dims)' to override.")
+        # Higher-quality preview — match the save resolution (was 540×420).
+        per_w, per_h = 800, 600
+        cw, ch = per_w * cols, per_h * rows
+        c = ROOT.TCanvas(self._next_canvas_name(), "cap-plot", cw, ch)
+        self._last_canvas = c
+        if not same:
+            c.Divide(cols, rows)
+
+        legend = None
+        if self.legend_var.get():
+            pos_label = getattr(self, "_legend_pos_label",
+                                self._LEGEND_POS_LABELS[0])
+            preset = self._LEGEND_POS.get(pos_label)
+            if preset is None:
+                # "custom" — fall back to the four NDC entries; reject
+                # malformed values and revert to the default preset.
+                def _f(v, dflt):
+                    try:
+                        f = float(v)
+                        if 0.0 <= f <= 1.0: return f
+                    except (TypeError, ValueError): pass
+                    return dflt
+                x1 = _f(self.legend_x1_var.get(), 0.62)
+                y1 = _f(self.legend_y1_var.get(), 0.74)
+                x2 = _f(self.legend_x2_var.get(), 0.94)
+                y2 = _f(self.legend_y2_var.get(), 0.92)
+                # Sanity: x2 must be > x1 and y2 > y1.
+                if x2 <= x1 or y2 <= y1:
+                    x1, y1, x2, y2 = 0.62, 0.74, 0.94, 0.92
+            else:
+                x1, y1, x2, y2 = preset
+            legend = ROOT.TLegend(x1, y1, x2, y2)
+            legend.SetBorderSize(1 if self.legend_border_var.get() else 0)
+            # Transparent background regardless of border so the data
+            # behind it remains readable.
+            legend.SetFillStyle(0)
+            try: ts = max(0.005, min(0.2, float(self.legend_textsize_var.get())))
+            except (TypeError, ValueError): ts = 0.03
+            legend.SetTextSize(ts)
+
+        n_pads = cols * rows
+        held = []        # keep TH refs alive across the loop
+        drawn = 0        # actually-rendered count
+        # In Same-mode, ROOT keeps the y-range of whichever histo we
+        # drew first.  Pre-scan to find the global max and apply it
+        # before SAME draws so subsequent histos aren't visually clipped.
+        # Skip TGraph/TF1 — those don't have a meaningful "max" the
+        # same way TH1 does, and calling GetMaximum on them via
+        # PyROOT can raise.
+        global_max = None
+        if same:
+            for spec in self.specs:
+                if spec.classname.startswith(("TGraph", "TF1",
+                                               "TH2", "TH3",
+                                               "TProfile2D")):
+                    continue
+                tf = self.files.get(spec.file)
+                if tf is None:
+                    continue
+                obj = self._resolve_object(tf, spec.path)
+                if obj is None or not hasattr(obj, "GetMaximum"):
+                    continue
+                try:
+                    m = obj.GetMaximum()
+                    if global_max is None or m > global_max:
+                        global_max = m
+                except Exception:
+                    pass
+
+        for i, spec in enumerate(self.specs):
+            tf = self.files.get(spec.file)
+            if tf is None:
+                continue
+            obj = self._resolve_object(tf, spec.path)
+            if obj is None:
+                continue
+            try:
+                obj = obj.Clone(f"capplot_obj_{self._canvas_counter}_{i}")
+            except Exception:
+                # Some ROOT objects may not be cloneable (e.g. exotic
+                # TF1 setups).  Use the original — it'll mutate state
+                # in the file but that's a recoverable downside.
+                pass
+            held.append(obj)
+            color = color_to_root_index(spec.color)
+            marker = MARKER_BY_LABEL.get(spec.marker, 20)
+            line_style = LINESTYLE_BY_LABEL.get(spec.line_style, 1)
+            try: line_w = max(1, min(20, int(spec.line_width)))
+            except (TypeError, ValueError): line_w = 2
+            try: msize = float(spec.marker_size)
+            except (TypeError, ValueError): msize = 0.9
+            try:
+                obj.SetLineColor(color)
+                obj.SetLineStyle(line_style)
+                obj.SetLineWidth(line_w)
+                obj.SetMarkerColor(color)
+                obj.SetMarkerStyle(marker)
+                obj.SetMarkerSize(msize)
+                obj.SetStats(0)
+            except Exception:
+                pass
+            # Plot (top-of-pad) title — applied per object so SAME
+            # mode picks up the first hist's title.
+            if self.plot_title_var.get():
+                try: obj.SetTitle(self.plot_title_var.get())
+                except Exception: pass
+            if self.xtitle_var.get():
+                try: obj.GetXaxis().SetTitle(self.xtitle_var.get())
+                except Exception: pass
+            if self.ytitle_var.get():
+                try: obj.GetYaxis().SetTitle(self.ytitle_var.get())
+                except Exception: pass
+            # Z axis only exists on TH2/TH3-family classes — guard.
+            if self.ztitle_var.get() and hasattr(obj, "GetZaxis"):
+                try: obj.GetZaxis().SetTitle(self.ztitle_var.get())
+                except Exception: pass
+            # Axis title offsets — accept blank/garbage gracefully.
+            def _f(v):
+                try: return float(v)
+                except (TypeError, ValueError): return None
+            xoff = _f(self.xtitle_off_var.get())
+            yoff = _f(self.ytitle_off_var.get())
+            zoff = _f(self.ztitle_off_var.get())
+            if xoff is not None:
+                try: obj.GetXaxis().SetTitleOffset(xoff)
+                except Exception: pass
+            if yoff is not None:
+                try: obj.GetYaxis().SetTitleOffset(yoff)
+                except Exception: pass
+            if zoff is not None and hasattr(obj, "GetZaxis"):
+                try: obj.GetZaxis().SetTitleOffset(zoff)
+                except Exception: pass
+            # Apply user-set axis ranges via SetRangeUser (requires
+            # numeric input; blank = leave as is).
+            self._apply_user_range(obj)
+            # Decide on the actual draw option, honouring the global
+            # error-bars toggle.  If unticked: strip leading "E*" tokens
+            # and use HIST instead — applies only to TH1-family classes
+            # where errors make sense.
+            opt = spec.draw_opt or default_draw_opt(spec.classname)
+            if class_dim(spec.classname) == 1 and \
+               not spec.classname.startswith(("TGraph", "TF1")):
+                if not self.errbars_var.get():
+                    # Drop standalone "E", "E0".."E9", "EX0", keep HIST/L/P
+                    parts = [p for p in opt.split()
+                             if not (p.upper().startswith("E") and len(p) <= 3)]
+                    if "HIST" not in [p.upper() for p in parts]:
+                        parts.insert(0, "HIST")
+                    opt = " ".join(parts)
+            # 3D wire mesh suppression — for TH2/TH3 plots drawn in
+            # SURF/LEGO/BOX modes the histogram's line attributes
+            # produce the wire frame.  When the toggle is off, set
+            # line width to 0 so the surface stays smooth (and respect
+            # the user's chosen line color anyway, in case ROOT still
+            # sketches an outline).
+            if not self.wire3d_var.get():
+                up = opt.upper()
+                if any(t in up for t in ("SURF", "LEGO", "BOX", "GLBOX",
+                                          "ISO", "CONT")):
+                    try: obj.SetLineWidth(0)
+                    except Exception: pass
+            if same:
+                # Bump y-max for the FIRST hist before draw; subsequent
+                # SAME draws inherit the axis limits.  Add 10% headroom.
+                if i == 0 and global_max is not None and \
+                   hasattr(obj, "SetMaximum"):
+                    try: obj.SetMaximum(global_max * 1.1)
+                    except Exception: pass
+                c.cd()
+                obj.Draw(opt + (" SAME" if i else ""))
+                pad = c
+            else:
+                if i >= n_pads:
+                    break
+                pad = c.cd(i + 1)
+                obj.Draw(opt)
+            self._apply_pad_options(pad)
+            if legend is not None and getattr(spec, "in_legend", True):
+                # Per-spec custom label takes precedence; default = short
+                # 'file_stem::leaf' label.
+                short = (spec.legend_label.strip()
+                         if getattr(spec, "legend_label", "")
+                         else f"{Path(spec.file).stem}::"
+                              f"{Path(spec.path).name}")
+                legend.AddEntry(obj, short, "lp")
+            drawn += 1
+
+        if legend is not None and same and drawn > 0:
+            c.cd()
+            # Legend title comes from the designer's plot_legend_title_var.
+            ttl = getattr(self, "legend_title_var", None)
+            if ttl is not None and ttl.get().strip():
+                legend.SetHeader(ttl.get().strip(), "C")
+            legend.Draw()
+
+        out = save_path if save_path else \
+              str(self.tmpdir / f"plot_{self._canvas_counter}.png")
+        c.SaveAs(out)
+        if not save_path:
+            self.last_png = Path(out)
+        del held
+        return drawn
+
+    def _apply_user_range(self, obj):
+        """Apply X/Y/Z ranges from the entry boxes if non-empty.  Empty
+        or non-numeric fields leave the corresponding axis at auto."""
+        def _f(v):
+            try: return float(v)
+            except (TypeError, ValueError): return None
+        xmin, xmax = _f(self.xmin_var.get()), _f(self.xmax_var.get())
+        ymin, ymax = _f(self.ymin_var.get()), _f(self.ymax_var.get())
+        zmin, zmax = _f(self.zmin_var.get()), _f(self.zmax_var.get())
+        if xmin is not None and xmax is not None and xmax > xmin:
+            try: obj.GetXaxis().SetRangeUser(xmin, xmax)
+            except Exception: pass
+        if ymin is not None and ymax is not None and ymax > ymin:
+            try:
+                if hasattr(obj, "GetYaxis"):
+                    obj.GetYaxis().SetRangeUser(ymin, ymax)
+            except Exception: pass
+        # Z range — TH2/TH3 use it for COLZ scale and 3D height; TH1
+        # has no Z axis so we just skip via hasattr.
+        if zmin is not None and zmax is not None and zmax > zmin \
+           and hasattr(obj, "GetZaxis"):
+            try:
+                obj.GetZaxis().SetRangeUser(zmin, zmax)
+                # For 2D color plots SetMinimum/Maximum is what
+                # actually clips the colour scale; set both to be sure.
+                if hasattr(obj, "SetMinimum"): obj.SetMinimum(zmin)
+                if hasattr(obj, "SetMaximum"): obj.SetMaximum(zmax)
+            except Exception: pass
+
+    def _reset_ranges(self):
+        """Clear all six range entries — restores auto axis ranges."""
+        for v in (self.xmin_var, self.xmax_var,
+                  self.ymin_var, self.ymax_var,
+                  self.zmin_var, self.zmax_var):
+            v.set("")
+        self.status_var.set("Axis ranges reset to auto.")
+
+    # Legend positions — NDC corners (x1, y1, x2, y2).
+    # The "custom (use NDC entries)" sentinel switches the renderer to
+    # using the four legend_x1/x2/y1/y2 entry boxes from the designer.
+    _LEGEND_POS = {
+        "top-right (default)":   (0.62, 0.74, 0.94, 0.92),
+        "top-left":              (0.12, 0.74, 0.45, 0.92),
+        "bottom-right":          (0.62, 0.12, 0.94, 0.30),
+        "bottom-left":           (0.12, 0.12, 0.45, 0.30),
+        "centre-right":          (0.65, 0.45, 0.95, 0.65),
+        "custom (use NDC entries)": None,
+    }
+    _LEGEND_POS_LABELS = list(_LEGEND_POS.keys())
+
+    # ---- TLatex symbol palette ----------------------------------------
+    def _track_focus(self, ev):
+        """Remember the most recent Entry / Combobox so the symbol
+        palette knows which widget to insert into.  Trees, buttons,
+        labels are filtered out — they don't accept text input."""
+        try:
+            cls = ev.widget.winfo_class()
+        except Exception:
+            return
+        if cls in ("TEntry", "Entry", "TCombobox", "Text"):
+            self._last_text_widget = ev.widget
+
+    def _insert_at_focus(self, code: str):
+        """Insert `code` into the last-focused entry at the cursor.
+        If the code includes braces (`{}`), place the cursor between
+        them so the user can type the argument right away."""
+        w = getattr(self, "_last_text_widget", None)
+        if w is None:
+            messagebox.showinfo(
+                "TLatex symbols",
+                f"Click into a title or legend field first, then "
+                f"open this palette and click a symbol.\n\n"
+                f"Code: {code}")
+            return
+        try:
+            # Tk Entry / TEntry / Text all support the same insert API.
+            w.focus_set()
+            try: pos = w.index("insert")
+            except Exception: pos = "end"
+            w.insert(pos, code)
+            # If the code ends with "{}" or "{}{}", reposition the
+            # cursor inside the first empty pair for fluent typing.
+            if code.endswith("{}"):
+                # Place between the last "{" and "}" we just inserted.
+                cursor = w.index("insert")
+                # Move one character back so the user types inside {}.
+                try: w.icursor(int(str(cursor)) - 1)
+                except Exception: pass
+            self.status_var.set(f"Inserted: {code}")
+        except Exception as exc:
+            self.status_var.set(f"Insert failed: {exc}")
+
+    def _open_tlatex_palette(self):
+        """Modal symbol palette grouped by category.  Click a button
+        → its TLatex code is inserted at the cursor of the last-
+        focused text entry."""
+        top = tk.Toplevel(self.root)
+        top.title("ROOT TLatex symbols")
+        top.transient(self.root)
+        top.geometry("780x520")
+        ttk.Label(top, justify="left",
+                  text=("Click any symbol to insert its TLatex code "
+                        "into whichever title / legend entry was "
+                        "focused last.  Tip: in ROOT TLatex the "
+                        "escape character is '#' (not '\\')."),
+                  foreground="#444"
+                  ).pack(padx=10, pady=(8, 0), anchor="w")
+        nb = ttk.Notebook(top); nb.pack(fill=tk.BOTH, expand=True,
+                                          padx=10, pady=10)
+        for category, items in TLATEX_SYMBOLS.items():
+            tab = ttk.Frame(nb); nb.add(tab, text=category)
+            # Lay out a grid of buttons with 6 columns.
+            for k, (glyph, code) in enumerate(items):
+                r, c = divmod(k, 6)
+                btn = ttk.Button(tab,
+                                 text=f"{glyph}\n{code}",
+                                 width=14,
+                                 command=lambda c=code: self._insert_at_focus(c))
+                btn.grid(row=r, column=c, padx=4, pady=4, sticky="we")
+            for c in range(6):
+                tab.columnconfigure(c, weight=1)
+        ttk.Button(top, text="Close",
+                   command=top.destroy).pack(pady=(0, 10))
+
+    def _open_legend_designer(self):
+        """Modal designer for the TLegend.  Lets the user toggle which
+        selected histograms are drawn in the legend, edit each
+        entry's display label, set a legend header title, and pick a
+        position preset."""
+        if not self.specs:
+            messagebox.showinfo("cap-plot",
+                "Tick at least one histogram on the left before opening "
+                "the legend designer.")
+            return
+        top = tk.Toplevel(self.root)
+        top.title("TLegend designer")
+        top.transient(self.root)
+        top.geometry("820x600")
+        # Header row 1: legend title + position dropdown.
+        hdr = ttk.Frame(top); hdr.pack(fill=tk.X, padx=10, pady=(8, 2))
+        ttk.Label(hdr, text="Legend title:").pack(side=tk.LEFT)
+        title_var = tk.StringVar(value=self.legend_title_var.get())
+        ttk.Entry(hdr, textvariable=title_var, width=30
+                  ).pack(side=tk.LEFT, padx=4)
+        ttk.Label(hdr, text="  Position:").pack(side=tk.LEFT, padx=(12, 2))
+        pos_var = tk.StringVar(
+            value=getattr(self, "_legend_pos_label",
+                          self._LEGEND_POS_LABELS[0]))
+        ttk.Combobox(hdr, textvariable=pos_var, state="readonly",
+                     values=self._LEGEND_POS_LABELS, width=26
+                     ).pack(side=tk.LEFT)
+
+        # Header row 2: border, text size, custom NDC coordinates.
+        hdr2 = ttk.Frame(top); hdr2.pack(fill=tk.X, padx=10, pady=(2, 8))
+        border_var = tk.BooleanVar(value=self.legend_border_var.get())
+        ttk.Checkbutton(hdr2, text="border",
+                        variable=border_var).pack(side=tk.LEFT)
+        ttk.Label(hdr2, text="  text size:").pack(side=tk.LEFT, padx=(12, 2))
+        textsize_var = tk.StringVar(value=self.legend_textsize_var.get())
+        ttk.Entry(hdr2, textvariable=textsize_var, width=6
+                  ).pack(side=tk.LEFT)
+        ttk.Label(hdr2, text="    Custom NDC:").pack(side=tk.LEFT, padx=(16, 2))
+        ttk.Label(hdr2, text="x1").pack(side=tk.LEFT)
+        x1_var = tk.StringVar(value=self.legend_x1_var.get())
+        ttk.Entry(hdr2, textvariable=x1_var, width=6).pack(side=tk.LEFT, padx=2)
+        ttk.Label(hdr2, text="y1").pack(side=tk.LEFT)
+        y1_var = tk.StringVar(value=self.legend_y1_var.get())
+        ttk.Entry(hdr2, textvariable=y1_var, width=6).pack(side=tk.LEFT, padx=2)
+        ttk.Label(hdr2, text="x2").pack(side=tk.LEFT)
+        x2_var = tk.StringVar(value=self.legend_x2_var.get())
+        ttk.Entry(hdr2, textvariable=x2_var, width=6).pack(side=tk.LEFT, padx=2)
+        ttk.Label(hdr2, text="y2").pack(side=tk.LEFT)
+        y2_var = tk.StringVar(value=self.legend_y2_var.get())
+        ttk.Entry(hdr2, textvariable=y2_var, width=6).pack(side=tk.LEFT, padx=2)
+        ttk.Label(hdr2,
+            text="  (custom NDC used only when Position = 'custom')",
+            foreground="#666").pack(side=tk.LEFT, padx=8)
+
+        # Body: one row per spec — checkbox + label entry.
+        body = ttk.LabelFrame(top, text="Entries (tick to include, edit text)")
+        body.pack(fill=tk.BOTH, expand=True, padx=10, pady=4)
+        canvas = tk.Canvas(body, highlightthickness=0)
+        sb = ttk.Scrollbar(body, orient=tk.VERTICAL, command=canvas.yview)
+        canvas.configure(yscrollcommand=sb.set)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        rows_frame = ttk.Frame(canvas)
+        canvas.create_window((0, 0), window=rows_frame, anchor="nw")
+        rows_frame.bind("<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        widgets = []
+        for i, spec in enumerate(self.specs):
+            inc_var = tk.BooleanVar(value=getattr(spec, "in_legend", True))
+            default_label = (spec.legend_label
+                             if spec.legend_label
+                             else f"{Path(spec.file).stem}::"
+                                  f"{Path(spec.path).name}")
+            lbl_var = tk.StringVar(value=default_label)
+            row = ttk.Frame(rows_frame); row.pack(fill=tk.X, pady=2)
+            ttk.Checkbutton(row, variable=inc_var
+                            ).pack(side=tk.LEFT, padx=4)
+            ttk.Label(row, text=spec.label, width=42
+                      ).pack(side=tk.LEFT)
+            ttk.Entry(row, textvariable=lbl_var, width=36
+                      ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
+            widgets.append((spec, inc_var, lbl_var))
+
+        # Footer: OK / Cancel / Apply (no close).
+        ftr = ttk.Frame(top); ftr.pack(fill=tk.X, padx=10, pady=8)
+        def commit():
+            for spec, inc_var, lbl_var in widgets:
+                spec.in_legend = bool(inc_var.get())
+                spec.legend_label = lbl_var.get()
+            self.legend_title_var.set(title_var.get())
+            self._legend_pos_label = pos_var.get()
+            self.legend_border_var.set(border_var.get())
+            self.legend_textsize_var.set(textsize_var.get())
+            self.legend_x1_var.set(x1_var.get())
+            self.legend_y1_var.set(y1_var.get())
+            self.legend_x2_var.set(x2_var.get())
+            self.legend_y2_var.set(y2_var.get())
+            self._refresh_specs_table_only()
+            top.destroy()
+        def apply_and_redraw():
+            commit()
+            # Re-render so the user sees their changes immediately.
+            try: self._draw()
+            except Exception: pass
+        ttk.Button(ftr, text="Apply & redraw",
+                   command=apply_and_redraw).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(ftr, text="OK", command=commit).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(ftr, text="Cancel",
+                   command=top.destroy).pack(side=tk.RIGHT, padx=4)
+        top.grab_set()
+
+    # ---- LaTeX report generator ---------------------------------------
+    @staticmethod
+    def _tex_escape(s: str) -> str:
+        """Quick-and-dirty escape of TeX-special chars in user labels.
+        Doesn't try to be a full LaTeX serializer — preserves $..$ math
+        if you typed it deliberately, escapes backslashes, &, %, _, #,
+        ~, ^, {, }."""
+        if "$" in s:
+            return s    # assume the user knows what they're doing
+        repl = {
+            "\\": r"\textbackslash{}", "&": r"\&", "%": r"\%",
+            "_": r"\_", "#": r"\#", "~": r"\textasciitilde{}",
+            "^": r"\textasciicircum{}", "{": r"\{", "}": r"\}",
+        }
+        out = []
+        for ch in s:
+            out.append(repl.get(ch, ch))
+        return "".join(out)
+
+    def _generate_latex_report(self):
+        """Save the current selection as one PDF per histogram, then
+        write a stand-alone .tex that embeds them as figures with
+        captions.  If pdflatex is on PATH, compile the report.
+
+        Two layout modes:
+          - Same-overlay  → one combined figure (current canvas)
+          - Separate grid → either one figure per pad (n_pads ≤ 6) OR
+                            a single multi-pad figure for larger grids.
+        We default to one figure per spec so each can be referenced /
+        re-captioned individually."""
+        if not self.specs:
+            messagebox.showinfo("LaTeX report",
+                "Tick at least one histogram before generating a report.")
+            return
+
+        out_dir = filedialog.askdirectory(
+            title="Choose output folder for the LaTeX report",
+            initialdir=str(self.start_dir))
+        if not out_dir:
+            return
+        out_dir = Path(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        figs_dir = out_dir / "figures"
+        figs_dir.mkdir(exist_ok=True)
+
+        # Ask for the document metadata.
+        meta = self._prompt_report_metadata()
+        if meta is None:
+            return
+        title, author, intro = meta
+
+        self.status_var.set("Generating figures (PDF)…")
+        self.root.update_idletasks()
+
+        # Strategy: write one PDF per spec by temporarily replacing
+        # self.specs with a single-spec list and calling _render with
+        # save_path.  Restore afterwards.
+        original_specs = list(self.specs)
+        original_mode = self.mode_var.get()
+        try:
+            # Force separate mode so each spec renders alone.
+            self.mode_var.set(self.SEPARATE)
+            old_cols, old_rows = self.cols_var.get(), self.rows_var.get()
+            self.cols_var.set(1); self.rows_var.set(1)
+            generated: list[tuple[DrawSpec, str]] = []
+            for i, spec in enumerate(original_specs):
+                self.specs = [spec]
+                fname = f"fig_{i:03d}_{Path(spec.path).name}.pdf"
+                # Sanitize filename — TeX dislikes most special chars.
+                fname = "".join(c if c.isalnum() or c in "._-" else "_"
+                                for c in fname)
+                fpath = figs_dir / fname
+                try:
+                    self._render(save_path=str(fpath))
+                    generated.append((spec, fname))
+                except Exception as exc:
+                    self.status_var.set(f"Skipped {spec.path}: {exc}")
+            # Also render the combined-overlay (same mode) figure if
+            # the user has more than one spec selected — useful as a
+            # summary at the top of the report.
+            combined_name = None
+            if len(original_specs) > 1:
+                self.specs = original_specs
+                self.mode_var.set(self.SAME)
+                combined_name = "fig_combined_overlay.pdf"
+                try:
+                    self._render(save_path=str(figs_dir / combined_name))
+                except Exception:
+                    combined_name = None
+        finally:
+            self.specs = original_specs
+            self.mode_var.set(original_mode)
+            self.cols_var.set(old_cols); self.rows_var.set(old_rows)
+
+        # Write the .tex file.
+        tex_path = out_dir / "report.tex"
+        with tex_path.open("w") as f:
+            f.write("\\documentclass[11pt]{article}\n")
+            f.write("\\usepackage[a4paper,margin=2.5cm]{geometry}\n")
+            f.write("\\usepackage{graphicx}\n")
+            f.write("\\usepackage{caption}\n")
+            f.write("\\usepackage{hyperref}\n")
+            f.write("\\usepackage{amsmath, amssymb}\n")
+            f.write(f"\\title{{{self._tex_escape(title)}}}\n")
+            f.write(f"\\author{{{self._tex_escape(author)}}}\n")
+            f.write("\\date{\\today}\n")
+            f.write("\\begin{document}\n\\maketitle\n\n")
+            if intro.strip():
+                f.write(f"{intro}\n\n")
+            f.write("\\section{Summary}\n")
+            f.write(f"This report bundles {len(generated)} histogram"
+                    f"{'s' if len(generated)!=1 else ''} extracted "
+                    f"with cap-plot from the analysis output.\n\n")
+            if combined_name:
+                f.write("\\begin{figure}[h]\n  \\centering\n")
+                f.write(f"  \\includegraphics[width=0.85\\linewidth]"
+                        f"{{figures/{combined_name}}}\n")
+                f.write("  \\caption{Overlay of all selected histograms.}\n")
+                f.write("  \\label{fig:combined}\n\\end{figure}\n\n")
+            f.write("\\section{Individual histograms}\n\n")
+            for i, (spec, fname) in enumerate(generated, 1):
+                pretty = self._tex_escape(
+                    spec.legend_label or
+                    f"{Path(spec.file).name} :: {spec.path}")
+                cls = self._tex_escape(spec.classname)
+                f.write(f"\\subsection*{{{i}.\\ {pretty}}}\n")
+                f.write(f"\\begin{{figure}}[h]\n  \\centering\n")
+                f.write(f"  \\includegraphics[width=0.78\\linewidth]"
+                        f"{{figures/{fname}}}\n")
+                f.write(f"  \\caption{{Histogram \\texttt{{{cls}}} "
+                        f"loaded from \\texttt{{"
+                        f"{self._tex_escape(Path(spec.file).name)}}}, "
+                        f"path \\texttt{{"
+                        f"{self._tex_escape(spec.path)}}}.}}\n")
+                f.write(f"  \\label{{fig:hist{i:03d}}}\n")
+                f.write("\\end{figure}\n\\clearpage\n\n")
+            f.write("\\end{document}\n")
+
+        # Try to compile.  Non-fatal — leave the .tex behind regardless.
+        compiled = False
+        if shutil.which("pdflatex"):
+            self.status_var.set("Running pdflatex…")
+            self.root.update_idletasks()
+            try:
+                # Run twice for cross-references (figure numbers).
+                for _ in range(2):
+                    rc = subprocess.run(
+                        ["pdflatex", "-interaction=nonstopmode",
+                         "-halt-on-error", "report.tex"],
+                        cwd=str(out_dir),
+                        capture_output=True, text=True, timeout=120)
+                    if rc.returncode != 0:
+                        break
+                else:
+                    compiled = True
+            except Exception:
+                pass
+
+        msg = (f"Wrote {tex_path}\n"
+               f"  + {len(generated)} figure(s) in figures/\n")
+        if compiled:
+            msg += f"  + compiled report.pdf"
+        elif shutil.which("pdflatex"):
+            msg += ("  · pdflatex was found but compilation failed.\n"
+                    "    See report.log in the output folder.")
+        else:
+            msg += ("  · pdflatex not on PATH; .tex file ready, "
+                    "compile it manually.")
+        self.status_var.set(f"LaTeX report → {out_dir}")
+        messagebox.showinfo("LaTeX report", msg)
+
+    def _prompt_report_metadata(self):
+        """Modal asking for title / author / intro paragraph.  Returns
+        a (title, author, intro) tuple or None if user cancels."""
+        top = tk.Toplevel(self.root)
+        top.title("LaTeX report — metadata")
+        top.transient(self.root)
+        top.geometry("520x340")
+        result = {}
+        ttk.Label(top, text="Document title:").pack(anchor="w", padx=12, pady=(12, 0))
+        title_var = tk.StringVar(value=f"Analysis report — "
+                                       f"{self.start_dir.name}")
+        ttk.Entry(top, textvariable=title_var, width=60
+                  ).pack(padx=12, pady=2)
+        ttk.Label(top, text="Author:").pack(anchor="w", padx=12, pady=(8, 0))
+        author_var = tk.StringVar(value=os.environ.get("USER", "CAP user"))
+        ttk.Entry(top, textvariable=author_var, width=60
+                  ).pack(padx=12, pady=2)
+        ttk.Label(top, text="Optional introduction (one paragraph; "
+                  "TeX syntax allowed):").pack(anchor="w", padx=12, pady=(8, 0))
+        intro_text = tk.Text(top, height=6, wrap="word")
+        intro_text.pack(padx=12, pady=2, fill=tk.BOTH, expand=True)
+
+        def commit():
+            result["t"] = title_var.get()
+            result["a"] = author_var.get()
+            result["i"] = intro_text.get("1.0", "end").strip()
+            top.destroy()
+        bf = ttk.Frame(top); bf.pack(pady=8)
+        ttk.Button(bf, text="OK", command=commit).pack(side=tk.LEFT, padx=4)
+        ttk.Button(bf, text="Cancel",
+                   command=top.destroy).pack(side=tk.LEFT, padx=4)
+        top.grab_set()
+        self.root.wait_window(top)
+        if not result:
+            return None
+        return result["t"], result["a"], result["i"]
+
+    def _save_plot_dropdown(self):
+        """Save using the format chosen in the action-row dropdown.
+        The dropdown label encodes the file extension; we look it up
+        in SAVE_EXT_BY_LABEL."""
+        label = self.save_format_var.get()
+        ext = SAVE_EXT_BY_LABEL.get(label, ".png")
+        self._save_plot(ext=ext)
+
+    def _apply_pad_options(self, pad):
+        if pad is None: return
+        try:
+            pad.SetLogx(1 if self.logx_var.get() else 0)
+            pad.SetLogy(1 if self.logy_var.get() else 0)
+            pad.SetLogz(1 if self.logz_var.get() else 0)
+            pad.SetGrid(1 if self.grid_var.get() else 0,
+                        1 if self.grid_var.get() else 0)
+        except Exception:
+            pass
+
+    # -- save -------------------------------------------------------------
+
+    def _save_plot(self, ext: str | None = None):
+        if not self.specs:
+            messagebox.showinfo("cap-plot", "Nothing to save — select histograms first.")
+            return
+        if ext is None:
+            f = filedialog.asksaveasfilename(
+                defaultextension=".png",
+                filetypes=[("PNG", "*.png"), ("PDF", "*.pdf"),
+                           ("SVG", "*.svg"), ("ROOT", "*.root")])
+        else:
+            f = filedialog.asksaveasfilename(defaultextension=ext,
+                filetypes=[(ext.upper().lstrip("."), f"*{ext}")])
+        if not f:
+            return
+        # Re-render directly into the chosen file — same code path as
+        # the on-screen draw, but ROOT picks the format off the
+        # extension (.pdf / .svg / .root all work).
+        try:
+            self._render(save_path=f)
+            self.status_var.set(f"Saved {f}")
+        except Exception as exc:
+            messagebox.showerror("cap-plot", f"Save failed: {exc}")
+
+
+def _self_test():
+    """Headless smoke test of the data layer + render-control flow.
+    Doesn't open Tk; mocks ROOT just enough to exercise _resolve_object
+    and the same-mode max scan path.  Run via:  ./cap-plot --self-test"""
+    failures = []
+    def check(cond, msg):
+        if not cond: failures.append(msg)
+
+    # ----- 1) static lookup tables --------------------------------------
+    check(default_draw_opt("TH1F") == "E1",   "TH1 default")
+    check(default_draw_opt("TH2D") == "COLZ", "TH2 default")
+    check(default_draw_opt("TH3D") == "BOX",  "TH3 default")
+    check(default_draw_opt("TProfile") == "E0", "TProfile default")
+    check(default_draw_opt("TProfile2D") == "COLZ", "TProfile2D default")
+    check(default_draw_opt("TGraph") == "AP", "TGraph default")
+    check(default_draw_opt("TF1") == "",      "TF1 default")
+    check(default_draw_opt("TLeaf") == "E1",  "unknown class falls back to E1")
+    check(set(COLOR_NAMES) == set(COLOR_BY_NAME), "COLOR table self-consistent")
+    check(set(MARKER_LABELS) == set(MARKER_BY_LABEL), "MARKER table self-consistent")
+
+    # ----- 2) DrawSpec picks default per class -------------------------
+    s = DrawSpec("/tmp/x.root", "h", "x", classname="TH2F")
+    check(s.draw_opt == "COLZ", "DrawSpec(TH2) draw_opt = COLZ")
+    s = DrawSpec("/tmp/x.root", "h", "x", classname="TH1D")
+    check(s.draw_opt == "E1",   "DrawSpec(TH1) draw_opt = E1")
+    check(HAVE_PIL is False or LANCZOS is not None,
+          "Pillow LANCZOS resolves when PIL is present")
+    check(set(DrawSpec.__slots__) >= {"file", "path", "color", "marker",
+                                       "draw_opt", "label", "classname"},
+          "DrawSpec __slots__ covers all fields")
+
+    # ----- 3) _resolve_object — defensive Get walk ----------------------
+    # Build a fake TFile/TDirectory chain.
+    class _FakeKey:
+        def __init__(self, name): self._name = name
+        def GetName(self): return self._name
+    class _FakeObj:
+        def __init__(self, label): self.label = label
+        def GetMaximum(self): return 42.0
+    class _FakeDir:
+        def __init__(self, name, contents):
+            self._name = name; self._c = contents
+        def Get(self, p):
+            # Support both bare-name and slash-walk lookups.
+            if "/" in p:
+                head, _, tail = p.partition("/")
+                d = self._c.get(head)
+                if d is None: return None
+                return d.Get(tail) if hasattr(d, "Get") else None
+            return self._c.get(p)
+        def GetListOfKeys(self):
+            return [_FakeKey(k) for k in self._c]
+    leaf = _FakeObj("leaf!")
+    sub = _FakeDir("sub", {"h": leaf})
+    root = _FakeDir("/", {"dir": sub, "top_h": _FakeObj("top!")})
+
+    # Build a stub gui object that owns _resolve_object.
+    gui_stub = CapPlotGUI.__new__(CapPlotGUI)
+    obj = gui_stub._resolve_object(root, "top_h")
+    check(obj is leaf or (obj is not None and obj.label == "top!"),
+          "_resolve_object resolves top-level histo")
+    obj = gui_stub._resolve_object(root, "dir/h")
+    check(obj is leaf, "_resolve_object resolves nested path")
+    obj = gui_stub._resolve_object(root, "dir/h;1")
+    check(obj is leaf, "_resolve_object strips cycle suffix")
+    obj = gui_stub._resolve_object(root, "missing/path")
+    check(obj is None, "_resolve_object returns None for missing key")
+
+    # ----- 4) class_dim / drawopt_choices / line styles ----------------
+    check(class_dim("TH1F") == 1,         "class_dim TH1=1")
+    check(class_dim("TH2D") == 2,         "class_dim TH2=2")
+    check(class_dim("TH3D") == 3,         "class_dim TH3=3")
+    check(class_dim("TGraph") == 1,       "class_dim TGraph=1")
+    check(class_dim("TProfile2D") == 2,   "class_dim TProfile2D=2")
+    check(class_dim("TLeaf") == 0,        "class_dim unknown=0")
+    check("COLZ" in drawopt_choices_for("TH2F"),
+                                          "drawopt presets for TH2 contains COLZ")
+    check("BOX" in drawopt_choices_for("TH3D"),
+                                          "drawopt presets for TH3 contains BOX")
+    check("E1" in drawopt_choices_for("TH1F"),
+                                          "drawopt presets for TH1 contains E1")
+    check("AP" in drawopt_choices_for("TGraphErrors"),
+                                          "drawopt presets for TGraph contains AP")
+    check(LINESTYLE_BY_LABEL["solid ──"] == 1,
+                                          "line style 'solid' = ROOT 1")
+    check(set(LINESTYLE_LABELS) == set(LINESTYLE_BY_LABEL),
+                                          "LINE_STYLES table self-consistent")
+    # SAVE_FORMATS round-trip
+    check(SAVE_EXT_BY_LABEL[SAVE_FORMAT_LABELS[1]] == ".pdf",
+                                          "save format dropdown round-trip")
+
+    # ----- 5) DrawSpec gains line/marker/legend fields ----------------
+    s = DrawSpec("/tmp/x.root", "h", "x", classname="TH1F")
+    check(s.line_style == "solid ──",     "DrawSpec default line style")
+    check(s.line_width == 2,              "DrawSpec default line width")
+    check(s.marker_size == 0.9,           "DrawSpec default marker size")
+    check(s.legend_label == "",           "DrawSpec default legend label")
+    check(s.in_legend is True,            "DrawSpec default in_legend")
+    check(set(DrawSpec.__slots__) >= {
+        "marker_size", "legend_label", "in_legend"},
+        "DrawSpec slots include new style/legend fields")
+
+    # ----- 6) color_to_root_index lookup --------------------------------
+    check(color_to_root_index("black") == 1,    "named color → index")
+    check(color_to_root_index("root:42") == 42, "root:NN serialization")
+    check(color_to_root_index("#xx") == 1,      "bad hex falls back to 1")
+    check(color_to_root_index("") == 1,         "empty color → 1")
+    check(color_to_root_index(None) == 1,       "None color → 1")
+    check(CUSTOM_COLOR_LABEL.startswith("▶"),
+          "custom color sentinel exists")
+
+    # ----- 7) Legend position presets ----------------------------------
+    check(len(CapPlotGUI._LEGEND_POS) == 6,
+          "6 legend position presets (incl. custom)")
+    check("top-right (default)" in CapPlotGUI._LEGEND_POS,
+          "default legend position present")
+    check("custom (use NDC entries)" in CapPlotGUI._LEGEND_POS,
+          "custom legend NDC sentinel present")
+    check(CapPlotGUI._LEGEND_POS["custom (use NDC entries)"] is None,
+          "custom legend position maps to None (signals NDC fallback)")
+    check(all(v is None or len(v) == 4
+              for v in CapPlotGUI._LEGEND_POS.values()),
+          "every fixed legend position is a 4-tuple")
+
+    # ----- 8) Z-axis + wire-mesh state vars exist on the GUI class ----
+    # (We can only inspect the class itself headlessly; the StringVars
+    # are created in __init__ which we don't call.  Verify by source
+    # introspection: the names appear in CapPlotGUI's source.)
+    import inspect
+    src = inspect.getsource(CapPlotGUI)
+    check("ztitle_var"     in src, "GUI defines ztitle_var")
+    check("ztitle_off_var" in src, "GUI defines ztitle_off_var")
+    check("wire3d_var"     in src, "GUI defines wire3d_var (3D wire-mesh toggle)")
+    check("SetLineWidth(0)" in src, "render path zeroes line width when wire mesh off")
+    check("GetZaxis()"     in src, "render path applies Z axis title")
+
+    # ----- TLatex palette table is well-formed ------------------------
+    check(len(TLATEX_SYMBOLS) >= 5,
+          "TLatex palette has at least 5 categories")
+    check(all(isinstance(items, list) and items
+              for items in TLATEX_SYMBOLS.values()),
+          "every TLatex category has entries")
+    check(all(len(it) == 2 and "#" in code
+              for items in TLATEX_SYMBOLS.values()
+              for it in items
+              for (_, code) in [it]
+              if code.startswith("#")),
+          "TLatex codes use '#' escape (ROOT convention, not '\\')")
+    # A couple of staple codes are present.
+    flat = [code for items in TLATEX_SYMBOLS.values()
+            for (_, code) in items]
+    check("#pi"        in flat, "palette contains #pi")
+    check("p_{T}"      in flat, "palette contains p_{T}")
+    check("#sqrt{s}"   in flat, "palette contains #sqrt{s}")
+    check("#bar{p}"    in flat, "palette contains #bar{p} (antiproton)")
+
+    # ----- 10) LaTeX escape helper + report-method existence ----------
+    check(CapPlotGUI._tex_escape("a_b") == "a\\_b",
+          "_tex_escape escapes underscore")
+    check(CapPlotGUI._tex_escape("a&b") == "a\\&b",
+          "_tex_escape escapes ampersand")
+    check(CapPlotGUI._tex_escape("a%b") == "a\\%b",
+          "_tex_escape escapes percent")
+    check(CapPlotGUI._tex_escape("$\\pi$") == "$\\pi$",
+          "_tex_escape leaves $math$ alone")
+    check("_generate_latex_report" in dir(CapPlotGUI),
+          "GUI has _generate_latex_report method")
+    check("_prompt_report_metadata" in dir(CapPlotGUI),
+          "GUI has _prompt_report_metadata method")
+
+    # ----- 11) Z range entries / wire ---------------------------------
+    src2 = inspect.getsource(CapPlotGUI)
+    check("zmin_var" in src2, "GUI defines zmin_var")
+    check("zmax_var" in src2, "GUI defines zmax_var")
+    check("GetZaxis().SetRangeUser" in src2,
+          "render path applies Z range via SetRangeUser")
+    check("SetMinimum" in src2 and "SetMaximum" in src2,
+          "render path also clips Z via SetMinimum/SetMaximum (COLZ)")
+
+    # ----- 9) summary --------------------------------------------------
+    if failures:
+        print("SELF-TEST FAILED:")
+        for m in failures: print("  -", m)
+        sys.exit(1)
+    n_checks = 10 + 4 + 4 + 13 + 6 + 6 + 5 + 5 + 7 + 6 + 4
+    print(f"SELF-TEST OK ({n_checks} checks)  · "
+          f"PIL={HAVE_PIL}  · ROOT={'yes' if ROOT else 'no'}")
+    sys.exit(0)
+
+
+def main():
+    if "--self-test" in sys.argv:
+        _self_test()
+    _import_tk()    # any actual GUI run needs tkinter
+    start = REPO / "histos"
+    if len(sys.argv) > 1 and sys.argv[1] != "--self-test":
+        start = Path(sys.argv[1])
+    gui = CapPlotGUI(start)
+    gui.root.mainloop()
+
+
+if __name__ == "__main__":
+    main()

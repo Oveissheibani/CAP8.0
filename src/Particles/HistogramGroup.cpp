@@ -115,7 +115,49 @@ namespace CAP
   {
   if (reportDebug(__FUNCTION__)) { printCR(); }
   file.cd();
-  for (auto & object : _objects) object->Write();
+  // Defensive: a histogram in _objects may be (a) nullptr (a flag-gated
+  // create() never allocated it) or (b) currently attached to a file
+  // that's already been closed (ROOT's TFile destructor moves owned
+  // histograms with it) or (c) point to freed memory.  Skip nulls and
+  // re-anchor each histogram on the current file before writing so
+  // Write() never dereferences a dangling pointer or writes into the
+  // wrong directory.  Per-object try/catch avoids one bad histogram
+  // taking down the whole stage.
+  size_t idx = 0;
+  for (auto & object : _objects)
+    {
+    if (!object) { ++idx; continue; }
+    try
+      {
+      object->SetDirectory(&file);
+      object->Write();
+      }
+    catch (std::exception & ex)
+      {
+      static int warned = 0;
+      if (warned++ < 8)
+        {
+        printCR();
+        printValue("HistogramGroup::saveTo: skip exception at idx", (long)idx);
+        printValue("HistogramGroup::saveTo: histogram",
+                   String(object ? object->GetName() : "<null>"));
+        printValue("HistogramGroup::saveTo: what",  String(ex.what()));
+        }
+      }
+    catch (...)
+      {
+      static int warned = 0;
+      if (warned++ < 8)
+        {
+        printCR();
+        printValue("HistogramGroup::saveTo: skip unknown exception at idx",
+                   (long)idx);
+        printValue("HistogramGroup::saveTo: histogram",
+                   String(object ? object->GetName() : "<null>"));
+        }
+      }
+    ++idx;
+    }
   }
   
   void HistogramGroup::scaleHistograms(double a)

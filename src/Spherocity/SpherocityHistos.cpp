@@ -67,9 +67,17 @@ namespace CAP
   void SpherocityHistos::cloneB(const SpherocityHistos & source)
   {
   if (reportDebug(__FUNCTION__)) { printCR(); }
-  if (source.h_s0)     h_s0 = (TH1*) source.h_s0;
-  if (source.h_s1)     h_s1 = (TH1*) source.h_s1;
-  if (source.h_s1VsS0) h_s1VsS0 = (TH2*) source.h_s1VsS0;
+  // BUG FIX: previously this aliased pointers
+  //     h_s0 = (TH1*) source.h_s0;
+  // which made the copy share its histograms with `source`.  When
+  // `source` (or the file owning its histos) was destroyed, the copy
+  // had dangling pointers and saveTo() segfaulted in SetDirectory()/
+  // Write() on freed memory.  Use safeCloneH1 (deep clone) so each
+  // copy owns its own histogram — matches the pattern used by every
+  // other *Histos class in CAP.
+  h_s0     = safeCloneH1(source.h_s0);
+  h_s1     = safeCloneH1(source.h_s1);
+  h_s1VsS0 = safeCloneH2(source.h_s1VsS0);
   }
 
   void SpherocityHistos::configure(const String & taskName,
@@ -78,22 +86,26 @@ namespace CAP
                                    unsigned int index)
   {
   HistogramGroup::configure(taskName,objectType,configuration,index);
-  fillS0     = configuration.valueBool(createKey(taskName,objectType,"FillS0"));
-  fillS1     = configuration.valueBool(createKey(taskName,objectType,"FillS1"));
-  fillS1VsS0 = configuration.valueBool(createKey(taskName,objectType,"FillS1VsS0"));
-  spherocity_nbins = configuration.valueInt(   createKey(taskName,objectType,"spherocity_nbins"));
-  spherocity_min   = configuration.valueDouble(createKey(taskName,objectType,"spherocity_min"));
-  spherocity_max   = configuration.valueDouble(createKey(taskName,objectType,"spherocity_max"));
+  // Read binning from <task>:HISTOGRAM:* (analyzer-level), not
+  // <task>:HISTOGRAM_1:* (per-instance) — the rest of CAP and the .ini
+  // composer share one binning block per analyzer.
+  String type = "HISTOGRAM";
+  fillS0     = configuration.valueBool(createKey(taskName,type,"FillS0"));
+  fillS1     = configuration.valueBool(createKey(taskName,type,"FillS1"));
+  fillS1VsS0 = configuration.valueBool(createKey(taskName,type,"FillS1VsS0"));
+  spherocity_nbins = configuration.valueInt(   createKey(taskName,type,"spherocity_nbins"));
+  spherocity_min   = configuration.valueDouble(createKey(taskName,type,"spherocity_min"));
+  spherocity_max   = configuration.valueDouble(createKey(taskName,type,"spherocity_max"));
 
   if (reportDebug(__FUNCTION__))
     {
     printCR();
-    printValue(createKey(taskName,objectType,"fillS0"),fillS0);
-    printValue(createKey(taskName,objectType,"fillS1"),fillS1);
-    printValue(createKey(taskName,objectType,"fillS1VsS0"),fillS1VsS0);
-    printValue(createKey(taskName,objectType,"spherocity_nbins"),spherocity_nbins);
-    printValue(createKey(taskName,objectType,"spherocity_min"),spherocity_min);
-    printValue(createKey(taskName,objectType,"spherocity_max"),spherocity_max);
+    printValue(createKey(taskName,type,"fillS0"),fillS0);
+    printValue(createKey(taskName,type,"fillS1"),fillS1);
+    printValue(createKey(taskName,type,"fillS1VsS0"),fillS1VsS0);
+    printValue(createKey(taskName,type,"spherocity_nbins"),spherocity_nbins);
+    printValue(createKey(taskName,type,"spherocity_min"),spherocity_min);
+    printValue(createKey(taskName,type,"spherocity_max"),spherocity_max);
     }
   }
 

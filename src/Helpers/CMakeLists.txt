@@ -29,6 +29,6 @@ G__Helpers.cxx)
 target_link_libraries(Helpers Base Math ${ROOT_LIBRARIES} ${EXTRA_LIBS} )
 target_include_directories(Helpers PUBLIC Base Math ${EXTRA_INCLUDES} )
 
-install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libHelpers.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libHelpers_rdict.pcm" DESTINATION "$ENV{CAP_LIB_PATH}")
-install(TARGETS Helpers  LIBRARY DESTINATION "$ENV{CAP_LIB_PATH}")
+install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libHelpers.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libHelpers_rdict.pcm" DESTINATION ${CAP_INSTALL_LIBDIR})
+install(TARGETS Helpers  LIBRARY DESTINATION ${CAP_INSTALL_LIBDIR})
 

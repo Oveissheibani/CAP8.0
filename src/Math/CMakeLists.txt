@@ -36,6 +36,6 @@ G__Math.cxx)
 target_link_libraries(Math Base ${ROOT_LIBRARIES} ${EXTRA_LIBS} )
 target_include_directories(Math  PUBLIC Base ${EXTRA_INCLUDES} )
 
-install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libMath.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libMath_rdict.pcm" DESTINATION "$ENV{CAP_LIB_PATH}")
-install(TARGETS Math  LIBRARY DESTINATION "$ENV{CAP_LIB_PATH}")
+install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libMath.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libMath_rdict.pcm" DESTINATION ${CAP_INSTALL_LIBDIR})
+install(TARGETS Math  LIBRARY DESTINATION ${CAP_INSTALL_LIBDIR})
 

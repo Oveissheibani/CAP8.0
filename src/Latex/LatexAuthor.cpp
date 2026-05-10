@@ -35,7 +35,7 @@ namespace CAP
 //  if (email().Length()>0)
 //    out << "\\email{" << email() << "}" << endl;
   if (affiliation().Length()>0)
-  out << "\\\institute{" << affiliation() << "}" << endl;
+  out << "\\institute{" << affiliation() << "}" << endl;
   }
   
 }

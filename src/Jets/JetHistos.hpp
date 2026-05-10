@@ -14,7 +14,7 @@
 #include "HistogramGroup.hpp"
 #include "fastjet/ClusterSequence.hh"
 #include "MathConstants.hpp"
-#include "ParticleTypeList.hpp"
+#include "ParticleDb.hpp"
 
 using namespace fastjet;
 
@@ -51,7 +51,7 @@ protected:
 
   virtual void   cloneB(const JetHistos & source);
 
-  ParticleTypeList * particleTypeList;
+  ParticleDb * particleTypeList;
 
   //
   // jet global properties

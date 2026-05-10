@@ -21,6 +21,8 @@
 #include "Object.hpp"
 #include "EnvironmentVariables.hpp"
 #include "Object.hpp"
+#include <cstdio>      // exportObject diagnostic tracing
+#include <exception>
 #include "ManagedObject.hpp"
 #include "TFile.h"
 #include <iostream>
@@ -288,7 +290,55 @@ namespace CAP
   _exportFileName = configuration.valueString(createKey(_taskName,_typeName,"EXPORT:FILE_NAME"));
   _forceRewrite   = configuration.valueBool(  createKey(_taskName,_typeName,"EXPORT:FORCE_REWRITE"));
   nObjects        = configuration.valueInt(   createKey(_taskName,_typeName,"N") );
-  
+
+  // ----------------------------------------------------------------------
+  //  Backward-compatibility shim for legacy .ini files
+  // ----------------------------------------------------------------------
+  //  Older .ini files (the canonical projects/*.ini and everything emitted
+  //  by analyses/builder/build-ini-gui) use the form
+  //      <task>:nParticleDbs            instead of  <task>:PARTICLE_DB:N
+  //      <task>:ParticleDbName<k>       instead of  <task>:PARTICLE_DB:<k>:NAME
+  //      <task>:ParticleDbOwner<k>      instead of  <task>:PARTICLE_DB:<k>:OWNER
+  //      <task>:nEventFilters           instead of  <task>:EVENT_FILTER:N
+  //      <task>:EventFilterName<k>      instead of  <task>:EVENT_FILTER:<k>:NAME
+  //      ...
+  //  Map _typeName to the corresponding legacy tokens. We need two of them:
+  //   * legacyN     — full word used in the count key  ("n<word>s")
+  //   * legacyEntry — root used in per-object keys     "<root>Name<k>" etc.
+  //  Most types use the same word for both, but EVENT is asymmetric:
+  //  the count is `nEventsStreams` while the per-object key is `StreamName<k>`.
+  TString legacyN;       // count token, used as "n<token>s"
+  TString legacyEntry;   // per-object token, used as "<token>Name<k>" / "<token>Owner<k>"
+  if      (_typeName == "PARTICLE_DB")
+        { legacyN = "ParticleDb";          legacyEntry = "ParticleDb"; }
+  else if (_typeName == "EVENT_FILTER")
+        { legacyN = "EventFilter";         legacyEntry = "EventFilter"; }
+  else if (_typeName == "PARTICLE_FILTER")
+        { legacyN = "ParticleFilter";      legacyEntry = "ParticleFilter"; }
+  else if (_typeName == "JET_FILTER")
+        { legacyN = "JetFilter";           legacyEntry = "JetFilter"; }
+  else if (_typeName == "EVENT")
+        { legacyN = "EventsStream";        legacyEntry = "Stream"; }   // ← asymmetric
+  else if (_typeName == "EVENT_STREAM")
+        { legacyN = "EventsStream";        legacyEntry = "Stream"; }
+  else if (_typeName == "EVENT_EFFICIENCY")
+        { legacyN = "EventEfficiency";     legacyEntry = "EventEfficiency"; }
+  else if (_typeName == "PARTICLE_EFFICIENCY")
+        { legacyN = "ParticleEfficiency";  legacyEntry = "ParticleEfficiency"; }
+  else if (_typeName == "EVENT_SMEARER")
+        { legacyN = "EventSmearer";        legacyEntry = "EventSmearer"; }
+  else if (_typeName == "PARTICLE_SMEARER")
+        { legacyN = "ParticleSmearer";     legacyEntry = "ParticleSmearer"; }
+
+  if (nObjects == 0 && legacyN.Length() > 0)
+    {
+    String key = _taskName;
+    key += ":n";
+    key += legacyN;
+    key += "s";
+    nObjects = configuration.valueInt(key);
+    }
+
   EnvironmentVariables * envVariables = EnvironmentVariables::environmentVariables();
   String basePath;
   
@@ -358,6 +408,26 @@ namespace CAP
     name  = configuration.valueString(createKey(_taskName,_typeName,k,"NAME"));
     title = configuration.valueString(createKey(_taskName,_typeName,k,"TITLE"));
     owner = configuration.valueBool(  createKey(_taskName,_typeName,k,"OWNER"));
+
+    // Legacy fallback: <task>:<Foo>Name<k> / <Foo>Title<k> / <Foo>Owner<k>.
+    if (legacyEntry.Length() > 0)
+      {
+      if (name.IsNull() || name.Length() == 0 || name == "NONE")
+        {
+        String key = _taskName; key += ":"; key += legacyEntry; key += "Name"; key += k;
+        name = configuration.valueString(key);
+        }
+      if (title.IsNull() || title.Length() == 0 || title == "NONE")
+        {
+        String key = _taskName; key += ":"; key += legacyEntry; key += "Title"; key += k;
+        title = configuration.valueString(key);
+        }
+      if (!owner)   // bool default is false; if the new key wasn't there
+        {
+        String key = _taskName; key += ":"; key += legacyEntry; key += "Owner"; key += k;
+        owner = configuration.valueBool(key, /*useDefault=*/true, /*defaultValue=*/false);
+        }
+      }
     if (verbose)
       {
       printValue(createKey(_taskName,_typeName,k,"NAME"),name);
@@ -461,10 +531,57 @@ namespace CAP
     printValue("EXPORT:PATH",_exportPath);
     printValue("EXPORT:FILE_NAME",_exportFileName);
     };
+  std::fprintf(stderr,
+    "[ManagedObj.exportObject] BEGIN typeName=%s file=%s nObjects=%zu\n",
+    _typeName.Data(), _exportFileName.Data(), _objects.size());
+  std::fflush(stderr);
   if (_exportFileName.EndsWith(".root"))
     {
-    TFile & outputFile = * openRecreateRootFile(_exportPath,_exportFileName);
-    for (auto & object : _objects) object->saveTo(outputFile);
+    // Defensive: openRecreateRootFile may fail if the directory doesn't
+    // exist or isn't writable.  Original code dereferenced an unchecked
+    // pointer → SEGV in saveTo on a wild reference.
+    TFile * outputFilePtr = nullptr;
+    try { outputFilePtr = openRecreateRootFile(_exportPath,_exportFileName); }
+    catch (std::exception & ex) {
+      std::fprintf(stderr,
+        "[ManagedObj.exportObject] openRecreateRootFile threw: %s\n", ex.what());
+      std::fflush(stderr);
+      return;
+    }
+    catch (...) { return; }
+    if (!outputFilePtr || outputFilePtr->IsZombie())
+      {
+      printCR();
+      printString("ManagedObjects::exportObject: cannot open output file");
+      printValue("EXPORT:PATH",_exportPath);
+      printValue("EXPORT:FILE_NAME",_exportFileName);
+      if (outputFilePtr) { outputFilePtr->Close(); delete outputFilePtr; }
+      return;
+      }
+    TFile & outputFile = *outputFilePtr;
+    size_t i = 0;
+    for (auto & object : _objects)
+      {
+      if (!object) { ++i; continue; }
+      std::fprintf(stderr,
+        "[ManagedObj.exportObject]   saving #%zu of %zu (%s)\n",
+        i, _objects.size(), object ? "non-null" : "null");
+      std::fflush(stderr);
+      try { object->saveTo(outputFile); }
+      catch (std::exception & ex)
+        {
+        std::fprintf(stderr,
+          "[ManagedObj.exportObject]   saveTo threw at #%zu: %s\n", i, ex.what());
+        std::fflush(stderr);
+        }
+      catch (...)
+        {
+        std::fprintf(stderr,
+          "[ManagedObj.exportObject]   saveTo threw unknown at #%zu\n", i);
+        std::fflush(stderr);
+        }
+      ++i;
+      }
     outputFile.Close();
     }
   else

@@ -162,6 +162,41 @@ void ParticleSingleDerivedHistos::loadFrom(TFile & inputFile)
 void ParticleSingleDerivedHistos::calculateDerivedHistograms(ParticleSingleHistos & baseHistos)
 {
   if (reportDebug(__FUNCTION__)) { printCR(); }
+  // ----------------------------------------------------------------
+  //  CRITICAL: clone the base h_n1_pt / h_n1 into THIS derived
+  //  object so downstream consumers (in particular the Pair
+  //  Calculator's calculateDerivedHistograms which reads
+  //  part1Histos.h_n1_pt) see a populated histogram instead of
+  //  the nullptr left over from create() (which only allocates
+  //  the strictly-derived members like h_n1_phi/eta/y).
+  //  Without this clone, the Pair Calculator throws
+  //      HistogramException("LOGIC", "!part1Histos.h_n1_pt", ...)
+  //  the moment it tries to compute N1*N1 in pT.
+  // ----------------------------------------------------------------
+  // 1D base histos
+  if (baseHistos.h_n1_pt && !h_n1_pt)
+    h_n1_pt    = (TH1*) baseHistos.h_n1_pt->Clone();
+  if (baseHistos.h_n1    && !h_n1)
+    h_n1       = (TH1*) baseHistos.h_n1->Clone();
+  if (baseHistos.h_n1_eTotal && !h_n1_eTotal)
+    h_n1_eTotal = (TH1*) baseHistos.h_n1_eTotal->Clone();
+  if (baseHistos.h_n1_ptXS   && !h_n1_ptXS)
+    h_n1_ptXS  = (TH1*) baseHistos.h_n1_ptXS->Clone();
+  // 2D base histos used downstream by ParticlePairDerivedHistos::
+  // calculateDerivedHistograms (reduce_n1EtaPhiN1EtaPhi... etc.).
+  if (baseHistos.h_n1_phiEta && !h_n1_phiEta)
+    h_n1_phiEta = (TH2*) baseHistos.h_n1_phiEta->Clone();
+  if (baseHistos.h_spt_phiEta && !h_spt_phiEta)
+    h_spt_phiEta = (TH2*) baseHistos.h_spt_phiEta->Clone();
+  if (baseHistos.h_n1_phiY && !h_n1_phiY)
+    h_n1_phiY = (TH2*) baseHistos.h_n1_phiY->Clone();
+  if (baseHistos.h_spt_phiY && !h_spt_phiY)
+    h_spt_phiY = (TH2*) baseHistos.h_spt_phiY->Clone();
+  if (baseHistos.h_n1_ptY && !h_n1_ptY)
+    h_n1_ptY = (TH2*) baseHistos.h_n1_ptY->Clone();
+  if (baseHistos.h_pdgId && !h_pdgId)
+    h_pdgId = (TH1*) baseHistos.h_pdgId->Clone();
+
   TH1* hTemp;
   if (baseHistos.h_n1_phiEta)
     {

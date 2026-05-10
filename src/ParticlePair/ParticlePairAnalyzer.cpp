@@ -130,7 +130,11 @@ void ParticlePairAnalyzer::execute()
         std::vector<Particle*> & particlesSelected2 = acceptedParticles(iParticleFilter2);
         //std::vector<double>   & weightSelected2    = acceptedWeights(iParticleFilter2);
         index = basePair+iParticleFilter2;
-        if (index>3) throw Exception("index>3",__FUNCTION__);
+        // Original code had `if (index>3) throw` — a leftover developer's
+        // assertion that capped the analyzer at 1 EF x 2 PF.  Replaced
+        // with a proper bounds check against the actual histogram count.
+        if (index >= pairHistograms.size())
+          throw Exception("pair histogram index out of range", __FUNCTION__);
         ParticlePairHistos * histosPair = pairHistograms[index];
         if (!histosPair) throw Exception("!histosPair",__FUNCTION__);
         int n1 = particlesSelected1.size();

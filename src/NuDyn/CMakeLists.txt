@@ -20,6 +20,6 @@ G__NuDyn.cxx)
 target_link_libraries(NuDyn Base  Particles  ${ROOT_LIBRARIES} ${EXTRA_LIBS} )
 target_include_directories(NuDyn  PUBLIC Base  Particles  NuDyn ${EXTRA_INCLUDES} ) 
 
-install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libNuDyn.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libNuDyn_rdict.pcm" DESTINATION "$ENV{CAP_LIB_PATH}")
-install(TARGETS NuDyn  LIBRARY DESTINATION "$ENV{CAP_LIB_PATH}")
+install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libNuDyn.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libNuDyn_rdict.pcm" DESTINATION ${CAP_INSTALL_LIBDIR})
+install(TARGETS NuDyn  LIBRARY DESTINATION ${CAP_INSTALL_LIBDIR})
 

@@ -16,6 +16,7 @@
 #include "PrintHelpers.hpp"
 #include "Task.hpp"
 #include "Configuration.hpp"
+#include <cmath>      // std::isfinite — defensive guards for BF-per-stage
 
 ClassImp(CAP::ParticlePair3DHistos);
 
@@ -119,41 +120,64 @@ namespace CAP
   void ParticlePair3DHistos::configure(const String & taskName,
                                        const String & objectType,
                                        const Configuration & configuration,
-                                       unsigned int index __attribute__((unused)) )
+                                       unsigned int index )
   {
-  n2_nbins       = configuration.valueInt(   createKey(taskName,objectType,"n2_nbins"));
-  n2_min         = configuration.valueDouble(createKey(taskName,objectType,"n2_min"));
-  n2_max         = configuration.valueDouble(createKey(taskName,objectType,"n2_max"));
-  Qinv_nbins     = configuration.valueInt(   createKey(taskName,objectType,"Qinv_nbins"));
-  Qinv_min       = configuration.valueDouble(createKey(taskName,objectType,"Qinv_min"));
-  Qinv_max       = configuration.valueDouble(createKey(taskName,objectType,"Qinv_max"));
-  DeltaPs_nbins  = configuration.valueInt(   createKey(taskName,objectType,"DeltaPs_nbins"));
-  DeltaPo_nbins  = configuration.valueInt(   createKey(taskName,objectType,"DeltaPo_nbins"));
-  DeltaPl_nbins  = configuration.valueInt(   createKey(taskName,objectType,"DeltaPl_nbins"));
-  DeltaPs_min    = configuration.valueDouble(createKey(taskName,objectType,"DeltaPs_min"));
-  DeltaPs_max    = configuration.valueDouble(createKey(taskName,objectType,"DeltaPs_max"));
-  DeltaPo_min    = configuration.valueDouble(createKey(taskName,objectType,"DeltaPo_min"));
-  DeltaPo_max    = configuration.valueDouble(createKey(taskName,objectType,"DeltaPo_max"));
-  DeltaPl_min    = configuration.valueDouble(createKey(taskName,objectType,"DeltaPl_min"));
-  DeltaPl_max    = configuration.valueDouble(createKey(taskName,objectType,"DeltaPl_max"));
+  // Two fixes vs. the original code:
+  //  (1) Call HistogramGroup::configure() so _histogramBaseName picks up
+  //      the per-instance BASE_NAME key.  Without it histogram names
+  //      come out as "NOTSET_n2" etc.
+  //  (2) Read binning from the analyzer-level "HISTOGRAM:*" namespace
+  //      (matching ParticlePairHistos / ParticleSingleHistos), so a
+  //      single set of <task>:HISTOGRAM:n2_nbins keys configures every
+  //      pair-3D histogram instance.
+  HistogramGroup::configure(taskName, objectType, configuration, index);
+  String type = "HISTOGRAM";
+  n2_nbins       = configuration.valueInt(   createKey(taskName,type,"n2_nbins"));
+  n2_min         = configuration.valueDouble(createKey(taskName,type,"n2_min"));
+  n2_max         = configuration.valueDouble(createKey(taskName,type,"n2_max"));
+  Qinv_nbins     = configuration.valueInt(   createKey(taskName,type,"Qinv_nbins"));
+  Qinv_min       = configuration.valueDouble(createKey(taskName,type,"Qinv_min"));
+  Qinv_max       = configuration.valueDouble(createKey(taskName,type,"Qinv_max"));
+  DeltaPs_nbins  = configuration.valueInt(   createKey(taskName,type,"DeltaPs_nbins"));
+  DeltaPo_nbins  = configuration.valueInt(   createKey(taskName,type,"DeltaPo_nbins"));
+  DeltaPl_nbins  = configuration.valueInt(   createKey(taskName,type,"DeltaPl_nbins"));
+  DeltaPs_min    = configuration.valueDouble(createKey(taskName,type,"DeltaPs_min"));
+  DeltaPs_max    = configuration.valueDouble(createKey(taskName,type,"DeltaPs_max"));
+  DeltaPo_min    = configuration.valueDouble(createKey(taskName,type,"DeltaPo_min"));
+  DeltaPo_max    = configuration.valueDouble(createKey(taskName,type,"DeltaPo_max"));
+  DeltaPl_min    = configuration.valueDouble(createKey(taskName,type,"DeltaPl_min"));
+  DeltaPl_max    = configuration.valueDouble(createKey(taskName,type,"DeltaPl_max"));
+  // pt / rapidity binning — inherited members used by
+  // ParticlePair3DDerivedHistos::create() (n1_1_pt, n1_1_y, ...).
+  // Stage 1 didn't need these because HISTOGRAM_2 N=0, but stage 2
+  // (RunDerived) instantiates the derived histos and trips on n_x<1
+  // unless we read these here.  Note: ParticlePair3DHistos.hpp declares
+  // ONLY pt_* and rapidity_* (no phi_* / eta_* / fill flags) — those
+  // exist in the 1D ParticlePairHistos but not in 3D.
+  pt_nbins         = configuration.valueInt(   createKey(taskName,type,"pt_nbins"));
+  pt_min           = configuration.valueDouble(createKey(taskName,type,"pt_min"));
+  pt_max           = configuration.valueDouble(createKey(taskName,type,"pt_max"));
+  rapidity_nbins   = configuration.valueInt(   createKey(taskName,type,"rapidity_nbins"));
+  rapidity_minimum = configuration.valueDouble(createKey(taskName,type,"rapidity_min"));
+  rapidity_maximum = configuration.valueDouble(createKey(taskName,type,"rapidity_max"));
 
   if (reportDebug(__FUNCTION__))
     {
-    printValue(createKey(taskName,objectType,"n2_nbins"),n2_nbins);
-    printValue(createKey(taskName,objectType,"n2_min"),n2_min);
-    printValue(createKey(taskName,objectType,"n2_max"),n2_max);
-    printValue(createKey(taskName,objectType,"Qinv_nbins"),Qinv_nbins);
-    printValue(createKey(taskName,objectType,"Qinv_min"),Qinv_min);
-    printValue(createKey(taskName,objectType,"Qinv_max"),Qinv_max);
-    printValue(createKey(taskName,objectType,"DeltaPs_nbins"),DeltaPs_nbins);
-    printValue(createKey(taskName,objectType,"DeltaPo_nbins"),DeltaPo_nbins);
-    printValue(createKey(taskName,objectType,"DeltaPl_nbins"),DeltaPl_nbins);
-    printValue(createKey(taskName,objectType,"DeltaPs_min"),DeltaPs_min);
-    printValue(createKey(taskName,objectType,"DeltaPs_max"),DeltaPs_max);
-    printValue(createKey(taskName,objectType,"DeltaPo_min"),DeltaPo_min);
-    printValue(createKey(taskName,objectType,"DeltaPo_max"),DeltaPo_max);
-    printValue(createKey(taskName,objectType,"DeltaPl_min"),DeltaPl_min);
-    printValue(createKey(taskName,objectType,"DeltaPl_max"),DeltaPl_max);
+    printValue(createKey(taskName,type,"n2_nbins"),n2_nbins);
+    printValue(createKey(taskName,type,"n2_min"),n2_min);
+    printValue(createKey(taskName,type,"n2_max"),n2_max);
+    printValue(createKey(taskName,type,"Qinv_nbins"),Qinv_nbins);
+    printValue(createKey(taskName,type,"Qinv_min"),Qinv_min);
+    printValue(createKey(taskName,type,"Qinv_max"),Qinv_max);
+    printValue(createKey(taskName,type,"DeltaPs_nbins"),DeltaPs_nbins);
+    printValue(createKey(taskName,type,"DeltaPo_nbins"),DeltaPo_nbins);
+    printValue(createKey(taskName,type,"DeltaPl_nbins"),DeltaPl_nbins);
+    printValue(createKey(taskName,type,"DeltaPs_min"),DeltaPs_min);
+    printValue(createKey(taskName,type,"DeltaPs_max"),DeltaPs_max);
+    printValue(createKey(taskName,type,"DeltaPo_min"),DeltaPo_min);
+    printValue(createKey(taskName,type,"DeltaPo_max"),DeltaPo_max);
+    printValue(createKey(taskName,type,"DeltaPl_min"),DeltaPl_min);
+    printValue(createKey(taskName,type,"DeltaPl_max"),DeltaPl_max);
     }
   }
 
@@ -219,13 +243,25 @@ namespace CAP
     qinv-=g[alpha]*q[alpha]*q[alpha];
     }
   pt=std::sqrt(ptot[1]*ptot[1]+ptot[2]*ptot[2]);
+  // Defensive: pair-pT can be 0 for back-to-back partons → divisions
+  // below would produce NaN/inf and corrupt the histograms.  Skip
+  // such pairs.  Also guard against Mlong=0 (pair-rest-frame Mlong
+  // can underflow for partonic kinematics).
+  if (pt <= 0.0 || !std::isfinite(pt)) return;
   Mlong=std::sqrt(s+pt*pt);
-  roots=std::sqrt(s);
+  if (Mlong <= 0.0 || !std::isfinite(Mlong)) return;
+  // qinv inside the loop accumulates -g[a]*q[a]*q[a]; it can become
+  // slightly negative for off-shell partons → std::sqrt(NaN).  Guard.
+  if (qinv < 0.0 || !std::isfinite(qinv)) return;
+  roots=std::sqrt(s>=0.0 ? s : 0.0);
 
   qside=(ptot[1]*q[2]-ptot[2]*q[1])/pt;
   qlong=(ptot[0]*q[3]-ptot[3]*q[0])/Mlong;
   qout=(roots/Mlong)*(ptot[1]*q[1]+ptot[2]*q[2])/pt;
   qinv=std::sqrt(qinv);
+
+  if (!std::isfinite(qside) || !std::isfinite(qlong) ||
+      !std::isfinite(qout) || !std::isfinite(qinv)) return;
 
   h_n2_Qinv->Fill(qinv,weight);
   h_n2_DeltaP->Fill(qside,qout,qlong,weight);

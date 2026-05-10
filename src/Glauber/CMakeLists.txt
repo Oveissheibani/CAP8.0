@@ -49,6 +49,6 @@ G__Glauber.cxx)
 target_link_libraries(Glauber Base Math Helpers Particles  ${ROOT_LIBRARIES} ${EXTRA_LIBS} )
 target_include_directories(Glauber PUBLIC Base Math Glauber Helpers ParticleDb Particles ${EXTRA_INCLUDES} )
 
-install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libGlauber.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libGlauber_rdict.pcm" DESTINATION "$ENV{CAP_LIB_PATH}")
-install(TARGETS Glauber  LIBRARY DESTINATION "$ENV{CAP_LIB_PATH}")
+install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libGlauber.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libGlauber_rdict.pcm" DESTINATION ${CAP_INSTALL_LIBDIR})
+install(TARGETS Glauber  LIBRARY DESTINATION ${CAP_INSTALL_LIBDIR})
 

@@ -24,6 +24,6 @@ target_include_directories(ParticleFlow  PUBLIC Base   Particles ParticleFlow ${
 add_definitions(-DOPTIMIZEADDBINCONTENT)
 
 
-install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libParticleFlow.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libParticleFlow_rdict.pcm" DESTINATION "$ENV{CAP_LIB_PATH}")
-install(TARGETS ParticleFlow  LIBRARY DESTINATION "$ENV{CAP_LIB_PATH}")
+install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libParticleFlow.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libParticleFlow_rdict.pcm" DESTINATION ${CAP_INSTALL_LIBDIR})
+install(TARGETS ParticleFlow  LIBRARY DESTINATION ${CAP_INSTALL_LIBDIR})
 

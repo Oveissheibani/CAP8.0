@@ -5,7 +5,9 @@
 #pragma link C++ class CAP::Filter<CAP::GlauberEvent>+;
 #pragma link C++ class CAP::GlauberAnalyzer+;
 #pragma link C++ class CAP::GlauberDb+;
-#pragma link C++ class CAP::GlauberExceptions+;
+// CAP::GlauberExceptions has no class definition in src/Glauber — link rule
+// removed to silence "Unused class rule" dictionary warning.
+//#pragma link C++ class CAP::GlauberExceptions+;
 #pragma link C++ class CAP::GlauberEvent+;
 #pragma link C++ class CAP::GlauberEventFilter+;
 #pragma link C++ class CAP::GlauberGenerator+;

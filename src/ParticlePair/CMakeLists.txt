@@ -33,6 +33,6 @@ target_include_directories(ParticlePair  PUBLIC Base Particles ParticleSingle Pa
 add_definitions(-DOPTIMIZEADDBINCONTENT)
 
 
-install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libParticlePair.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libParticlePair_rdict.pcm" DESTINATION "$ENV{CAP_LIB_PATH}")
-install(TARGETS ParticlePair  LIBRARY DESTINATION "$ENV{CAP_LIB_PATH}")
+install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libParticlePair.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libParticlePair_rdict.pcm" DESTINATION ${CAP_INSTALL_LIBDIR})
+install(TARGETS ParticlePair  LIBRARY DESTINATION ${CAP_INSTALL_LIBDIR})
 

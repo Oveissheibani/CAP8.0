@@ -25,7 +25,7 @@ namespace CAP
   void LatexEquation::writeHeader(std::ofstream & out)
   {
   out << "\\begin{equation}" << endl;
-  out << "\\label{eq:" << label() << "}"<< endl;
+  out << "\\label{" << label() << "}"<< endl;
   }
 
   void LatexEquation::writeTrailer(std::ofstream & out)

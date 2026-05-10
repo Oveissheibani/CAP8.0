@@ -25,7 +25,7 @@ namespace CAP
   JetPairMassHistos::JetPairMassHistos()
   :
   HistogramGroup(),
-  particleTypeList(ParticleTypeList::list()),
+  particleTypeList(nullptr),
   h_jetpair_n2_ptpt(nullptr),
   h_jetpair_n2_phiphi(nullptr),
   h_jetpair_n2_etaeta(nullptr),
@@ -53,7 +53,7 @@ namespace CAP
   JetPairMassHistos::JetPairMassHistos(const JetPairMassHistos & source)
   :
   HistogramGroup(source),
-  particleTypeList(ParticleTypeList::list()),
+  particleTypeList(nullptr),
   h_jetpair_n2_ptpt(nullptr),
   h_jetpair_n2_phiphi(nullptr),
   h_jetpair_n2_etaeta(nullptr),

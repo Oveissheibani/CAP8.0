@@ -1,0 +1,844 @@
+#!/usr/bin/env python3
+"""
+setup-cap-gui — graphical installer for the Correlation Analysis Package.
+
+Companion to ./setup-cap (the CLI installer). Same detection logic underneath
+(invokes `setup-cap --json`), same .cap-config output, same logs.
+
+Layout:
+    +--------------------------------------------------------------+
+    | CAP setup                                       [ rescan ]   |
+    | ROOT      [ /opt/homebrew/Cellar/root/6.32.04         ▾ ]   |
+    | Pythia 8  [ ./pythia8317                              ▾ ]   |
+    | FastJet   [ ./fastjet-3.4.3 (build now)               ▾ ]   |
+    |                                                              |
+    | [ Save config ]  [ Configure & Build ]  [ Run sample job ]   |
+    |--------------------------------------------------------------|
+    | Live log:                                                    |
+    | [ scrolling text widget tailing logs/last-*.log ]            |
+    +--------------------------------------------------------------+
+
+Requires: Python 3.8+ and Tkinter (standard library on macOS, most Linux).
+On Debian/Ubuntu:    apt install python3-tk
+On RHEL/CentOS/WSU:  yum install python3-tkinter
+
+Logs are written under <repo>/logs/ exactly like the CLI installer, so any
+crash/build failure is preserved for inspection.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import queue
+import shlex
+import subprocess
+import sys
+import threading
+import tkinter as tk
+from datetime import datetime, timezone
+from pathlib import Path
+from tkinter import messagebox, ttk
+
+REPO = Path(__file__).resolve().parent.parent
+LOGS = REPO / "logs"
+LOGS.mkdir(exist_ok=True)
+
+
+# ---------------------------------------------------------------------------
+#  Logging — mirrors scripts/cap-logging.sh format so we can grep across both
+# ---------------------------------------------------------------------------
+class GuiLogger:
+    """Writes a timestamped log file and exposes a thread-safe writeline()."""
+
+    def __init__(self, component: str = "gui") -> None:
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        self.path = LOGS / f"{component}-{ts}.log"
+        self.lock = threading.Lock()
+        self._open = open(self.path, "w", encoding="utf-8", buffering=1)
+        self._open.write(f"# CAP {component} log (GUI)\n")
+        self._open.write(f"# Started   : {datetime.now(timezone.utc).isoformat()}\n")
+        self._open.write(f"# CWD       : {os.getcwd()}\n")
+        self._open.write(f"# Platform  : {sys.platform} {os.uname().machine if hasattr(os, 'uname') else ''}\n")
+        self._open.write(f"# Python    : {sys.version.split()[0]}\n")
+        self._open.write("#====================================================================\n\n")
+
+        # Maintain a "last-<component>.log" symlink for easy tailing.
+        last = LOGS / f"last-{component}.log"
+        try:
+            if last.is_symlink() or last.exists():
+                last.unlink()
+            last.symlink_to(self.path.name)
+        except OSError:
+            pass
+
+    def line(self, level: str, message: str) -> None:
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + "Z"
+        with self.lock:
+            self._open.write(f"[{ts}] [{level}] {message}\n")
+
+    def close(self, exit_code: int = 0) -> None:
+        with self.lock:
+            self._open.write("\n#====================================================================\n")
+            self._open.write(f"# Finished  : {datetime.now(timezone.utc).isoformat()}\n")
+            self._open.write(f"# Exit code : {exit_code}\n")
+            self._open.close()
+
+
+# ---------------------------------------------------------------------------
+#  Subprocess helpers
+# ---------------------------------------------------------------------------
+def run_streaming(cmd: list[str], log: GuiLogger, sink: queue.Queue, cwd: Path | None = None) -> int:
+    """Run a command, sending each output line to the sink queue and the log."""
+    log.line("INFO", f"$ {' '.join(shlex.quote(c) for c in cmd)}")
+    sink.put(("info", f"$ {' '.join(shlex.quote(c) for c in cmd)}"))
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(cwd) if cwd else None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+    except FileNotFoundError as exc:
+        log.line("ERROR", str(exc))
+        sink.put(("error", str(exc)))
+        return 127
+
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        line = line.rstrip()
+        log.line("DEBUG", line)
+        sink.put(("line", line))
+    proc.wait()
+    sink.put(("info", f"   exit code: {proc.returncode}"))
+    log.line("INFO" if proc.returncode == 0 else "ERROR", f"exit code {proc.returncode}")
+    return proc.returncode
+
+
+def detect_dependencies(log: GuiLogger,
+                         hw_prefix: str | None = None) -> dict:
+    """Call `setup-cap --json` and return the parsed result.
+
+    If `hw_prefix` is supplied, it's exported as HW_PREFIX so the shell
+    detector picks up the FastJet (and other HEP libs) bundled inside
+    the HERWIG install — the bundled libfastjet appears as a "herwig"
+    candidate alongside Homebrew/CVMFS/etc."""
+    log.line("INFO", "Running setup-cap --json")
+    env = os.environ.copy()
+    if hw_prefix:
+        env["HW_PREFIX"] = hw_prefix
+        log.line("INFO", f"  with HW_PREFIX={hw_prefix}")
+    res = subprocess.run(
+        [str(REPO / "setup-cap"), "--json"],
+        capture_output=True,
+        text=True,
+        cwd=str(REPO),
+        env=env,
+    )
+    if res.returncode != 0:
+        log.line("ERROR", f"setup-cap --json failed: {res.stderr}")
+        return {"root": [], "pythia": [], "fastjet": []}
+    try:
+        return json.loads(res.stdout)
+    except json.JSONDecodeError as exc:
+        log.line("ERROR", f"Could not parse JSON from setup-cap: {exc}\nstdout was: {res.stdout}")
+        return {"root": [], "pythia": [], "fastjet": []}
+
+
+# ---------------------------------------------------------------------------
+#  GUI
+# ---------------------------------------------------------------------------
+class CapSetupGUI:
+    SKIP_LABEL = "— skip / disable —"
+    INSTALL_PYTHIA_LABEL = "Install fresh in-tree (pythia8317)"
+    INSTALL_FASTJET_LABEL = "Build the vendored FastJet source"
+
+    def __init__(self) -> None:
+        self.log = GuiLogger("gui")
+        self.log.line("INFO", "GUI started")
+
+        self.detection: dict = {"root": [], "pythia": [], "fastjet": []}
+        self.queue: queue.Queue = queue.Queue()
+
+        self.root = tk.Tk()
+        self.root.title("CAP — interactive setup")
+        self.root.geometry("960x720")
+        self._build_ui()
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._poll_queue()
+        self._rescan()
+
+    # -- UI construction --------------------------------------------------
+    def _build_ui(self) -> None:
+        pad = {"padx": 10, "pady": 6}
+
+        top = ttk.Frame(self.root)
+        top.pack(fill=tk.X, **pad)
+        logo_png = REPO / "logo" / "logo.png"
+        if logo_png.is_file():
+            try:
+                img = tk.PhotoImage(file=str(logo_png))
+                target_h = 40
+                factor = max(1, max(img.width(), img.height()) // target_h)
+                if factor > 1:
+                    img = img.subsample(factor, factor)
+                self._logo_img = img
+                ttk.Label(top, image=self._logo_img).pack(side=tk.LEFT, padx=(0, 10))
+            except Exception:
+                pass
+        ttk.Label(top, text="CAP setup", font=("TkDefaultFont", 14, "bold")).pack(side=tk.LEFT)
+        ttk.Button(top, text="Rescan", command=self._rescan).pack(side=tk.RIGHT)
+
+        body = ttk.LabelFrame(self.root, text="Dependencies")
+        body.pack(fill=tk.X, **pad)
+
+        self.root_var    = tk.StringVar()
+        self.pythia_var  = tk.StringVar()
+        self.fastjet_var = tk.StringVar()
+        # Jets module is OFF by default — see JETS_KNOWN_ISSUES.md.  Users
+        # who want it must tick this checkbox; FastJet must also be set.
+        self.enable_jets_var = tk.BooleanVar(value=False)
+        self.root_combo    = self._dep_row(body, 0, "ROOT",     self.root_var)
+        self.pythia_combo  = self._dep_row(body, 1, "Pythia 8", self.pythia_var)
+        self.fastjet_combo = self._dep_row(body, 2, "FastJet",  self.fastjet_var)
+        ttk.Checkbutton(
+            body,
+            text="Enable Jets module (advanced; requires FastJet, "
+                 "see JETS_KNOWN_ISSUES.md — off by default)",
+            variable=self.enable_jets_var,
+        ).grid(row=3, column=1, sticky="w", padx=4, pady=(0, 4))
+        body.columnconfigure(1, weight=1)
+
+        # ------------------------------------------------------------------
+        # HERWIG 7 + HEP stack — embedded in-process generation.
+        # CAP_ENABLE_HERWIG implies HepMC3 + LHAPDF (auto-enabled in
+        # src/CMakeLists.txt) but each is exposed individually so users
+        # can link e.g. LHAPDF without the full Herwig embed.
+        # ------------------------------------------------------------------
+        herwig_frame = ttk.LabelFrame(self.root, text="HERWIG 7 + HEP stack (optional, all OFF by default)")
+        herwig_frame.pack(fill=tk.X, **pad)
+
+        # Default ON for the full HERWIG stack — when a HW_PREFIX is
+        # configured the user almost always wants every component
+        # linked.  Untick individually if you don't.
+        self.enable_herwig_var = tk.BooleanVar(value=True)
+        self.enable_hepmc3_var = tk.BooleanVar(value=True)
+        self.enable_lhapdf_var = tk.BooleanVar(value=True)
+        self.enable_yoda_var   = tk.BooleanVar(value=True)
+        self.enable_rivet_var  = tk.BooleanVar(value=True)
+        self.enable_fastjet_var= tk.BooleanVar(value=True)
+        # HW prefix: where the local Herwig install lives.  Default is
+        # the documented path from INSTALL_REPORT_HERWIG.md §4; user
+        # can override.  CAP_HERWIG_PATH is the canonical CMake hint.
+        self.hw_prefix_var = tk.StringVar(
+            value=os.environ.get(
+                "HW_PREFIX",
+                "/Users/oveissheibani/LocalHerwig/LocalHerwig/opt"))
+
+        ttk.Label(herwig_frame, text="HW_PREFIX (Herwig install root)"
+                  ).grid(row=0, column=0, sticky="w", padx=8, pady=4)
+        hw_row = ttk.Frame(herwig_frame)
+        hw_row.grid(row=0, column=1, sticky="ew", padx=8, pady=4)
+        ttk.Entry(hw_row, textvariable=self.hw_prefix_var, width=58
+                  ).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Button(hw_row, text="Browse…",
+                   command=self._pick_hw_prefix
+                   ).pack(side=tk.LEFT, padx=(4, 0))
+        ttk.Button(hw_row, text="↻ Detect bundled FastJet",
+                   command=self._use_herwig_fastjet
+                   ).pack(side=tk.LEFT, padx=(4, 0))
+        # Auto-rescan when HW_PREFIX changes — picks up the bundled
+        # FastJet candidate without the user having to click Rescan.
+        self.hw_prefix_var.trace_add("write", lambda *_: self._on_hw_prefix_change())
+
+        for r, (text, var, hint) in enumerate([
+            ("Embed HERWIG 7 + ThePEG (CAP_ENABLE_HERWIG; auto-enables HepMC3 + LHAPDF)",
+             self.enable_herwig_var,
+             "Builds libCAPHerwig and links Herwig::Herwig + Herwig::ThePEG"),
+            ("Link HepMC3 (CAP_ENABLE_HEPMC3) — file/stream HepMC3 reader",
+             self.enable_hepmc3_var,
+             "Builds libCAPHepMC3"),
+            ("Link LHAPDF (CAP_ENABLE_LHAPDF) — direct PDF queries",
+             self.enable_lhapdf_var,
+             "Headers + libLHAPDF on link line"),
+            ("Link FastJet (CAP_ENABLE_FASTJET) — direct jet algorithms",
+             self.enable_fastjet_var,
+             "Independent of broken Jets module"),
+            ("Link YODA (CAP_ENABLE_YODA) — Rivet histogram library",
+             self.enable_yoda_var,
+             ""),
+            ("Link Rivet (CAP_ENABLE_RIVET) — analysis framework",
+             self.enable_rivet_var,
+             ""),
+        ], start=1):
+            ttk.Checkbutton(herwig_frame, text=text, variable=var
+                            ).grid(row=r, column=0, columnspan=2,
+                                   sticky="w", padx=8, pady=2)
+        ttk.Label(herwig_frame,
+            text=("Pre-flight: source <HW_PREFIX>/herwig-env.sh in your shell so "
+                  "*-config helpers are on PATH.  CAP detects HERWIG / HepMC3 / "
+                  "LHAPDF / YODA / Rivet automatically once the env is set."),
+            foreground="#666", justify="left", wraplength=720
+            ).grid(row=10, column=0, columnspan=2, sticky="w", padx=8, pady=(4, 8))
+
+        actions = ttk.Frame(self.root)
+        actions.pack(fill=tk.X, **pad)
+        ttk.Button(actions, text="Save config",
+                   command=self._save_config).pack(side=tk.LEFT, padx=4)
+        self.build_btn = ttk.Button(actions, text="Configure & Build",
+                                    command=self._configure_and_build)
+        self.build_btn.pack(side=tk.LEFT, padx=4)
+        self.sample_btn = ttk.Button(actions, text="Run sample job",
+                                     command=self._run_sample, state=tk.DISABLED)
+        self.sample_btn.pack(side=tk.LEFT, padx=4)
+        ttk.Button(actions, text="Open log folder",
+                   command=self._open_logs).pack(side=tk.RIGHT, padx=4)
+
+        log_frame = ttk.LabelFrame(self.root, text="Live log")
+        log_frame.pack(fill=tk.BOTH, expand=True, **pad)
+
+        self.log_widget = tk.Text(
+            log_frame, height=20, wrap=tk.NONE,
+            font=("Menlo", 11) if sys.platform == "darwin" else ("Monospace", 10),
+            background="#0e1116", foreground="#c9d1d9", insertbackground="#c9d1d9",
+        )
+        scroll = ttk.Scrollbar(log_frame, orient=tk.VERTICAL, command=self.log_widget.yview)
+        self.log_widget.configure(yscrollcommand=scroll.set)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.log_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.log_widget.tag_configure("info",  foreground="#79c0ff")
+        self.log_widget.tag_configure("ok",    foreground="#7ee787")
+        self.log_widget.tag_configure("error", foreground="#ff7b72")
+        self.log_widget.insert(tk.END, f"Logs are written to {self.log.path}\n", "info")
+
+        self.status_var = tk.StringVar(value="Ready.")
+        ttk.Label(self.root, textvariable=self.status_var,
+                  relief=tk.SUNKEN, anchor=tk.W).pack(fill=tk.X)
+
+    def _dep_row(self, parent: ttk.LabelFrame, row: int, label: str,
+                 var: tk.StringVar) -> ttk.Combobox:
+        ttk.Label(parent, text=label, width=10).grid(row=row, column=0, sticky="w", padx=8, pady=6)
+        combo = ttk.Combobox(parent, textvariable=var, state="readonly", width=80)
+        combo.grid(row=row, column=1, sticky="ew", padx=8, pady=6)
+        return combo
+
+    def _pick_hw_prefix(self) -> None:
+        """Browse for the HERWIG install root (the dir with bin/Herwig)."""
+        from tkinter import filedialog
+        cur = self.hw_prefix_var.get().strip()
+        initial = cur if cur and Path(cur).is_dir() else "/Users"
+        path = filedialog.askdirectory(
+            title="Select HERWIG install root (directory containing bin/Herwig)",
+            initialdir=initial)
+        if path:
+            self.hw_prefix_var.set(path)
+            # _on_hw_prefix_change will fire via trace_add → re-detect.
+
+    def _on_hw_prefix_change(self) -> None:
+        """Trace callback — debounce-free re-detection when the user
+        edits HW_PREFIX, so the bundled FastJet appears in the dropdown
+        without manual Rescan."""
+        # Cancel any pending re-detect and schedule a fresh one in
+        # 800 ms so we don't spam setup-cap during typing.
+        if hasattr(self, "_hw_rescan_after_id") and self._hw_rescan_after_id:
+            try: self.root.after_cancel(self._hw_rescan_after_id)
+            except tk.TclError: pass
+        self._hw_rescan_after_id = self.root.after(800, self._rescan)
+
+    def _use_herwig_fastjet(self) -> None:
+        """Select the HERWIG-bundled FastJet entry in the FastJet
+        dropdown, if one was detected.  No-op otherwise (Rescan first)."""
+        items = self.detection.get("fastjet", [])
+        for it in items:
+            if it.get("kind") == "herwig":
+                self.fastjet_var.set(self._format_option(it))
+                self.enable_fastjet_var.set(True)
+                self._append_log(
+                    f"Selected HERWIG-bundled FastJet: {it.get('path')}",
+                    "ok")
+                return
+        self._append_log(
+            "No HERWIG-bundled FastJet detected.  Set HW_PREFIX and click Rescan.",
+            "error")
+
+    # -- Helpers ----------------------------------------------------------
+    def _format_option(self, item: dict) -> str:
+        ver = f" ({item['version']})" if item.get("version") else ""
+        return f"[{item['kind']}] {item['source']:<14} {item['path']}{ver}"
+
+    def _rescan(self) -> None:
+        self._append_log("Rescanning…", "info")
+        # Pass HW_PREFIX (if set) so detect_fastjet sees the
+        # HERWIG-bundled FastJet as a candidate.
+        hw_prefix = ""
+        if hasattr(self, "hw_prefix_var"):
+            hw_prefix = self.hw_prefix_var.get().strip()
+        self.detection = detect_dependencies(self.log, hw_prefix=hw_prefix or None)
+        self._populate_combo(self.root_combo, self.root_var,
+                             self.detection.get("root", []),
+                             include_skip=False)
+        self._populate_combo(self.pythia_combo, self.pythia_var,
+                             self.detection.get("pythia", []),
+                             include_skip=True,
+                             extra_label=self.INSTALL_PYTHIA_LABEL)
+        self._populate_combo(self.fastjet_combo, self.fastjet_var,
+                             self.detection.get("fastjet", []),
+                             include_skip=True,
+                             extra_label=self.INSTALL_FASTJET_LABEL,
+                             default_to_skip=True)
+        n = sum(len(v) for v in self.detection.values())
+        self.status_var.set(f"Detected {n} candidate installation(s) across all dependencies.")
+        self._append_log(f"Detection complete: ROOT={len(self.detection.get('root', []))}, "
+                         f"Pythia={len(self.detection.get('pythia', []))}, "
+                         f"FastJet={len(self.detection.get('fastjet', []))}", "info")
+
+    def _populate_combo(self, combo: ttk.Combobox, var: tk.StringVar,
+                        items: list, *, include_skip: bool,
+                        extra_label: str | None = None,
+                        default_to_skip: bool = False) -> None:
+        previous = var.get()    # may be empty on first call
+        values = [self._format_option(item) for item in items]
+        if extra_label:
+            values.append(extra_label)
+        if include_skip:
+            values.append(self.SKIP_LABEL)
+        combo["values"] = values
+
+        # Preserve the previous user selection across rescans if it's still
+        # valid, otherwise apply the default.  default_to_skip=True means
+        # we land on "— skip / disable —" instead of the first detection
+        # (used for FastJet so users have to consciously opt-in to it).
+        if previous and previous in values:
+            var.set(previous)
+        elif default_to_skip and include_skip:
+            var.set(self.SKIP_LABEL)
+        elif values:
+            var.set(values[0])
+        else:
+            var.set(self.SKIP_LABEL if include_skip else "")
+
+    def _resolve_choice(self, var: tk.StringVar, kind: str) -> tuple[str, str | None]:
+        """Return (action, path).
+        action ∈ {"path", "skip", "install"}."""
+        chosen = var.get()
+        self.log.line("DEBUG", f"_resolve_choice kind={kind} chosen={chosen!r}")
+
+        if chosen == self.SKIP_LABEL or not chosen:
+            self.log.line("INFO", f"  → resolved as SKIP")
+            return ("skip", None)
+        if chosen == self.INSTALL_PYTHIA_LABEL:
+            self.log.line("INFO", f"  → resolved as INSTALL pythia")
+            return ("install", "pythia")
+        if chosen == self.INSTALL_FASTJET_LABEL:
+            self.log.line("INFO", f"  → resolved as INSTALL fastjet")
+            return ("install", "fastjet")
+
+        # Detected entries — match against the formatted string first; fall
+        # back to substring/path match so a tiny formatting drift never
+        # silently turns into "skip" (the bug we just hit).
+        items = self.detection.get(kind, [])
+        for item in items:
+            if self._format_option(item) == chosen:
+                self.log.line("INFO", f"  → resolved as PATH {item['path']} (exact format match)")
+                return ("path", item["path"])
+        for item in items:
+            if item["path"] and item["path"] in chosen:
+                self.log.line("WARN",
+                              f"  → resolved as PATH {item['path']} (fuzzy match — "
+                              f"format mismatch was {chosen!r})")
+                return ("path", item["path"])
+
+        self.log.line("ERROR",
+                      f"  → NOTHING matched for {kind}: chosen={chosen!r}, "
+                      f"detected={[i['path'] for i in items]} — falling back to SKIP")
+        return ("skip", None)
+
+    # -- Actions ----------------------------------------------------------
+    def _save_config(self) -> None:
+        self._append_log("Saving .cap-config…", "info")
+        try:
+            with self._open_install_dest() as dest:
+                pass  # populated in _gather_paths below
+        except Exception as exc:
+            self._append_log(f"save failed: {exc}", "error")
+            return
+        self._gather_paths_and_write_config(allow_install=True)
+
+    def _open_install_dest(self):
+        # Helper context manager so save_config can swallow errors uniformly.
+        from contextlib import nullcontext
+        return nullcontext()
+
+    def _gather_paths_and_write_config(self, allow_install: bool) -> dict:
+        root_action,    root_arg    = self._resolve_choice(self.root_var,    "root")
+        pythia_action,  pythia_arg  = self._resolve_choice(self.pythia_var,  "pythia")
+        fastjet_action, fastjet_arg = self._resolve_choice(self.fastjet_var, "fastjet")
+        if root_action != "path":
+            messagebox.showerror("CAP setup", "ROOT is required — please pick a ROOT installation.")
+            return {}
+
+        # NOTE: The Jets module is currently broken upstream code (see
+        # JETS_KNOWN_ISSUES.md) and will not be built even if FastJet is
+        # selected. Picking a FastJet just makes the library/headers
+        # available for future use; we don't auto-enable any Pythia link
+        # for it. When somebody finishes repairing Jets, restore the
+        # Pythia auto-attach logic that used to live here.
+
+        paths = {
+            "ROOTSYS": root_arg,
+            "CAP_PYTHIA8_PATH": None,
+            "CAP_FASTJET_PATH": None,
+        }
+
+        # Run installs synchronously (with progress in the log pane).
+        if pythia_action == "install":
+            if not allow_install:
+                self._append_log("Pythia install requested but allow_install=False", "error")
+            else:
+                rc = self._run_threaded(["./setup-cap", "--install", "pythia"],
+                                        label="Install Pythia 8")
+                if rc != 0:
+                    return {}
+                # The install returns the destination path on stdout, but to keep
+                # things simple we just rely on the stamped pythia8XYZ folder
+                # appearing in the repo root.
+                guesses = sorted(REPO.glob("pythia8[0-9]*"), reverse=True)
+                if guesses:
+                    paths["CAP_PYTHIA8_PATH"] = str(guesses[0])
+        elif pythia_action == "path":
+            paths["CAP_PYTHIA8_PATH"] = pythia_arg
+
+        if fastjet_action == "install":
+            if not allow_install:
+                self._append_log("FastJet install requested but allow_install=False", "error")
+            else:
+                rc = self._run_threaded(["./setup-cap", "--install", "fastjet"],
+                                        label="Build vendored FastJet")
+                if rc != 0:
+                    return {}
+                guess = next(iter(REPO.glob("fastjet-*/install")), None)
+                if guess:
+                    paths["CAP_FASTJET_PATH"] = str(guess)
+        elif fastjet_action == "path":
+            paths["CAP_FASTJET_PATH"] = fastjet_arg
+
+        # Write .cap-config in the same format the CLI uses.
+        cfg = REPO / ".cap-config"
+        with cfg.open("w") as fh:
+            fh.write(f"# CAP dependency choices saved by setup-cap-gui on "
+                     f"{datetime.now(timezone.utc).isoformat()}\n")
+            fh.write(f'export ROOTSYS="{paths["ROOTSYS"]}"\n')
+            if paths["CAP_PYTHIA8_PATH"]:
+                fh.write(f'export CAP_PYTHIA8_PATH="{paths["CAP_PYTHIA8_PATH"]}"\n')
+                fh.write(f'export CAP_CMAKE_FLAGS_PYTHIA="-DCAP_ENABLE_PYTHIA=ON '
+                         f'-DCAP_PYTHIA8_PATH={paths["CAP_PYTHIA8_PATH"]}"\n')
+            else:
+                fh.write('export CAP_CMAKE_FLAGS_PYTHIA="-DCAP_ENABLE_PYTHIA=OFF"\n')
+            # Jets is OFF by default — only flip ON when the user ticked
+            # the "Enable Jets module" checkbox AND a FastJet path exists.
+            jets_on = self.enable_jets_var.get() and bool(paths["CAP_FASTJET_PATH"])
+            if paths["CAP_FASTJET_PATH"]:
+                fh.write(f'export CAP_FASTJET_PATH="{paths["CAP_FASTJET_PATH"]}"\n')
+            if jets_on:
+                fh.write(f'export CAP_CMAKE_FLAGS_JETS="-DCAP_ENABLE_JETS=ON '
+                         f'-DCAP_FASTJET_PATH={paths["CAP_FASTJET_PATH"]}"\n')
+            elif paths["CAP_FASTJET_PATH"]:
+                fh.write(f'export CAP_CMAKE_FLAGS_JETS="-DCAP_ENABLE_JETS=OFF '
+                         f'-DCAP_FASTJET_PATH={paths["CAP_FASTJET_PATH"]}"\n')
+            else:
+                fh.write('export CAP_CMAKE_FLAGS_JETS="-DCAP_ENABLE_JETS=OFF"\n')
+
+        self._append_log(f"Saved .cap-config:\n{cfg.read_text()}", "ok")
+        self.status_var.set(".cap-config written.")
+        return paths
+
+    def _configure_and_build(self) -> None:
+        # Re-detect first — picks up any brew/conda installs done since the
+        # GUI launched so the user's recent decisions are reflected.
+        self._append_log("Re-scanning dependencies before build…", "info")
+        self._rescan()
+        paths = self._gather_paths_and_write_config(allow_install=True)
+        if not paths:
+            return
+        self.build_btn.config(state=tk.DISABLED)
+        threading.Thread(target=self._configure_and_build_worker,
+                         args=(paths,), daemon=True).start()
+
+    def _configure_and_build_worker(self, paths: dict) -> None:
+        env = os.environ.copy()
+        env["ROOTSYS"] = paths["ROOTSYS"]
+        if paths.get("CAP_PYTHIA8_PATH"):
+            env["CAP_PYTHIA8_PATH"] = paths["CAP_PYTHIA8_PATH"]
+        if paths.get("CAP_FASTJET_PATH"):
+            env["CAP_FASTJET_PATH"] = paths["CAP_FASTJET_PATH"]
+
+        # Wipe a previous build/ directory so a stale CMakeCache or partial
+        # objects from an earlier failed run don't poison this attempt.
+        build_dir = REPO / "build"
+        if build_dir.exists():
+            self._append_log(f"Removing previous build directory: {build_dir}", "info")
+            self.log.line("INFO", f"rm -rf {build_dir}")
+            try:
+                import shutil
+                shutil.rmtree(build_dir)
+            except OSError as exc:
+                self._append_log(f"Could not delete {build_dir}: {exc}", "error")
+                self.queue.put(("status", "Could not delete previous build directory."))
+                self.queue.put(("enable_build", None))
+                return
+
+        cmake_flags = []
+        if paths.get("CAP_PYTHIA8_PATH"):
+            cmake_flags += ["-DCAP_ENABLE_PYTHIA=ON",
+                            f"-DCAP_PYTHIA8_PATH={paths['CAP_PYTHIA8_PATH']}"]
+        else:
+            cmake_flags.append("-DCAP_ENABLE_PYTHIA=OFF")
+        # Jets is OFF by default — see JETS_KNOWN_ISSUES.md.  Only flip ON
+        # when the user ticked the "Enable Jets module" checkbox AND a
+        # valid FastJet path was found.  Setting CAP_FASTJET_PATH alone
+        # just primes find_package(FastJet) so headers are discoverable.
+        jets_on = bool(self.enable_jets_var.get()) and bool(paths.get("CAP_FASTJET_PATH"))
+        cmake_flags.append("-DCAP_ENABLE_JETS=" + ("ON" if jets_on else "OFF"))
+        if paths.get("CAP_FASTJET_PATH"):
+            cmake_flags.append(f"-DCAP_FASTJET_PATH={paths['CAP_FASTJET_PATH']}")
+
+        # ------------------------------------------------------------------
+        # HERWIG 7 + HEP stack flags — mirror the checkboxes user ticked.
+        # CAP_HERWIG_PATH points the find module at the install; HW_PREFIX
+        # is also exported into the build env so herwig-config / thepeg-
+        # config are findable on PATH if the user sourced herwig-env.sh.
+        # ------------------------------------------------------------------
+        hw_prefix = self.hw_prefix_var.get().strip()
+        hw_on     = bool(self.enable_herwig_var.get())
+        hepmc3_on = bool(self.enable_hepmc3_var.get()) or hw_on    # Herwig implies HepMC3
+        lhapdf_on = bool(self.enable_lhapdf_var.get()) or hw_on    # Herwig implies LHAPDF
+        fastjet_on= bool(self.enable_fastjet_var.get())
+        yoda_on   = bool(self.enable_yoda_var.get())
+        rivet_on  = bool(self.enable_rivet_var.get())
+
+        cmake_flags.append("-DCAP_ENABLE_HEPMC3=" + ("ON" if hepmc3_on else "OFF"))
+        cmake_flags.append("-DCAP_ENABLE_LHAPDF=" + ("ON" if lhapdf_on else "OFF"))
+        cmake_flags.append("-DCAP_ENABLE_FASTJET=" + ("ON" if fastjet_on else "OFF"))
+        cmake_flags.append("-DCAP_ENABLE_YODA=" + ("ON" if yoda_on else "OFF"))
+        cmake_flags.append("-DCAP_ENABLE_RIVET=" + ("ON" if rivet_on else "OFF"))
+        cmake_flags.append("-DCAP_ENABLE_HERWIG=" + ("ON" if hw_on else "OFF"))
+        if hw_prefix and (hw_on or hepmc3_on or lhapdf_on or yoda_on or rivet_on):
+            # FindHerwig.cmake / FindHepMC3.cmake / FindLHAPDF.cmake /
+            # FindYODA.cmake / FindRivet.cmake all honour these hints.
+            cmake_flags.append(f"-DCAP_HERWIG_PATH={hw_prefix}")
+            cmake_flags.append(f"-DCAP_HEPMC3_PATH={hw_prefix}")
+            cmake_flags.append(f"-DCAP_LHAPDF_PATH={hw_prefix}")
+            cmake_flags.append(f"-DCAP_YODA_PATH={hw_prefix}")
+            cmake_flags.append(f"-DCAP_RIVET_PATH={hw_prefix}")
+            env["HW_PREFIX"] = hw_prefix
+            # Make the *-config helpers discoverable by find_program.
+            env["PATH"] = f"{hw_prefix}/bin:" + env.get("PATH", "")
+
+        # Configure
+        cmds = [
+            (["cmake", "-S", str(REPO), "-B", str(REPO / "build")] + cmake_flags, "cmake configure"),
+            (["cmake", "--build", str(REPO / "build"), "-j"], "cmake build"),
+            (["cmake", "--install", str(REPO / "build")], "cmake install"),
+        ]
+        for cmd, label in cmds:
+            self._append_log(f"---- {label} ----", "info")
+            rc = self._run_streaming_with_env(cmd, env)
+            if rc != 0:
+                self._append_log(f"{label} FAILED (exit {rc}). See {self.log.path}", "error")
+                self.queue.put(("status", f"{label} failed."))
+                self.queue.put(("enable_build", None))
+                return
+
+        # Post-install sanity & auto-relocate. Older builds (or builds done
+        # with a stale CMakeCache) installed bin/ and lib/ ONE LEVEL ABOVE
+        # the repo root because of a CMake path-math bug. If we detect that
+        # state, move the directories into the repo so things work without
+        # the user having to know.
+        self._post_install_verify()
+
+        self.queue.put(("status", "Build & install OK ✅"))
+        self.queue.put(("append", ("Build complete — try the sample job.", "ok")))
+        self.queue.put(("enable_sample", None))
+        self.queue.put(("enable_build", None))
+
+    def _post_install_verify(self) -> None:
+        """Make sure bin/ and lib/ ended up inside the repo. If a previous
+        build (or a botched CMake config) put them in REPO.parent, move them
+        into REPO. Reports everything to the log."""
+        import shutil
+
+        expected_bin = REPO / "bin"
+        expected_lib = REPO / "lib"
+        misplaced_bin = REPO.parent / "bin"
+        misplaced_lib = REPO.parent / "lib"
+
+        moved_anything = False
+
+        for misplaced, expected, label in (
+            (misplaced_bin, expected_bin, "bin"),
+            (misplaced_lib, expected_lib, "lib"),
+        ):
+            # Only act if misplaced exists, expected does not, AND misplaced
+            # contains files we just installed.
+            if not misplaced.exists():
+                continue
+            if expected.exists():
+                # If both exist, merge contents from misplaced into expected
+                # then delete the misplaced dir.
+                self._append_log(
+                    f"Found {label}/ in BOTH {misplaced} and {expected} — merging.", "info"
+                )
+                for item in misplaced.iterdir():
+                    target = expected / item.name
+                    try:
+                        if target.exists():
+                            if target.is_dir():
+                                shutil.rmtree(target)
+                            else:
+                                target.unlink()
+                        shutil.move(str(item), str(target))
+                    except OSError as exc:
+                        self._append_log(f"  could not move {item}: {exc}", "error")
+                try:
+                    misplaced.rmdir()
+                except OSError:
+                    pass
+                moved_anything = True
+            else:
+                self._append_log(
+                    f"Relocating misplaced {label}/ from {misplaced} → {expected}",
+                    "info"
+                )
+                try:
+                    shutil.move(str(misplaced), str(expected))
+                    moved_anything = True
+                except OSError as exc:
+                    self._append_log(f"  move failed: {exc}", "error")
+
+        # Confirm CAP binary is present where SetupCAP.sh expects it.
+        if (expected_bin / "CAP").is_file():
+            self._append_log(f"✓ {expected_bin}/CAP is in place", "ok")
+        else:
+            self._append_log(
+                f"⚠ {expected_bin}/CAP NOT FOUND after install — something is wrong.",
+                "error"
+            )
+        if any(expected_lib.glob("libCAPPythia*")) if expected_lib.exists() else False:
+            self._append_log(f"✓ {expected_lib}/libCAPPythia.* is in place", "ok")
+
+        if moved_anything:
+            self._append_log(
+                "Auto-relocated install artifacts into the repo. "
+                "Future builds will land here directly — this fix is permanent.",
+                "info"
+            )
+
+    def _run_streaming_with_env(self, cmd: list[str], env: dict) -> int:
+        proc = subprocess.Popen(cmd, env=env, cwd=str(REPO),
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, bufsize=1)
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            self.queue.put(("line", line.rstrip()))
+            self.log.line("DEBUG", line.rstrip())
+        proc.wait()
+        return proc.returncode
+
+    def _run_threaded(self, cmd: list[str], label: str) -> int:
+        """Synchronous-from-caller, but log lines stream into the GUI."""
+        self._append_log(f"---- {label} ----", "info")
+        result_box = {"rc": None}
+        done = threading.Event()
+
+        def runner():
+            try:
+                result_box["rc"] = self._run_streaming_with_env(cmd, os.environ.copy())
+            finally:
+                done.set()
+
+        threading.Thread(target=runner, daemon=True).start()
+        while not done.is_set():
+            self.root.update()
+        return result_box["rc"]
+
+    def _run_sample(self) -> None:
+        # Hand control to run-cap, the dedicated runner GUI. It can pick any
+        # project / task / output rather than the hardcoded Pythia smoke test.
+        runner = REPO / "run-cap"
+        if not runner.exists():
+            self._append_log("run-cap script not found.", "error")
+            return
+        self._append_log("Launching run-cap …", "info")
+        try:
+            subprocess.Popen([str(runner)], cwd=str(REPO))
+        except OSError as exc:
+            self._append_log(f"Could not launch run-cap: {exc}", "error")
+
+    def _open_logs(self) -> None:
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", str(LOGS)])
+        elif sys.platform.startswith("linux"):
+            subprocess.Popen(["xdg-open", str(LOGS)])
+        else:
+            messagebox.showinfo("Logs", f"Logs are at: {LOGS}")
+
+    # -- Async-safe log pump ---------------------------------------------
+    def _append_log(self, text: str, tag: str = "") -> None:
+        self.queue.put(("append", (text + "\n", tag)))
+
+    def _poll_queue(self) -> None:
+        try:
+            while True:
+                kind, payload = self.queue.get_nowait()
+                if kind == "line":
+                    self.log_widget.insert(tk.END, payload + "\n")
+                    self.log_widget.see(tk.END)
+                elif kind == "append":
+                    msg, tag = payload
+                    if tag:
+                        self.log_widget.insert(tk.END, msg, tag)
+                    else:
+                        self.log_widget.insert(tk.END, msg)
+                    self.log_widget.see(tk.END)
+                elif kind == "status":
+                    self.status_var.set(payload)
+                elif kind == "enable_build":
+                    self.build_btn.config(state=tk.NORMAL)
+                elif kind == "enable_sample":
+                    self.sample_btn.config(state=tk.NORMAL)
+                elif kind == "error":
+                    self._append_log(payload, "error")
+        except queue.Empty:
+            pass
+        self.root.after(80, self._poll_queue)
+
+    def _on_close(self) -> None:
+        self.log.line("INFO", "GUI closed by user.")
+        self.log.close(0)
+        self.root.destroy()
+
+    def run(self) -> None:
+        self.root.mainloop()
+
+
+def main() -> None:
+    try:
+        gui = CapSetupGUI()
+        gui.run()
+    except tk.TclError as exc:
+        # Common cause: no DISPLAY (running over plain SSH).
+        sys.stderr.write(
+            "\nCould not initialise the Tk display layer:\n"
+            f"  {exc}\n\n"
+            "Possible fixes:\n"
+            "  • If you're on a headless server: use ./setup-cap (CLI mode) instead.\n"
+            "  • If you're SSHed into a server: re-connect with `ssh -X` so X11 forwarding works.\n"
+            "  • On Debian/Ubuntu without Tk:  apt install python3-tk\n"
+            "  • On RHEL/CentOS/WSU without Tk: yum install python3-tkinter\n\n")
+        sys.exit(2)
+
+
+if __name__ == "__main__":
+    main()

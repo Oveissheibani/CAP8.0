@@ -79,7 +79,13 @@ namespace CAP
   {
   if (reportDebug(__FUNCTION__)) { printCR(); }
   _configuration.addSelectedProperties(newConfiguration,name());
+  // Backward compat: accept the legacy "Severity" key as well as the new
+  // "TASK:SEVERITY" key. Older shipped .ini files use the former.
+  // Note: valueString returns the literal "NONE" when a key is missing,
+  // hence the explicit check.
   String severityName = _configuration.valueString(createKey(name(),"TASK:SEVERITY"));
+  if (severityName.IsNull() || severityName.Length() == 0 || severityName == "NONE")
+    severityName = _configuration.valueString(createKey(name(),"Severity"));
   setMinimumReportLevel(severityName);
   }
 
@@ -143,10 +149,68 @@ namespace CAP
                                const Configuration & configuration)
   {
   if (reportDebug(__FUNCTION__))  { printCR(); };
-  int nSubtasks = configuration.valueInt( createKey(parentTaskName,"SUBTASK","N") );
+
+  // Backward compat: try the new key structure first
+  // (parent:SUBTASK:N + parent:SUBTASK:k:NAME), then fall back to the legacy
+  // (parent:nSubtasks + parent:Subtask<k>:TaskName) found in older .ini files.
+  int nSubtasks = configuration.valueInt(createKey(parentTaskName,"SUBTASK","N"));
+  if (nSubtasks <= 0)
+    nSubtasks = configuration.valueInt(createKey(parentTaskName,"nSubtasks"));
+
   for (int k=0; k<nSubtasks; k++)
     {
-    String subtaskName  = configuration.valueString( createKey(parentTaskName,"SUBTASK",k,"NAME")   );
+    // ------------------------------------------------------------------
+    // Resolve the subtask's NAME
+    // ------------------------------------------------------------------
+    String subtaskName  = configuration.valueString(createKey(parentTaskName,"SUBTASK",k,"NAME"));
+    if (subtaskName.IsNull() || subtaskName.Length() == 0 || subtaskName == "NONE")
+      {
+      String legacyKey = parentTaskName;
+      legacyKey += ":Subtask";
+      legacyKey += k;
+      legacyKey += ":TaskName";
+      subtaskName = configuration.valueString(legacyKey);
+      }
+
+    // ------------------------------------------------------------------
+    // Backward-compat key propagation
+    // ------------------------------------------------------------------
+    // Shipped .ini files store every property of a subtask under the
+    // PARENT'S Subtask<k> namespace (e.g. RunAnalysis:Subtask3:TaskClassName,
+    // RunAnalysis:Subtask3:nSubtasks, RunAnalysis:Subtask3:Subtask0:TaskName,
+    // ...). The recursive lookups inside createTask / configure /
+    // configureSubtasks use the SUBTASK'S leaf name as the prefix
+    // (EventIterator:TaskClassName, EventIterator:nSubtasks, ...).
+    //
+    // To bridge the two without rewriting every .ini file, copy every
+    // property that begins with "<parent>:Subtask<k>:" into the leaf
+    // namespace "<subtaskName>:" so the recursive lookups find them.
+    // We never modify the original keys; we only add synonyms.
+    if (!subtaskName.IsNull() && subtaskName.Length() > 0 && subtaskName != "NONE")
+      {
+      String prefix = parentTaskName;
+      prefix += ":Subtask";
+      prefix += k;
+      prefix += ":";
+      const String leaf = subtaskName + ":";
+
+      Configuration & cfg = const_cast<Configuration &>(configuration);
+
+      // Snapshot the property list first; addProperty would otherwise
+      // mutate the vector we're iterating over.
+      const std::vector<Property> snapshot(configuration.properties());
+      for (const Property & p : snapshot)
+        {
+        const String & key = p.name();
+        if (!key.BeginsWith(prefix)) continue;
+        String suffix(key);
+        suffix.Remove(0, prefix.Length());
+        String injectKey = leaf;
+        injectKey += suffix;
+        cfg.addProperty(injectKey, p.value());
+        }
+      }
+
     createTask(parentTask,subtaskName,configuration);
     }
   }
@@ -355,9 +419,19 @@ namespace CAP
                           const String & taskName,
                           const Configuration & configuration)
   {
+  // Look up the new structural key first, fall back to the legacy
+  // "<task>:TaskClassName" used by older shipped .ini files.
+  // Properties::valueString returns the literal "NONE" when a key is missing
+  // (see its default-argument signature), hence the explicit string check.
   String keyword = taskName;
   keyword += ":TASK:CLASS";
   String taskClassName   = configuration.valueString(keyword);
+  if (taskClassName.IsNull() || taskClassName.Length() == 0 || taskClassName == "NONE")
+    {
+    String legacyKey = taskName;
+    legacyKey += ":TaskClassName";
+    taskClassName = configuration.valueString(legacyKey);
+    }
   if (reportInfo(__FUNCTION__))
     {
     printCR();

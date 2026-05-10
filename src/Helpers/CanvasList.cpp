@@ -59,7 +59,7 @@ TCanvas * CanvasList::createCanvas(const String & canvasName,
                                     const Configuration & configuration,
                                     int inc)
 {
-  int xInc = inc*size();
+  int xInc __attribute__((unused)) = inc*size();
   TCanvas * canvas = new TCanvas(canvasName,
                                  canvasName,
                                  inc+configuration.valueInt("windowXPosition"),
@@ -94,7 +94,7 @@ TCanvas * CanvasList::createCanvas(const String & canvasName,
 ////////////////////////////////////////////////////
 TCanvas * CanvasList::createCanvasXX(int nx, int ny, const String & canvasName, const Configuration & configuration, int inc)
 {
-  int xInc = inc*size();
+  int xInc __attribute__((unused)) = inc*size();
   TCanvas * canvas = new TCanvas(canvasName,
                                  canvasName,
                                  xInc+configuration.valueInt("windowXPosition"),

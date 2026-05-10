@@ -22,6 +22,8 @@
 #include "ParticleEfficiency.hpp"
 #include "ParticleSmearer.hpp"
 
+#include <set>     // status-code keep set
+
 namespace CAP
 {
 
@@ -48,6 +50,12 @@ protected:
   bool saveNeutrinos;
   bool saveQuarks;
   bool saveGaugeBosons;
+  // Status-code whitelist (HepMC convention from statusHepMC()).
+  // Empty + saveFinalOnly=true → {1}; empty + saveFinalOnly=false → all.
+  // Non-empty: explicit list.  Populated by initialize() from the
+  // KeepStatuses config key.  Enables BF-per-stage analyses on Pythia.
+  std::set<int> _keepStatuses;
+  bool _keepAllStatuses = false;
 
   ClassDef(PythiaEventGenerator,0)
 };

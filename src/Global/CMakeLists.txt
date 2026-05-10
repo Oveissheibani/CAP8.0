@@ -27,6 +27,6 @@ target_include_directories(Global  PUBLIC Global Base  Particles  ${EXTRA_INCLUD
 add_definitions(-DOPTIMIZEADDBINCONTENT)
 
 
-install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libGlobal.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libGlobal_rdict.pcm" DESTINATION "$ENV{CAP_LIB_PATH}")
-install(TARGETS Global  LIBRARY DESTINATION "$ENV{CAP_LIB_PATH}")
+install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libGlobal.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libGlobal_rdict.pcm" DESTINATION ${CAP_INSTALL_LIBDIR})
+install(TARGETS Global  LIBRARY DESTINATION ${CAP_INSTALL_LIBDIR})
 

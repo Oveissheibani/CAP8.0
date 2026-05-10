@@ -1,0 +1,1328 @@
+#!/usr/bin/env python3
+"""
+build-ini-gui — interactive .ini composer for CAP analyses.
+
+Acts as a middle-man between the user and CAP's configuration system. Knows
+the package structure (which task classes exist, what keys they consume,
+what reasonable defaults are), so the user gets to declare WHAT they want
+to study and the GUI emits a complete, internally-consistent .ini.
+
+  Run:
+      ./analyses/builder/build-ini-gui
+      ./install --build-ini       # equivalent
+
+  Output:
+      analyses/projects/<job-name>.ini
+
+  Adding a new analysis preset:
+      drop a Python file with a top-level PRESET in
+      analyses/builder/presets/. The dropdown picks it up automatically.
+"""
+from __future__ import annotations
+
+import os
+import sys
+import tkinter as tk
+from datetime import datetime, timezone
+from pathlib import Path
+from tkinter import filedialog, messagebox, ttk
+
+# Make sibling modules importable when this is launched as a plain script.
+HERE = Path(__file__).resolve().parent
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
+
+from cap_ini_builder import (              # noqa: E402
+    AnalysisChoice, Binning, Binning1D, EventFilter, Generator,
+    GeneratorKind, Job, ParticleFilter,
+    default_event_filters, default_particle_filters,
+    render_ini, write_ini,
+)
+from presets import PRESETS                # noqa: E402
+from generator_presets import (             # noqa: E402
+    PYTHIA_PRESETS, PYTHIA_BOOL_TOGGLES, PYTHIA_NUMERIC_KNOBS,
+    HERWIG_PRESETS, HERWIG_BOOL_TOGGLES, HERWIG_NUMERIC_KNOBS,
+    STABLE_PARTICLE_TABLE,
+    # Backward-compat aliases — still re-exported by generator_presets:
+    PYTHIA_PANEL_OPTIONS, HERWIG_PANEL_OPTIONS,
+    collect_pythia_strings, collect_herwig_lines,
+)
+
+REPO = HERE.parent.parent                  # <repo>/analyses/builder/.. -> repo
+OUT_DIR = REPO / "analyses" / "projects"
+
+
+# ---------------------------------------------------------------------------
+#  Reusable list-of-rows widget for particle / event filters
+# ---------------------------------------------------------------------------
+class FilterList(ttk.Frame):
+    """A grid of editable rows + Add/Remove buttons."""
+
+    def __init__(self, parent, columns, get_state, set_state):
+        super().__init__(parent)
+        self.columns = columns          # list of (label, key, width) tuples
+        self.get_state = get_state      # () -> list[dict]
+        self.set_state = set_state      # (list[dict]) -> None
+        self._rows: list[dict] = []
+        self._build()
+
+    def _build(self):
+        # Header
+        for c, (label, _key, _w) in enumerate(self.columns):
+            ttk.Label(self, text=label, font=("TkDefaultFont", 10, "bold")
+                      ).grid(row=0, column=c, padx=4, pady=2, sticky="w")
+        ttk.Label(self, text="").grid(row=0, column=len(self.columns))
+
+        self.body = ttk.Frame(self)
+        self.body.grid(row=1, column=0, columnspan=len(self.columns) + 1, sticky="nsew")
+        for c in range(len(self.columns)):
+            self.body.columnconfigure(c, weight=1)
+
+        btns = ttk.Frame(self)
+        btns.grid(row=2, column=0, columnspan=len(self.columns) + 1, sticky="w", pady=4)
+        ttk.Button(btns, text="+ Add row", command=self._add_blank).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btns, text="Reset to defaults", command=self._reset).pack(side=tk.LEFT, padx=2)
+
+        self.rebuild_from_state()
+
+    def rebuild_from_state(self):
+        for child in self.body.winfo_children():
+            child.destroy()
+        self._rows.clear()
+        for row_idx, item in enumerate(self.get_state()):
+            self._add_row(row_idx, item)
+
+    def _add_row(self, row_idx: int, item: dict):
+        widgets = {}
+        for c, (_label, key, w) in enumerate(self.columns):
+            v = tk.StringVar(value=str(item.get(key, "") or ""))
+            e = ttk.Entry(self.body, textvariable=v, width=w)
+            e.grid(row=row_idx, column=c, padx=2, pady=1, sticky="ew")
+            widgets[key] = v
+        btn = ttk.Button(self.body, text="✕", width=2,
+                         command=lambda i=row_idx: self._remove_row(i))
+        btn.grid(row=row_idx, column=len(self.columns), padx=2)
+        self._rows.append({"widgets": widgets, "button": btn})
+
+    def _add_blank(self):
+        state = self.collect()
+        state.append({key: "" for (_l, key, _w) in self.columns})
+        self.set_state(state)
+        self.rebuild_from_state()
+
+    def _remove_row(self, idx: int):
+        state = self.collect()
+        if 0 <= idx < len(state):
+            state.pop(idx)
+            self.set_state(state)
+            self.rebuild_from_state()
+
+    def _reset(self):
+        # Caller's set_state is allowed to choose what 'default' means;
+        # just trigger a refresh.
+        self.set_state([])
+        self.rebuild_from_state()
+
+    def collect(self) -> list[dict]:
+        rows = []
+        for r in self._rows:
+            rows.append({key: var.get().strip() for key, var in r["widgets"].items()})
+        return rows
+
+
+# ---------------------------------------------------------------------------
+#  Main GUI
+# ---------------------------------------------------------------------------
+class IniBuilderGUI:
+    PARTICLE_COLS = [
+        ("Name",     "name",   10),
+        ("Title",    "title",  16),
+        ("PDG",      "pdg",    8),
+        ("Charge",   "charge", 6),
+        ("pT min",   "pt_min", 6),
+        ("pT max",   "pt_max", 6),
+        ("η min",    "eta_min", 6),
+        ("η max",    "eta_max", 6),
+        ("y min",    "y_min",  6),
+        ("y max",    "y_max",  6),
+    ]
+
+    EVENT_COLS = [
+        ("Name",        "name",       10),
+        ("Title",       "title",      16),
+        ("Mult min",    "mult_min",   8),
+        ("Mult max",    "mult_max",   8),
+        ("Energy min",  "energy_min", 8),
+        ("Energy max",  "energy_max", 8),
+    ]
+
+    ANALYSES = [
+        ("Global event obs",         AnalysisChoice.GLOBAL),
+        ("Single-particle distr.",   AnalysisChoice.SINGLE),
+        ("Two-particle (pair)",      AnalysisChoice.PAIR),
+        ("3D pair (HBT-style)",      AnalysisChoice.PAIR3D),
+        ("Spherocity",               AnalysisChoice.SPHEROCITY),
+        ("NuDyn / charge fluct.",    AnalysisChoice.NUDYN),
+        ("PtPt correlations",        AnalysisChoice.PTPT),
+        ("Jets (broken upstream!)",  AnalysisChoice.JETS),
+    ]
+
+    def __init__(self):
+        self.job = self._default_job()
+        self.root = tk.Tk()
+        self.root.title("CAP — build .ini for an analysis")
+        self.root.geometry("1100x780")
+        self._build_ui()
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._sync_form_from_job()
+
+    # -- defaults ---------------------------------------------------------
+    def _default_job(self) -> Job:
+        return Job(
+            name="my_analysis",
+            output_dir="my_analysis",
+            n_events=1000,
+            n_events_report=100,
+            generator=Generator(),
+            particle_filters=default_particle_filters(),
+            event_filters=default_event_filters(),
+            analyses=[AnalysisChoice.GLOBAL, AnalysisChoice.SINGLE],
+            binning=Binning.default(),
+        )
+
+    # -- UI construction --------------------------------------------------
+    def _build_ui(self):
+        top = ttk.Frame(self.root)
+        top.pack(fill=tk.X, padx=10, pady=8)
+        # Logo on the far left.  Tk 8.6 reads PNG natively via PhotoImage.
+        # Auto-downsample big source PNGs (e.g. 800×800) to ~40 px tall so
+        # the logo sits modestly at the top instead of dominating the
+        # row.  Keep a strong reference on self so it isn't garbage-collected.
+        logo_png = REPO / "logo" / "logo.png"
+        if logo_png.is_file():
+            try:
+                img = tk.PhotoImage(file=str(logo_png))
+                target_h = 40
+                factor = max(1, max(img.width(), img.height()) // target_h)
+                if factor > 1:
+                    img = img.subsample(factor, factor)
+                self._logo_img = img
+                ttk.Label(top, image=self._logo_img).pack(side=tk.LEFT, padx=(0, 10))
+            except Exception:
+                pass
+        ttk.Label(top, text="CAP — build .ini for an analysis",
+                  font=("TkDefaultFont", 14, "bold")).pack(side=tk.LEFT)
+
+        ttk.Label(top, text="Preset:").pack(side=tk.LEFT, padx=(20, 4))
+        self.preset_var = tk.StringVar()
+        preset_combo = ttk.Combobox(top, textvariable=self.preset_var,
+                                    values=[" — start blank — "] + list(PRESETS.keys()),
+                                    state="readonly", width=42)
+        preset_combo.current(0)
+        preset_combo.pack(side=tk.LEFT)
+        preset_combo.bind("<<ComboboxSelected>>", self._on_preset_change)
+
+        nb = ttk.Notebook(self.root)
+        nb.pack(fill=tk.BOTH, expand=True, padx=10, pady=4)
+
+        self._build_tab_basics(nb)
+        self._build_tab_generator(nb)
+        self._build_tab_particles(nb)
+        self._build_tab_events(nb)
+        self._build_tab_analyses(nb)
+        self._build_tab_binning(nb)
+        self._build_tab_preview(nb)
+
+        bottom = ttk.Frame(self.root)
+        bottom.pack(fill=tk.X, padx=10, pady=6)
+        ttk.Button(bottom, text="💾 Save preset",
+                   command=self._save_preset
+                   ).pack(side=tk.LEFT, padx=4)
+        ttk.Button(bottom, text="📂 Load preset / .ini",
+                   command=self._load_existing_ini
+                   ).pack(side=tk.LEFT, padx=4)
+        ttk.Button(bottom, text="Refresh preview", command=self._refresh_preview
+                   ).pack(side=tk.LEFT, padx=4)
+        ttk.Button(bottom, text="Save to analyses/projects/…",
+                   command=self._save).pack(side=tk.LEFT, padx=4)
+        ttk.Button(bottom, text="Save and open in run-cap",
+                   command=self._save_and_run).pack(side=tk.LEFT, padx=4)
+        self.status_var = tk.StringVar(value="Ready.")
+        ttk.Label(bottom, textvariable=self.status_var, anchor=tk.W
+                  ).pack(side=tk.LEFT, padx=20)
+
+    # ----- Tab 1: Job basics ---------------------------------------------
+    def _build_tab_basics(self, nb):
+        f = self._make_scrollable_tab(nb, "Basics", padding=10)
+        self.name_var      = tk.StringVar()
+        self.outdir_var    = tk.StringVar()
+        self.nevents_var   = tk.StringVar()
+        self.nreport_var   = tk.StringVar()
+        for r, (label, var) in enumerate([
+            ("Job name (used as filename)", self.name_var),
+            ("Output sub-folder under histos/", self.outdir_var),
+            ("Number of events", self.nevents_var),
+            ("Report every N events", self.nreport_var),
+        ]):
+            ttk.Label(f, text=label, width=32).grid(row=r, column=0, sticky="w", pady=4)
+            ttk.Entry(f, textvariable=var, width=40).grid(row=r, column=1, sticky="w", pady=4)
+        f.columnconfigure(1, weight=1)
+
+    # ----- Tab 2: Generator ----------------------------------------------
+    def _build_tab_generator(self, nb):
+        f = self._make_scrollable_tab(nb, "Generator", padding=10)
+
+        # Generator-kind dropdown at the top.
+        self.gen_kind_var = tk.StringVar(value=GeneratorKind.PYTHIA.value)
+        ttk.Label(f, text="Generator kind").grid(row=0, column=0, sticky="w", pady=4)
+        kinds = [k.value for k in GeneratorKind]
+        kind_combo = ttk.Combobox(f, textvariable=self.gen_kind_var,
+                                  values=kinds, state="readonly", width=30)
+        kind_combo.grid(row=0, column=1, sticky="w", pady=4)
+        kind_combo.bind("<<ComboboxSelected>>",
+                        lambda _e: self._show_relevant_gen_kind_frame())
+
+        # All variables.
+        self.gen_vars = {
+            "energy":            tk.StringVar(value="13000.0"),
+            "idA":               tk.StringVar(value="2212"),
+            "idB":               tk.StringVar(value="2212"),
+            "seed":              tk.StringVar(value="12345"),
+            "soft_qcd":          tk.BooleanVar(value=True),
+            "use_qcd_cr":        tk.BooleanVar(value=True),
+            "use_ropes":         tk.BooleanVar(value=False),
+            "temperature":       tk.StringVar(value="165.6"),
+            "mu_B":              tk.StringVar(value="28.5"),
+            "mu_I":              tk.StringVar(value="-0.9"),
+            "mu_S":              tk.StringVar(value="6.9"),
+            "mu_C":              tk.StringVar(value="0.0"),
+            "model":             tk.StringVar(value="BlastWave"),
+            "nucleus_A":         tk.StringVar(value="Pb"),
+            "nucleus_B":         tk.StringVar(value="Pb"),
+            "sigma_NN":          tk.StringVar(value="60.0"),
+            "impact_min":        tk.StringVar(value="0.0"),
+            "impact_max":        tk.StringVar(value="20.0"),
+            "input_file":        tk.StringVar(value=""),
+            "hepmc3_input_file": tk.StringVar(value=""),
+            "herwig_run_file":   tk.StringVar(value=""),
+            "herwig_lhapdf_data_path": tk.StringVar(value=""),
+            "herwig_plugin_path":      tk.StringVar(value=""),
+        }
+
+        # ---- Common section (every generator uses energy + beams + seed)
+        common = ttk.LabelFrame(f, text="Beam / random-seed (common to all generators)")
+        common.grid(row=1, column=0, columnspan=2, sticky="we", pady=(8, 4))
+        common_rows = [
+            ("√s (GeV)",     "energy"),
+            ("Beam A PDG",   "idA"),
+            ("Beam B PDG",   "idB"),
+            ("Random seed",  "seed"),
+        ]
+        for r, (label, key) in enumerate(common_rows):
+            ttk.Label(common, text=label, width=22).grid(row=r, column=0, sticky="w", pady=2, padx=8)
+            ttk.Entry(common, textvariable=self.gen_vars[key], width=40
+                      ).grid(row=r, column=1, sticky="w", pady=2)
+
+        # ---- Per-kind frames (built once, shown selectively below)
+        self._gen_kind_frames: dict[str, ttk.LabelFrame] = {}
+
+        def _make_kind_frame(kind_value, title, rows_):
+            lf = ttk.LabelFrame(f, text=title)
+            for r, (label, key, kind) in enumerate(rows_):
+                ttk.Label(lf, text=label, width=28).grid(row=r, column=0, sticky="w", pady=2, padx=8)
+                v = self.gen_vars[key]
+                if kind == "bool":
+                    ttk.Checkbutton(lf, variable=v).grid(row=r, column=1, sticky="w", pady=2)
+                else:
+                    ttk.Entry(lf, textvariable=v, width=40
+                              ).grid(row=r, column=1, sticky="w", pady=2)
+            self._gen_kind_frames[kind_value] = lf
+
+        _make_kind_frame(GeneratorKind.PYTHIA.value, "Pythia parameters", [
+            ("SoftQCD inelastic (legacy bool)", "soft_qcd",   "bool"),
+            ("Enable QCD CR tune (legacy bool)","use_qcd_cr", "bool"),
+            ("Enable Ropewalk (legacy bool)",   "use_ropes",  "bool"),
+        ])
+        _make_kind_frame(GeneratorKind.HERWIG.value, "Herwig parameters", [
+            ("Run file (.run, from `Herwig read`)", "herwig_run_file",         "str"),
+            ("LHAPDF data path",                    "herwig_lhapdf_data_path", "str"),
+            ("Herwig plugin path (':'-sep)",        "herwig_plugin_path",      "str"),
+        ])
+
+        # ---- Pythia: tuned-set + toggle + numeric + custom-string sub-section ----
+        self._pythia_cfg_state = {
+            "preset":  "Default (Monash 2013)",
+            "panels":  {k: False for k in PYTHIA_BOOL_TOGGLES},
+            "numeric": {k: "" for k in PYTHIA_NUMERIC_KNOBS},
+            "stable":  [],
+            "ctau_enable": False,
+            "ctau_value":  "10",
+            "custom":  "",
+        }
+        self._herwig_cfg_state = {
+            "preset":  "Default (Herwig 7.3 — LHC-UE-EE-5)",
+            "panels":  {k: False for k in HERWIG_BOOL_TOGGLES},
+            "numeric": {k: "" for k in HERWIG_NUMERIC_KNOBS},
+            "stable":  [],
+            "ctau_enable": False,
+            "ctau_value":  "10",
+            "custom":  "",
+        }
+        self._build_generator_config_subpanel(
+            self._gen_kind_frames[GeneratorKind.PYTHIA.value],
+            kind_name="Pythia",
+            state=self._pythia_cfg_state,
+            presets=PYTHIA_PRESETS,
+            bool_toggles=PYTHIA_BOOL_TOGGLES,
+            numeric_knobs=PYTHIA_NUMERIC_KNOBS,
+            start_row=10)
+        self._build_generator_config_subpanel(
+            self._gen_kind_frames[GeneratorKind.HERWIG.value],
+            kind_name="Herwig",
+            state=self._herwig_cfg_state,
+            presets=HERWIG_PRESETS,
+            bool_toggles=HERWIG_BOOL_TOGGLES,
+            numeric_knobs=HERWIG_NUMERIC_KNOBS,
+            start_row=10)
+        _make_kind_frame(GeneratorKind.HEPMC3.value, "HepMC3 reader parameters", [
+            ("Input .hepmc / .hepmc3 file", "hepmc3_input_file", "str"),
+        ])
+        _make_kind_frame(GeneratorKind.THERMINATOR.value, "Therminator parameters", [
+            ("T (MeV)",     "temperature", "str"),
+            ("μB",          "mu_B",        "str"),
+            ("μI",          "mu_I",        "str"),
+            ("μS",          "mu_S",        "str"),
+            ("μC",          "mu_C",        "str"),
+            ("Model",       "model",       "str"),
+        ])
+        _make_kind_frame(GeneratorKind.GLAUBER.value, "Glauber parameters", [
+            ("Nucleus A",          "nucleus_A",  "str"),
+            ("Nucleus B",          "nucleus_B",  "str"),
+            ("σ_NN (mb)",          "sigma_NN",   "str"),
+            ("Impact min (fm)",    "impact_min", "str"),
+            ("Impact max (fm)",    "impact_max", "str"),
+        ])
+        _make_kind_frame(GeneratorKind.EPOS_READER.value, "EPOS reader parameters", [
+            ("Input file", "input_file", "str"),
+        ])
+        _make_kind_frame(GeneratorKind.PHSD_READER.value, "PHSD reader parameters", [
+            ("Input file", "input_file", "str"),
+        ])
+        _make_kind_frame(GeneratorKind.BASIC.value, "Basic-event-generator parameters", [
+            # No kind-specific knobs beyond the common ones.
+        ])
+
+        # Initial show.
+        self._show_relevant_gen_kind_frame()
+
+    # ----- Scrollable-tab helper ----------------------------------------
+    def _make_scrollable_tab(self, nb, label, padding=10):
+        """Add a tab to *nb* whose body is a scrollable inner frame.
+        Returns the inner frame so callers can pack/grid as if it were
+        a normal ttk.Frame.  Both V- and H-scrollbars are present;
+        the inner frame stretches to canvas width when the canvas is
+        wider than the content (otherwise content keeps its natural
+        size and you can scroll horizontally)."""
+        outer = ttk.Frame(nb, padding=0)
+        nb.add(outer, text=label)
+        outer.rowconfigure(0, weight=1)
+        outer.columnconfigure(0, weight=1)
+        canvas = tk.Canvas(outer, highlightthickness=0)
+        vbar = ttk.Scrollbar(outer, orient=tk.VERTICAL,   command=canvas.yview)
+        hbar = ttk.Scrollbar(outer, orient=tk.HORIZONTAL, command=canvas.xview)
+        canvas.configure(yscrollcommand=vbar.set, xscrollcommand=hbar.set)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        vbar.grid(row=0, column=1, sticky="ns")
+        hbar.grid(row=1, column=0, sticky="ew")
+
+        inner = ttk.Frame(canvas, padding=padding)
+        win   = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+        def _on_inner(_evt):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        def _on_canvas(evt):
+            inner.update_idletasks()
+            inner_w = inner.winfo_reqwidth()
+            canvas.itemconfigure(
+                win, width=evt.width if evt.width > inner_w else inner_w)
+        inner.bind("<Configure>", _on_inner)
+        canvas.bind("<Configure>", _on_canvas)
+
+        # Mouse-wheel: vertical = wheel, horizontal = Shift+wheel.
+        def _on_wheel(evt):
+            shift = bool(getattr(evt, "state", 0) & 0x0001)
+            target = canvas.xview_scroll if shift else canvas.yview_scroll
+            if evt.num == 4:  target(-3, "units")
+            elif evt.num == 5: target( 3, "units")
+            elif hasattr(evt, "delta") and evt.delta:
+                step = -evt.delta // (120 if abs(evt.delta) >= 120 else 1)
+                target(step, "units")
+        def _bind(_e):
+            canvas.bind_all("<MouseWheel>",       _on_wheel)
+            canvas.bind_all("<Shift-MouseWheel>", _on_wheel)
+            canvas.bind_all("<Button-4>",         _on_wheel)
+            canvas.bind_all("<Button-5>",         _on_wheel)
+        def _unbind(_e):
+            for ev in ("<MouseWheel>", "<Shift-MouseWheel>",
+                       "<Button-4>", "<Button-5>"):
+                canvas.unbind_all(ev)
+        canvas.bind("<Enter>", _bind)
+        canvas.bind("<Leave>", _unbind)
+        return inner
+
+    def _build_generator_config_subpanel(self, parent, *, kind_name, state,
+                                          presets, bool_toggles,
+                                          numeric_knobs, start_row):
+        """Append four sub-sections to the per-kind LabelFrame:
+            (1) preset dropdown + live preview
+            (2) on/off toggles, grouped by category
+            (3) numeric input boxes, grouped by category
+            (4) custom raw strings textarea
+        Mirrors the run-cap config window so the .ini built here behaves
+        identically when re-run."""
+        # ---- Preset row ----
+        row = start_row
+        ttk.Label(parent, text=f"{kind_name} preset",
+                  font=("TkDefaultFont", 10, "bold")).grid(
+            row=row, column=0, sticky="w", pady=(8, 2), padx=8)
+        preset_var = tk.StringVar(value=state["preset"])
+        cb = ttk.Combobox(parent, textvariable=preset_var,
+                          values=list(presets.keys()),
+                          state="readonly", width=44)
+        cb.grid(row=row, column=1, sticky="w", pady=(8, 2))
+        state["_preset_var"] = preset_var
+        row += 1
+
+        # Live preview of preset lines.
+        preview = tk.Text(parent, height=4, wrap=tk.NONE,
+                          font=("Menlo", 9), background="#0e1116",
+                          foreground="#c9d1d9")
+        preview.grid(row=row, column=0, columnspan=2, sticky="we",
+                     padx=8, pady=2)
+        def _update_preview(*_):
+            preview.delete("1.0", tk.END)
+            for ln in presets.get(preset_var.get(), []):
+                preview.insert(tk.END, ln + "\n")
+        cb.bind("<<ComboboxSelected>>", _update_preview)
+        _update_preview()
+        row += 1
+
+        # ---- Boolean toggles, grouped by category ----
+        by_cat_bool: dict[str, list] = {}
+        for key, spec in bool_toggles.items():
+            cat = spec.get("category", "Misc")
+            by_cat_bool.setdefault(cat, []).append(
+                (key, spec.get("label", key)))
+        ttk.Label(parent, text=f"{kind_name} on/off switches  (override the preset)",
+                  font=("TkDefaultFont", 10, "bold")).grid(
+            row=row, column=0, sticky="w", pady=(6, 2), padx=8)
+        row += 1
+        panel_vars: dict = {}
+        for cat in by_cat_bool:
+            sub = ttk.LabelFrame(parent, text=cat)
+            sub.grid(row=row, column=0, columnspan=2, sticky="we",
+                     padx=8, pady=2)
+            col = 0; subrow = 0
+            for key, lbl in by_cat_bool[cat]:
+                v = tk.BooleanVar(value=state["panels"].get(key, False))
+                panel_vars[key] = v
+                ttk.Checkbutton(sub, text=lbl, variable=v
+                                ).grid(row=subrow, column=col, sticky="w",
+                                       padx=8, pady=1)
+                col = (col + 1) % 2
+                if col == 0:
+                    subrow += 1
+            row += 1
+        state["_panel_vars"] = panel_vars
+
+        # ---- Numeric input boxes, grouped by category ----
+        by_cat_num: dict[str, list] = {}
+        for key, spec in numeric_knobs.items():
+            cat = spec.get("category", "Misc")
+            by_cat_num.setdefault(cat, []).append((key, spec))
+        ttk.Label(parent,
+                  text=f"{kind_name} numeric parameters  (input boxes — leave blank to skip)",
+                  font=("TkDefaultFont", 10, "bold")).grid(
+            row=row, column=0, sticky="w", pady=(6, 2), padx=8)
+        row += 1
+        numeric_vars: dict[str, tk.StringVar] = {}
+        for cat, items in by_cat_num.items():
+            sub = ttk.LabelFrame(parent, text=cat)
+            sub.grid(row=row, column=0, columnspan=2, sticky="we",
+                     padx=8, pady=2)
+            for r, (key, spec) in enumerate(items):
+                ttk.Label(sub, text=spec.get("label", key),
+                          ).grid(row=r, column=0, sticky="w",
+                                 padx=(8, 4), pady=2)
+                v = tk.StringVar(value=state.get("numeric", {}).get(key, ""))
+                numeric_vars[key] = v
+                ttk.Entry(sub, textvariable=v, width=12
+                          ).grid(row=r, column=1, sticky="w",
+                                 padx=(0, 4), pady=2)
+                ttk.Label(sub, text=f"(default: {spec.get('default', '—')})",
+                          foreground="#888"
+                          ).grid(row=r, column=2, sticky="w",
+                                 padx=4, pady=2)
+            sub.columnconfigure(0, weight=1)
+            row += 1
+        state["_numeric_vars"] = numeric_vars
+
+        # ---- Lifetime cut (cτ) section ----
+        ttk.Label(parent,
+                  text=f"{kind_name} lifetime cut (cτ_max)",
+                  font=("TkDefaultFont", 10, "bold")).grid(
+            row=row, column=0, sticky="w", pady=(6, 2), padx=8)
+        row += 1
+        ctau_outer = ttk.LabelFrame(parent,
+            text="Particles with cτ above the threshold are kept stable")
+        ctau_outer.grid(row=row, column=0, columnspan=2, sticky="we",
+                        padx=8, pady=2)
+        ctau_enable = tk.BooleanVar(value=bool(state.get("ctau_enable", False)))
+        ctau_value  = tk.StringVar(value=str(state.get("ctau_value", "10")))
+        ttk.Checkbutton(ctau_outer,
+                        text="Enable global cτ cutoff",
+                        variable=ctau_enable
+                        ).grid(row=0, column=0, sticky="w", padx=8, pady=4)
+        ttk.Label(ctau_outer, text="cτ_max (mm):"
+                  ).grid(row=0, column=1, sticky="e", padx=(8, 2), pady=4)
+        ttk.Entry(ctau_outer, textvariable=ctau_value, width=10
+                  ).grid(row=0, column=2, sticky="w", padx=(0, 8), pady=4)
+        ttk.Label(ctau_outer,
+                  text=("(10 mm ≈ 33 ps. Pythia: ParticleDecays:tau0Max. "
+                        "Herwig: DecayHandler:MaxLifeTime.)"),
+                  foreground="#666"
+                  ).grid(row=1, column=0, columnspan=3, sticky="w",
+                         padx=8, pady=(0, 4))
+        state["_ctau_enable_var"] = ctau_enable
+        state["_ctau_value_var"]  = ctau_value
+        row += 1
+
+        # ---- Stable particles (no-decay) section ----
+        ttk.Label(parent,
+                  text=f"{kind_name} stable particles  (prevent decay)",
+                  font=("TkDefaultFont", 10, "bold")).grid(
+            row=row, column=0, sticky="w", pady=(6, 2), padx=8)
+        row += 1
+        sb_outer = ttk.LabelFrame(parent, text="Tick to force-stable")
+        sb_outer.grid(row=row, column=0, columnspan=2, sticky="we",
+                      padx=8, pady=2)
+        existing = set()
+        for x in (state.get("stable") or []):
+            try: existing.add(int(x))
+            except (TypeError, ValueError): pass
+        stable_vars: dict[int, tk.BooleanVar] = {}
+        for i, srow in enumerate(STABLE_PARTICLE_TABLE):
+            v = tk.BooleanVar(value=srow["pdg"] in existing)
+            stable_vars[srow["pdg"]] = v
+            ttk.Checkbutton(sb_outer, text=srow["label"], variable=v
+                            ).grid(row=i // 3, column=i % 3,
+                                   sticky="w", padx=6, pady=1)
+        state["_stable_vars"] = stable_vars
+        row += 1
+
+        ttk.Label(parent,
+                  text=f"{kind_name} stable extras (one PDG or Herwig name per line)",
+                  foreground="#666").grid(
+            row=row, column=0, sticky="w", padx=8, pady=(2, 0))
+        row += 1
+        extras_text = tk.Text(parent, height=3, wrap=tk.NONE,
+                              font=("Menlo", 10))
+        extras_text.grid(row=row, column=0, columnspan=2, sticky="we",
+                         padx=8, pady=(0, 6))
+        existing_extras = []
+        for x in (state.get("stable") or []):
+            try:
+                pdg = int(x)
+                if pdg not in (r["pdg"] for r in STABLE_PARTICLE_TABLE):
+                    existing_extras.append(str(pdg))
+            except (TypeError, ValueError):
+                if isinstance(x, str) and x.strip():
+                    existing_extras.append(x.strip())
+        if existing_extras:
+            extras_text.insert("1.0", "\n".join(existing_extras))
+        state["_stable_extras"] = extras_text
+        row += 1
+
+        # ---- Custom strings textarea ----
+        ttk.Label(parent,
+                  text=f"{kind_name} custom strings (one per line — appended LAST)",
+                  font=("TkDefaultFont", 10, "bold")).grid(
+            row=row, column=0, sticky="w", pady=(6, 2), padx=8)
+        row += 1
+        custom = tk.Text(parent, height=6, wrap=tk.NONE,
+                         font=("Menlo", 10))
+        custom.grid(row=row, column=0, columnspan=2, sticky="we",
+                    padx=8, pady=(0, 8))
+        custom.insert("1.0", state.get("custom", ""))
+        state["_custom_widget"] = custom
+
+    def _snapshot_gen_cfg_states(self):
+        """Pull the current dropdown / toggles / numeric boxes / stable
+        / custom-textarea content back into the state dicts.  Called by
+        _form_to_job."""
+        for state in (getattr(self, "_pythia_cfg_state", None),
+                      getattr(self, "_herwig_cfg_state", None)):
+            if not state:
+                continue
+            pv = state.get("_preset_var")
+            if pv is not None:
+                state["preset"] = pv.get()
+            panel_vars = state.get("_panel_vars") or {}
+            state["panels"] = {k: v.get() for k, v in panel_vars.items()}
+            num_vars = state.get("_numeric_vars") or {}
+            state["numeric"] = {k: v.get() for k, v in num_vars.items()}
+            # Stable particles: combine grid + extras textbox
+            stable_vars = state.get("_stable_vars") or {}
+            picked = [pdg for pdg, v in stable_vars.items() if v.get()]
+            extras_widget = state.get("_stable_extras")
+            if extras_widget is not None:
+                for ln in extras_widget.get("1.0", tk.END).strip().splitlines():
+                    tok = ln.strip().lstrip(",").strip()
+                    if not tok or tok.startswith("#"): continue
+                    try:
+                        picked.append(int(tok))
+                    except ValueError:
+                        picked.append(tok)
+            state["stable"] = picked
+            # cτ cut
+            ce = state.get("_ctau_enable_var")
+            cv = state.get("_ctau_value_var")
+            if ce is not None: state["ctau_enable"] = bool(ce.get())
+            if cv is not None: state["ctau_value"]  = cv.get().strip()
+            cw = state.get("_custom_widget")
+            if cw is not None:
+                state["custom"] = cw.get("1.0", tk.END).rstrip("\n")
+
+    def _show_relevant_gen_kind_frame(self):
+        """Show only the LabelFrame matching the currently-selected
+        generator kind; hide all the others.  Called on tab build and
+        whenever the user changes the kind dropdown."""
+        sel = self.gen_kind_var.get()
+        for kind, frame in self._gen_kind_frames.items():
+            try:
+                frame.grid_forget()
+            except Exception:
+                pass
+        if sel in self._gen_kind_frames:
+            self._gen_kind_frames[sel].grid(row=2, column=0, columnspan=2,
+                                             sticky="we", pady=(4, 8))
+
+    # ----- Tab 3: Particle filters --------------------------------------
+    def _build_tab_particles(self, nb):
+        f = self._make_scrollable_tab(nb, "Particle filters", padding=10)
+        ttk.Label(f, text="Each row defines one ParticleFilter. "
+                          "Leave a cell blank to omit that condition. "
+                          "PDG matches one species exactly.",
+                  wraplength=900).pack(anchor="w", pady=(0, 8))
+        self._particle_state: list[dict] = []
+        self.particle_list = FilterList(
+            f, self.PARTICLE_COLS,
+            lambda: self._particle_state or self._default_particle_state(),
+            lambda v: self._particle_state.__init__(v) or self._particle_state.clear() or self._particle_state.extend(v),
+        )
+        self.particle_list.pack(fill=tk.BOTH, expand=True)
+
+    def _default_particle_state(self):
+        return [self._pf_to_dict(pf) for pf in default_particle_filters()]
+
+    @staticmethod
+    def _pf_to_dict(pf: ParticleFilter) -> dict:
+        return {
+            "name": pf.name, "title": pf.title,
+            "pdg": "" if pf.pdg is None else str(pf.pdg),
+            "charge": "" if pf.charge is None else str(pf.charge),
+            "pt_min": "" if pf.pt_min is None else str(pf.pt_min),
+            "pt_max": "" if pf.pt_max is None else str(pf.pt_max),
+            "eta_min": "" if pf.eta_min is None else str(pf.eta_min),
+            "eta_max": "" if pf.eta_max is None else str(pf.eta_max),
+            "y_min": "" if pf.y_min is None else str(pf.y_min),
+            "y_max": "" if pf.y_max is None else str(pf.y_max),
+        }
+
+    @staticmethod
+    def _dict_to_pf(d: dict) -> ParticleFilter:
+        def num(s, cast):
+            s = (s or "").strip()
+            return None if not s else cast(s)
+        return ParticleFilter(
+            name=(d.get("name") or "").strip() or "FILTER",
+            title=(d.get("title") or "").strip(),
+            pdg=num(d.get("pdg"), int),
+            charge=num(d.get("charge"), int),
+            pt_min=num(d.get("pt_min"), float),
+            pt_max=num(d.get("pt_max"), float),
+            eta_min=num(d.get("eta_min"), float),
+            eta_max=num(d.get("eta_max"), float),
+            y_min=num(d.get("y_min"), float),
+            y_max=num(d.get("y_max"), float),
+        )
+
+    # ----- Tab 4: Event filters / multiplicities -------------------------
+    def _build_tab_events(self, nb):
+        f = self._make_scrollable_tab(nb, "Event filters / multiplicity", padding=10)
+        ttk.Label(f, text="Each row defines one EventFilter. "
+                          "Mult and Energy ranges are optional. "
+                          "An empty 'ALL' filter accepts every event.",
+                  wraplength=900).pack(anchor="w", pady=(0, 8))
+        self._event_state: list[dict] = []
+        self.event_list = FilterList(
+            f, self.EVENT_COLS,
+            lambda: self._event_state or self._default_event_state(),
+            lambda v: self._event_state.__init__(v) or self._event_state.clear() or self._event_state.extend(v),
+        )
+        self.event_list.pack(fill=tk.BOTH, expand=True)
+
+    def _default_event_state(self):
+        return [self._ef_to_dict(ef) for ef in default_event_filters()]
+
+    @staticmethod
+    def _ef_to_dict(ef: EventFilter) -> dict:
+        return {
+            "name": ef.name, "title": ef.title,
+            "mult_min": "" if ef.mult_min is None else str(ef.mult_min),
+            "mult_max": "" if ef.mult_max is None else str(ef.mult_max),
+            "energy_min": "" if ef.energy_min is None else str(ef.energy_min),
+            "energy_max": "" if ef.energy_max is None else str(ef.energy_max),
+        }
+
+    @staticmethod
+    def _dict_to_ef(d: dict) -> EventFilter:
+        def num(s):
+            s = (s or "").strip()
+            return None if not s else float(s)
+        return EventFilter(
+            name=(d.get("name") or "").strip() or "FILTER",
+            title=(d.get("title") or "").strip(),
+            mult_min=num(d.get("mult_min")),
+            mult_max=num(d.get("mult_max")),
+            energy_min=num(d.get("energy_min")),
+            energy_max=num(d.get("energy_max")),
+        )
+
+    # ----- Tab 5: Analyses -----------------------------------------------
+    def _build_tab_analyses(self, nb):
+        f = self._make_scrollable_tab(nb, "Analyses", padding=10)
+        ttk.Label(f, text="Pick which analyzers to add as subtasks of the EventIterator. "
+                          "Each picked analyzer writes one .root file with the histograms it owns.",
+                  wraplength=900).pack(anchor="w", pady=(0, 8))
+        self.analysis_vars: dict[AnalysisChoice, tk.BooleanVar] = {}
+        for label, choice in self.ANALYSES:
+            v = tk.BooleanVar(value=False)
+            ttk.Checkbutton(f, text=f"{label}    [{choice.value}]",
+                            variable=v).pack(anchor="w", pady=1)
+            self.analysis_vars[choice] = v
+
+    # ----- Tab 6: Binning ------------------------------------------------
+    def _build_tab_binning(self, nb):
+        f = self._make_scrollable_tab(nb, "Histogram binning", padding=10)
+        ttk.Label(f, text="Per-axis binning shared across analyzers. "
+                          "Pair-3D-only axes (Qinv, ΔPs/Po/Pl) are only emitted when the 3D pair "
+                          "analyzer is enabled.",
+                  wraplength=900).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 8))
+
+        ttk.Label(f, text="Axis", font=("TkDefaultFont", 10, "bold")).grid(row=1, column=0, sticky="w")
+        ttk.Label(f, text="nBins", font=("TkDefaultFont", 10, "bold")).grid(row=1, column=1, sticky="w")
+        ttk.Label(f, text="Min",   font=("TkDefaultFont", 10, "bold")).grid(row=1, column=2, sticky="w")
+        ttk.Label(f, text="Max",   font=("TkDefaultFont", 10, "bold")).grid(row=1, column=3, sticky="w")
+
+        self.bin_vars: dict[str, tuple[tk.StringVar, tk.StringVar, tk.StringVar]] = {}
+        rows = [
+            ("Multiplicity",           "n"),
+            ("pT (GeV/c)",             "pt"),
+            ("η",                      "eta"),
+            ("y",                      "y"),
+            ("φ (rad)",                "phi"),
+            ("Q_inv (Pair3D, GeV/c)",  "qinv"),
+            ("ΔP_side (Pair3D)",       "delta_ps"),
+            ("ΔP_out (Pair3D)",        "delta_po"),
+            ("ΔP_long (Pair3D)",       "delta_pl"),
+        ]
+        for r, (label, key) in enumerate(rows, start=2):
+            ttk.Label(f, text=label).grid(row=r, column=0, sticky="w", pady=2)
+            n  = tk.StringVar(); lo = tk.StringVar(); hi = tk.StringVar()
+            ttk.Entry(f, textvariable=n,  width=8).grid(row=r, column=1, sticky="w")
+            ttk.Entry(f, textvariable=lo, width=10).grid(row=r, column=2, sticky="w")
+            ttk.Entry(f, textvariable=hi, width=10).grid(row=r, column=3, sticky="w")
+            self.bin_vars[key] = (n, lo, hi)
+
+    # ----- Tab 7: Preview ------------------------------------------------
+    def _build_tab_preview(self, nb):
+        f = self._make_scrollable_tab(nb, "Preview", padding=4)
+        toolbar = ttk.Frame(f); toolbar.pack(fill=tk.X)
+        ttk.Button(toolbar, text="↻ Refresh", command=self._refresh_preview
+                   ).pack(side=tk.LEFT, padx=4, pady=4)
+        ttk.Label(toolbar, text="Read-only — edit fields in the other tabs and refresh."
+                  ).pack(side=tk.LEFT, padx=8)
+        self.preview = tk.Text(f, wrap=tk.NONE,
+                               font=("Menlo", 10) if sys.platform == "darwin"
+                                                   else ("Monospace", 10),
+                               background="#0e1116", foreground="#c9d1d9")
+        self.preview.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+        self.preview.configure(state=tk.DISABLED)
+
+    # -- Sync between Job <-> form --------------------------------------
+    def _sync_form_from_job(self):
+        j = self.job
+        self.name_var.set(j.name)
+        self.outdir_var.set(j.output_dir)
+        self.nevents_var.set(str(j.n_events))
+        self.nreport_var.set(str(j.n_events_report))
+
+        self.gen_kind_var.set(j.generator.kind.value)
+        # Reload all known generator-var fields from the job — covers
+        # Pythia/Herwig/HepMC3/Therminator/Glauber/EPOS/PHSD all at once.
+        for key, var in self.gen_vars.items():
+            val = getattr(j.generator, key, None)
+            if isinstance(var, tk.BooleanVar):
+                var.set(bool(val))
+            else:
+                var.set(str(val) if val is not None else "")
+        # Reapply the show/hide of kind-specific frames.
+        try:
+            self._show_relevant_gen_kind_frame()
+        except Exception:
+            pass
+        # Restore Pythia/Herwig preset+toggle+custom state from the Job.
+        # The Job stores the preset NAME and the resolved extra lines —
+        # we can faithfully restore the preset; toggle state would need
+        # round-tripping through the lines, so we leave toggles off and
+        # the user re-ticks if desired.  Custom string is empty on load
+        # because there's no way to distinguish "user-typed" from
+        # "preset-derived" inside extra_options.
+        try:
+            if j.generator.pythia_preset_name and self._pythia_cfg_state.get("_preset_var"):
+                self._pythia_cfg_state["_preset_var"].set(j.generator.pythia_preset_name)
+                self._pythia_cfg_state["preset"] = j.generator.pythia_preset_name
+            if j.generator.herwig_preset_name and self._herwig_cfg_state.get("_preset_var"):
+                self._herwig_cfg_state["_preset_var"].set(j.generator.herwig_preset_name)
+                self._herwig_cfg_state["preset"] = j.generator.herwig_preset_name
+        except Exception:
+            pass
+
+        self._particle_state.clear()
+        self._particle_state.extend(self._pf_to_dict(pf) for pf in j.particle_filters)
+        self.particle_list.rebuild_from_state()
+
+        self._event_state.clear()
+        self._event_state.extend(self._ef_to_dict(ef) for ef in j.event_filters)
+        self.event_list.rebuild_from_state()
+
+        for choice, v in self.analysis_vars.items():
+            v.set(choice in j.analyses)
+
+        for key, axis in [
+            ("n", j.binning.n), ("pt", j.binning.pt), ("eta", j.binning.eta),
+            ("y", j.binning.y), ("phi", j.binning.phi),
+            ("qinv", j.binning.qinv),
+            ("delta_ps", j.binning.delta_ps), ("delta_po", j.binning.delta_po),
+            ("delta_pl", j.binning.delta_pl),
+        ]:
+            n, lo, hi = self.bin_vars[key]
+            n.set(str(axis.nbins)); lo.set(str(axis.min)); hi.set(str(axis.max))
+
+    def _form_to_job(self) -> Job:
+        # Pull each tab back into a Job object.
+        try:
+            n_events = int(self.nevents_var.get())
+            n_report = int(self.nreport_var.get())
+        except ValueError:
+            raise ValueError("Number of events and report frequency must be integers.")
+
+        gen = Generator(kind=GeneratorKind(self.gen_kind_var.get()))
+        for key, var in self.gen_vars.items():
+            if isinstance(var, tk.BooleanVar):
+                setattr(gen, key, bool(var.get()))
+            else:
+                cur = getattr(gen, key, None)
+                raw = var.get().strip()
+                if raw == "":
+                    continue
+                if isinstance(cur, int):
+                    setattr(gen, key, int(raw))
+                elif isinstance(cur, float):
+                    setattr(gen, key, float(raw))
+                else:
+                    setattr(gen, key, raw)
+
+        # Snapshot the Pythia/Herwig sub-panel state and emit
+        # preset+toggle+custom into Generator.{pythia,herwig}_*.
+        try:
+            self._snapshot_gen_cfg_states()
+            gen.pythia_preset_name    = self._pythia_cfg_state["preset"]
+            gen.pythia_extra_options  = collect_pythia_strings(
+                self._pythia_cfg_state["preset"],
+                self._pythia_cfg_state["panels"],
+                self._pythia_cfg_state.get("numeric", {}),
+                self._pythia_cfg_state["custom"],
+                self._pythia_cfg_state.get("stable", []),
+                ctau_max_mm=(self._pythia_cfg_state.get("ctau_value")
+                             if self._pythia_cfg_state.get("ctau_enable")
+                             else None))
+            gen.herwig_preset_name    = self._herwig_cfg_state["preset"]
+            gen.herwig_extra_in_lines = collect_herwig_lines(
+                self._herwig_cfg_state["preset"],
+                self._herwig_cfg_state["panels"],
+                self._herwig_cfg_state.get("numeric", {}),
+                self._herwig_cfg_state["custom"],
+                self._herwig_cfg_state.get("stable", []),
+                ctau_max_mm=(self._herwig_cfg_state.get("ctau_value")
+                             if self._herwig_cfg_state.get("ctau_enable")
+                             else None))
+        except Exception:
+            # Subpanel not built (older code path) — skip silently.
+            pass
+
+        # Particle and event filters — read from the FilterList widgets.
+        self._particle_state[:] = self.particle_list.collect()
+        pfs = [self._dict_to_pf(d) for d in self._particle_state if d.get("name", "").strip()]
+        self._event_state[:] = self.event_list.collect()
+        efs = [self._dict_to_ef(d) for d in self._event_state if d.get("name", "").strip()]
+        if not pfs:
+            raise ValueError("Add at least one particle filter.")
+        if not efs:
+            raise ValueError("Add at least one event filter.")
+
+        analyses = [c for c, v in self.analysis_vars.items() if v.get()]
+        if not analyses:
+            raise ValueError("Pick at least one analysis on the 'Analyses' tab.")
+
+        # Binning
+        def axis(key) -> Binning1D:
+            n, lo, hi = self.bin_vars[key]
+            return Binning1D(int(n.get()), float(lo.get()), float(hi.get()))
+        binning = Binning(
+            n=axis("n"), pt=axis("pt"), eta=axis("eta"), y=axis("y"), phi=axis("phi"),
+            qinv=axis("qinv"),
+            delta_ps=axis("delta_ps"), delta_po=axis("delta_po"), delta_pl=axis("delta_pl"),
+        )
+
+        return Job(
+            name=self.name_var.get().strip() or "my_analysis",
+            output_dir=self.outdir_var.get().strip() or "test",
+            n_events=n_events, n_events_report=n_report,
+            generator=gen,
+            particle_filters=pfs, event_filters=efs,
+            analyses=analyses, binning=binning,
+        )
+
+    # -- Actions ----------------------------------------------------------
+    def _on_preset_change(self, _evt=None):
+        chosen = self.preset_var.get()
+        preset = PRESETS.get(chosen)
+        if preset is None:
+            return
+        try:
+            self.job = preset.build()
+        except Exception as exc:
+            messagebox.showerror("build-ini", f"Preset failed: {exc}")
+            return
+        self._sync_form_from_job()
+        self.status_var.set(f"Loaded preset: {preset.name}")
+
+    def _refresh_preview(self):
+        try:
+            job = self._form_to_job()
+        except Exception as exc:
+            messagebox.showerror("build-ini", str(exc))
+            return
+        self.job = job
+        text = render_ini(job)
+        self.preview.configure(state=tk.NORMAL)
+        self.preview.delete("1.0", tk.END)
+        self.preview.insert(tk.END, text)
+        self.preview.configure(state=tk.DISABLED)
+        self.status_var.set("Preview refreshed.")
+
+    def _load_existing_ini(self) -> None:
+        """Picker accepts both:
+        * `.json` preset (saved by 💾 Save preset) — full GUI restore
+        * `.ini`  legacy file — partial restore (a few obvious fields)
+
+        For round-trippable state, save and load .json presets — the
+        .ini is a one-way flattened export."""
+        path = filedialog.askopenfilename(
+            initialdir=str(OUT_DIR),
+            filetypes=[("CAP preset", "*.json"),
+                       ("CAP .ini",   "*.ini"),
+                       ("All files",  "*.*")],
+            title="Load preset (.json) or existing .ini")
+        if not path:
+            return
+        if path.lower().endswith(".json"):
+            self._load_preset_from(path)
+            return
+        try:
+            text = Path(path).read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            messagebox.showerror("build-ini", f"Could not read {path}: {exc}")
+            return
+
+        # ---- Parse the obvious key=value pairs ----
+        kv: dict[str, str] = {}
+        for ln in text.splitlines():
+            s = ln.strip()
+            if not s or s.startswith("//") or s.startswith("#"):
+                continue
+            if "=" in s:
+                k, v = s.split("=", 1)
+                k = k.strip()
+                v = v.strip().rstrip(";")
+                # Last assignment wins (matches CAP's loader convention).
+                kv[k] = v
+
+        n_restored = 0
+        # Top-level job basics
+        for k_in, var in (("Name",       self.name_var),
+                          ("OutputPath", self.outdir_var),
+                          ("NEvents",    self.nevents_var),
+                          ("ReportFreq", self.nreport_var)):
+            if k_in in kv:
+                var.set(kv[k_in])
+                n_restored += 1
+
+        # Generator kind — look for any 'GeneratorType=<X>' line.
+        for k, v in kv.items():
+            if k.endswith(":GeneratorType") or k == "GeneratorType":
+                if v in (gk.value for gk in GeneratorKind):
+                    self.gen_kind_var.set(v)
+                    n_restored += 1
+                    break
+
+        # Subtasks → analyses checkboxes.  The composer emits
+        # 'Subtask<N>:TaskName=Run<XYZ>Analyzer'; we map those back to
+        # the AnalysisChoice enum if possible.
+        choice_map = {
+            "RunGlobalAnalysis":     AnalysisChoice.GLOBAL,
+            "RunSingleAnalysis":     AnalysisChoice.SINGLE,
+            "RunPairAnalysis":       AnalysisChoice.PAIR,
+            "RunPair3DAnalysis":     AnalysisChoice.PAIR3D,
+            "RunSpherocityAnalysis": AnalysisChoice.SPHEROCITY,
+            "RunNuDynAnalysis":      AnalysisChoice.NUDYN,
+            "RunPtPtAnalysis":       AnalysisChoice.PTPT,
+        }
+        chosen = set()
+        for k, v in kv.items():
+            if k.startswith("Subtask") and k.endswith(":TaskName"):
+                if v in choice_map:
+                    chosen.add(choice_map[v])
+        # Apply to checkboxes.  self.analysis_vars is a dict[choice -> BooleanVar]
+        if chosen and hasattr(self, "analysis_vars"):
+            for ch, var in self.analysis_vars.items():
+                var.set(ch in chosen)
+            n_restored += len(chosen)
+
+        # Pythia / Herwig preset NAMES (only present in newer .inis that
+        # tagged them as comments).
+        for ln in text.splitlines():
+            s = ln.strip()
+            if s.startswith("#! pythia_preset_name"):
+                _, _, name = s.partition("=")
+                if name.strip() and self._pythia_cfg_state.get("_preset_var"):
+                    self._pythia_cfg_state["_preset_var"].set(name.strip())
+                    n_restored += 1
+            elif s.startswith("#! herwig_preset_name"):
+                _, _, name = s.partition("=")
+                if name.strip() and self._herwig_cfg_state.get("_preset_var"):
+                    self._herwig_cfg_state["_preset_var"].set(name.strip())
+                    n_restored += 1
+
+        self._refresh_preview()
+        self.status_var.set(
+            f"Loaded {Path(path).name} — restored {n_restored} field(s).  "
+            f"Generator-panel state (toggles/numerics/stable-particles/cτ) "
+            f"was not in the file; tweak as needed.")
+
+    # ====================================================================
+    #  Preset save / load — captures the WHOLE build-ini-gui state
+    # ====================================================================
+    def _collect_buildini_state(self) -> dict:
+        """Walk every visible tk.Var and the cfg dicts, return a
+        JSON-serialisable preset.  Sections: common (Pythia/Herwig
+        cfg), build_ini_gui (basics + generator + analyses + extras)."""
+        import sys as _sys
+        from pathlib import Path as _Path
+        _sys.path.insert(0, str(_Path(__file__).resolve().parent))
+        import cap_preset as _cp
+
+        def _g(v, default=None):
+            try: return v.get()
+            except Exception: return default
+
+        # Force a snapshot of the per-generator panels into the dicts.
+        try: self._snapshot_gen_cfg_states()
+        except Exception: pass
+
+        bi = {
+            "name":         _g(self.name_var, ""),
+            "outdir":       _g(self.outdir_var, ""),
+            "nevents":      _g(self.nevents_var, ""),
+            "nreport":      _g(self.nreport_var, ""),
+            "preset_name":  _g(self.preset_var, ""),
+            "gen_kind":     _g(self.gen_kind_var, ""),
+            # Per-kind generator vars (str/bool dropdowns)
+            "gen_vars": {k: _g(v) for k, v in self.gen_vars.items()},
+            # Analysis subtask checkboxes
+            "analyses":     {ch.value: _g(v, False)
+                             for ch, v in self.analysis_vars.items()},
+        }
+        return {
+            "saved_by": "build-ini-gui",
+            "common": {
+                "pythia_cfg": _cp.cfg_to_json(self._pythia_cfg_state),
+                "herwig_cfg": _cp.cfg_to_json(self._herwig_cfg_state),
+            },
+            "build_ini_gui": bi,
+        }
+
+    def _apply_buildini_state(self, state: dict) -> int:
+        import sys as _sys
+        from pathlib import Path as _Path
+        _sys.path.insert(0, str(_Path(__file__).resolve().parent))
+        import cap_preset as _cp
+
+        n = 0
+        bi = state.get("build_ini_gui", {}) if isinstance(state, dict) else {}
+
+        def _s(var, key, transform=None):
+            nonlocal n
+            if key in bi and var is not None:
+                val = bi[key]
+                if transform is not None:
+                    try: val = transform(val)
+                    except Exception: return
+                try: var.set(val); n += 1
+                except Exception: pass
+
+        _s(self.name_var,        "name")
+        _s(self.outdir_var,      "outdir")
+        _s(self.nevents_var,     "nevents")
+        _s(self.nreport_var,     "nreport")
+        _s(self.preset_var,      "preset_name")
+        _s(self.gen_kind_var,    "gen_kind")
+
+        # Generator vars (per-kind dropdowns)
+        for k, var in self.gen_vars.items():
+            if k in (bi.get("gen_vars") or {}):
+                try: var.set(bi["gen_vars"][k]); n += 1
+                except Exception: pass
+
+        # Analyses checkboxes
+        a_payload = bi.get("analyses") or {}
+        for ch, var in self.analysis_vars.items():
+            if ch.value in a_payload:
+                try: var.set(bool(a_payload[ch.value])); n += 1
+                except Exception: pass
+
+        # Common: Pythia + Herwig cfg dicts
+        common = state.get("common", {}) if isinstance(state, dict) else {}
+        if "pythia_cfg" in common:
+            _cp.cfg_from_json(common["pythia_cfg"], self._pythia_cfg_state)
+        if "herwig_cfg" in common:
+            _cp.cfg_from_json(common["herwig_cfg"], self._herwig_cfg_state)
+
+        # Push the cfg dict values back into the live widgets
+        for cfg in (self._pythia_cfg_state, self._herwig_cfg_state):
+            pv = cfg.get("_preset_var")
+            if pv is not None and "preset" in cfg:
+                try: pv.set(cfg["preset"])
+                except Exception: pass
+
+        # Refresh the toggling widgets so the user sees the new layout
+        try: self._show_relevant_gen_kind_frame()
+        except Exception: pass
+        return n
+
+    def _save_preset(self) -> None:
+        path = filedialog.asksaveasfilename(
+            initialdir=str(OUT_DIR),
+            initialfile="my_preset.json",
+            defaultextension=".json",
+            filetypes=[("CAP preset (JSON)", "*.json"),
+                       ("All files", "*.*")],
+            title="Save GUI state as preset")
+        if not path:
+            return
+        import sys as _sys
+        from pathlib import Path as _Path
+        _sys.path.insert(0, str(_Path(__file__).resolve().parent))
+        import cap_preset as _cp
+        try:
+            _cp.save_preset(self._collect_buildini_state(), path)
+        except Exception as exc:
+            messagebox.showerror("build-ini", f"Save preset failed: {exc}")
+            return
+        self.status_var.set(f"Preset saved → {path}")
+
+    def _load_preset_from(self, path: str) -> None:
+        import sys as _sys
+        from pathlib import Path as _Path
+        _sys.path.insert(0, str(_Path(__file__).resolve().parent))
+        import cap_preset as _cp
+        try:
+            state = _cp.load_preset(path)
+        except Exception as exc:
+            messagebox.showerror("build-ini", f"Load preset failed: {exc}")
+            return
+        n = self._apply_buildini_state(state)
+        self._refresh_preview()
+        self.status_var.set(f"Preset loaded ({n} fields restored from "
+                            f"{Path(path).name})")
+
+    def _save(self) -> Path | None:
+        try:
+            job = self._form_to_job()
+        except Exception as exc:
+            messagebox.showerror("build-ini", str(exc))
+            return None
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        default = f"{job.name}.ini"
+        path = filedialog.asksaveasfilename(
+            initialdir=str(OUT_DIR),
+            initialfile=default,
+            defaultextension=".ini",
+            filetypes=[("CAP .ini", "*.ini"), ("All files", "*.*")],
+            title="Save .ini")
+        if not path:
+            return None
+        out = write_ini(job, path)
+        self.status_var.set(f"Wrote {out}")
+        return out
+
+    def _save_and_run(self):
+        path = self._save()
+        if not path:
+            return
+        runner = REPO / "run-cap"
+        if not runner.exists():
+            messagebox.showinfo("build-ini",
+                f"Wrote {path}\nLaunch run-cap manually to execute it.")
+            return
+        try:
+            import subprocess
+            subprocess.Popen([str(runner)], cwd=str(REPO))
+            self.status_var.set(f"Wrote {path} — run-cap launched.")
+        except OSError as exc:
+            messagebox.showwarning("build-ini", f"Could not launch run-cap: {exc}")
+
+    def _on_close(self):
+        self.root.destroy()
+
+    def run(self):
+        self.root.mainloop()
+
+
+def main():
+    try:
+        gui = IniBuilderGUI()
+        gui.run()
+    except tk.TclError as exc:
+        sys.stderr.write(
+            "\nCould not initialise the Tk display layer:\n"
+            f"  {exc}\n\n"
+            "If you are on a headless server, you can still build .ini files\n"
+            "from a Python REPL using cap_ini_builder.write_ini() directly.\n")
+        sys.exit(2)
+
+
+if __name__ == "__main__":
+    main()

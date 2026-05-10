@@ -21,6 +21,6 @@ target_include_directories(Plotting  PUBLIC Plotting Base  ${EXTRA_INCLUDES} )
 add_definitions(-DOPTIMIZEADDBINCONTENT)
 
 
-install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libPlotting.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libPlotting_rdict.pcm" DESTINATION "$ENV{CAP_LIB_PATH}")
-install(TARGETS Plotting  LIBRARY DESTINATION "$ENV{CAP_LIB_PATH}")
+install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libPlotting.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libPlotting_rdict.pcm" DESTINATION ${CAP_INSTALL_LIBDIR})
+install(TARGETS Plotting  LIBRARY DESTINATION ${CAP_INSTALL_LIBDIR})
 

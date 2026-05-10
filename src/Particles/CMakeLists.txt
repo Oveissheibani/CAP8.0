@@ -70,6 +70,6 @@ G__Particles.cxx)
 target_link_libraries(Particles Base Math Helpers   ${ROOT_LIBRARIES} ${EXTRA_LIBS} )
 target_include_directories(Particles  PUBLIC Base Math Helpers Particles  ${EXTRA_INCLUDES} )
 
-install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libParticles.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libParticles_rdict.pcm" DESTINATION "$ENV{CAP_LIB_PATH}")
-install(TARGETS Particles  LIBRARY DESTINATION "$ENV{CAP_LIB_PATH}")
+install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libParticles.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libParticles_rdict.pcm" DESTINATION ${CAP_INSTALL_LIBDIR})
+install(TARGETS Particles  LIBRARY DESTINATION ${CAP_INSTALL_LIBDIR})
 

@@ -30,6 +30,6 @@ G__Xml.cxx)
 target_link_libraries(Xml Math Base  ${ROOT_LIBRARIES} ${EXTRA_LIBS} )
 target_include_directories(Xml PUBLIC Base Math ParticleTypeList ${EXTRA_INCLUDES} )
 
-install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libXml.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libXml_rdict.pcm" DESTINATION "$ENV{CAP_LIB_PATH}")
-install(TARGETS Xml  LIBRARY DESTINATION "$ENV{CAP_LIB_PATH}")
+install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/libXml.rootmap" "${CMAKE_CURRENT_BINARY_DIR}/libXml_rdict.pcm" DESTINATION ${CAP_INSTALL_LIBDIR})
+install(TARGETS Xml  LIBRARY DESTINATION ${CAP_INSTALL_LIBDIR})
 
