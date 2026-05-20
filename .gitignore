@@ -58,6 +58,8 @@ Makefile
 *.pdf
 *.svg
 *.png
+# …but the app logo must be tracked (used by the GUI + the .app bundle icons)
+!logo/logo.png
 .DS_Store
 .DS_Store?
 ._*
@@ -86,6 +88,9 @@ pythia8[0-9]*/
 *.dylib
 *.a
 *.app
+# …but the macOS launcher bundles under macos-apps/ are part of the package
+!macos-apps/*.app
+!macos-apps/*.app/**
 *.swp
 .cache/
 .idea/
@@ -126,3 +131,6 @@ cap-backup*
 cap-integrate-*
 cap-redact*
 cap-private*
+
+# macOS .app icon-build intermediates (the finished .icns lives in the bundles)
+macos-apps/build/

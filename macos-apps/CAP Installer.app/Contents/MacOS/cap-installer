@@ -1,0 +1,57 @@
+#!/bin/bash
+# =============================================================================
+#  CAP Installer.app  —  opens the CAP graphical installer (no Terminal needed).
+#
+#  Double-click this app to launch the Tk setup picker.  It locates the CAP
+#  repository, makes Homebrew / MacPorts / conda visible, and starts the
+#  installer.  All output is logged to  <repo>/logs/last-app-launch.log .
+#
+#  If you keep the CAP repo somewhere other than ~/cap8/CAP8.0-main, just
+#  edit the REPO line below.
+# =============================================================================
+
+# ── Make Homebrew / MacPorts / conda visible to a Finder-launched app ───────
+# Finder starts apps with a minimal PATH; add the usual prefixes for both
+# Apple Silicon (/opt/homebrew) and Intel (/usr/local) Macs.
+export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/opt/local/bin:/opt/local/sbin:$HOME/miniconda3/bin:$HOME/anaconda3/bin:$HOME/miniforge3/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
+# ── Locate the CAP repository ───────────────────────────────────────────────
+REPO="$HOME/cap8/CAP8.0-main"
+if [ ! -x "$REPO/install" ]; then
+    for cand in "$HOME/CAP8.0-main" "$HOME/Desktop/CAP8.0-main" \
+                "$HOME/Documents/CAP8.0-main" "$HOME/cap8/CAP8.0-main"; do
+        if [ -x "$cand/install" ]; then REPO="$cand"; break; fi
+    done
+fi
+
+# ── Friendly error dialog (heredoc avoids quoting headaches) ────────────────
+err() {
+    /usr/bin/osascript <<OSA
+display dialog "$1" buttons {"OK"} default button "OK" with title "CAP Installer" with icon caution
+OSA
+}
+
+if [ ! -x "$REPO/install" ]; then
+    err "Could not find the CAP repository.
+
+Expected it at:
+  ~/cap8/CAP8.0-main
+
+Move the repo there, or edit the REPO line inside this app (right-click the app, Show Package Contents, Contents/MacOS/cap-installer)."
+    exit 1
+fi
+
+if ! /usr/bin/env python3 -c 'import tkinter' >/dev/null 2>&1; then
+    err "Python 3 with Tk is required for the graphical installer.
+
+Install it, for example:
+  brew install python python-tk
+
+Then open this app again."
+    exit 1
+fi
+
+# ── Launch the graphical installer ──────────────────────────────────────────
+cd "$REPO" || { err "Could not enter the CAP repository at $REPO."; exit 1; }
+mkdir -p logs
+exec ./install --gui >> logs/last-app-launch.log 2>&1

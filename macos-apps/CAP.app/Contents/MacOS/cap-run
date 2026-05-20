@@ -1,0 +1,63 @@
+#!/bin/bash
+# =============================================================================
+#  CAP.app  —  opens the CAP job runner (run-cap), no Terminal needed.
+#
+#  Double-click this app to launch the Tk runner for executing analyses.
+#  It locates the CAP repository, checks that CAP has been built, makes
+#  Homebrew / MacPorts / conda visible, and starts run-cap.  Output is
+#  logged to  <repo>/logs/last-app-launch.log .
+#
+#  If CAP has not been built yet, this app tells you to open "CAP Installer"
+#  first.  If you keep the CAP repo somewhere other than ~/cap8/CAP8.0-main,
+#  edit the REPO line below.
+# =============================================================================
+
+# ── Make Homebrew / MacPorts / conda visible to a Finder-launched app ───────
+export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/opt/local/bin:/opt/local/sbin:$HOME/miniconda3/bin:$HOME/anaconda3/bin:$HOME/miniforge3/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
+# ── Locate the CAP repository ───────────────────────────────────────────────
+REPO="$HOME/cap8/CAP8.0-main"
+if [ ! -x "$REPO/install" ]; then
+    for cand in "$HOME/CAP8.0-main" "$HOME/Desktop/CAP8.0-main" \
+                "$HOME/Documents/CAP8.0-main" "$HOME/cap8/CAP8.0-main"; do
+        if [ -x "$cand/install" ]; then REPO="$cand"; break; fi
+    done
+fi
+
+# ── Friendly dialogs ────────────────────────────────────────────────────────
+dlg() {
+    # $1 = message, $2 = icon (stop | caution | note)
+    /usr/bin/osascript <<OSA
+display dialog "$1" buttons {"OK"} default button "OK" with title "CAP" with icon $2
+OSA
+}
+
+if [ ! -x "$REPO/install" ]; then
+    dlg "Could not find the CAP repository.
+
+Expected it at:
+  ~/cap8/CAP8.0-main
+
+Move the repo there, or edit the REPO line inside this app." caution
+    exit 1
+fi
+
+if [ ! -x "$REPO/bin/CAP" ]; then
+    dlg "CAP has not been built yet.
+
+Open the 'CAP Installer' app first to set up and build CAP, then launch this app to run analyses." note
+    exit 0
+fi
+
+if ! /usr/bin/env python3 -c 'import tkinter' >/dev/null 2>&1; then
+    dlg "Python 3 with Tk is required for the runner.
+
+Install it, for example:
+  brew install python python-tk" caution
+    exit 1
+fi
+
+# ── Launch the job runner ───────────────────────────────────────────────────
+cd "$REPO" || { dlg "Could not enter the CAP repository at $REPO." stop; exit 1; }
+mkdir -p logs
+exec ./install --run >> logs/last-app-launch.log 2>&1
