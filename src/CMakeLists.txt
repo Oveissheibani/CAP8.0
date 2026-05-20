@@ -163,6 +163,51 @@ include(${ROOT_USE_FILE})
 add_definitions(${ROOT_CXX_FLAGS})
 
 # ------------------------------------------------------------------------------
+# macOS: CAP must be compiled for the SAME CPU architecture as ROOT.
+#
+# If they differ the linker silently discards every ROOT library —
+#   ld: warning: ignoring file '.../libCore.so': found architecture 'arm64',
+#       required architecture 'x86_64'
+# — and the build dies with hundreds of undefined TString / TObject symbols.
+#
+# This bites Apple-Silicon Macs whenever the build toolchain runs under
+# Rosetta (x86_64) while Homebrew ROOT is native arm64. Detect ROOT's
+# architecture from libCore and force CAP to match it.
+# ------------------------------------------------------------------------------
+if(APPLE)
+    set(_cap_root_core "")
+    foreach(_cap_lib IN LISTS ROOT_LIBRARIES)
+        if(_cap_lib MATCHES "libCore")
+            set(_cap_root_core "${_cap_lib}")
+            break()
+        endif()
+    endforeach()
+    if(_cap_root_core AND EXISTS "${_cap_root_core}")
+        execute_process(
+            COMMAND lipo -archs "${_cap_root_core}"
+            OUTPUT_VARIABLE _cap_root_archs
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET)
+        if(_cap_root_archs)
+            string(REPLACE " " ";" _cap_root_archs "${_cap_root_archs}")
+            set(CMAKE_OSX_ARCHITECTURES "${_cap_root_archs}" CACHE STRING
+                "CPU architecture(s) — auto-matched to ROOT's libCore" FORCE)
+            message(STATUS
+                "CAP architecture set to '${_cap_root_archs}' "
+                "to match ROOT (${_cap_root_core})")
+        else()
+            message(WARNING
+                "Could not determine ROOT's architecture via 'lipo'. "
+                "If the link fails with 'ignoring file ... architecture' "
+                "warnings, pass -DCMAKE_OSX_ARCHITECTURES=<arch> manually.")
+        endif()
+    endif()
+    unset(_cap_root_core)
+    unset(_cap_lib)
+    unset(_cap_root_archs)
+endif()
+
+# ------------------------------------------------------------------------------
 # Optional dependencies — Pythia 8 and FastJet.
 #
 # Detection always runs when the user provided a hint (CAP_*_PATH) or has the
