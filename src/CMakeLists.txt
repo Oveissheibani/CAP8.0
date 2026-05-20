@@ -419,6 +419,9 @@ endif()
 # Always-on modules
 # ------------------------------------------------------------------------------
 add_subdirectory(Base)
+# EventHistory — generator-agnostic provenance graph (parton-tracking,
+# Phase 1).  Standalone library; no existing task depends on it yet.
+add_subdirectory(EventHistory)
 add_subdirectory(BasicEventGen)
 add_subdirectory(Math)
 add_subdirectory(Helpers)
