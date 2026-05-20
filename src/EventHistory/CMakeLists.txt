@@ -11,7 +11,9 @@
 # infrastructure only, so building it cannot change existing behaviour.
 ################################################################################
 
-set(_eventhistory_sources EventHistory.cpp)
+set(_eventhistory_sources
+    EventHistory.cpp
+    StageSelector.cpp)
 set(_eventhistory_libs)
 
 if(CAP_ENABLE_PYTHIA AND PYTHIA8_FOUND)
