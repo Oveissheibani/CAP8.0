@@ -155,7 +155,10 @@ endif()
 # ------------------------------------------------------------------------------
 # Required dependency: ROOT
 # ------------------------------------------------------------------------------
-find_package(ROOT REQUIRED COMPONENTS EG MathCore MathMore RIO Hist Tree Net)
+# NB: 'Core' must be listed explicitly. Older ROOT auto-bundled libCore into
+# ROOT_LIBRARIES; ROOT 6.3x+ returns only the components you ask for, so
+# without Core the link fails with undefined TString / TObject symbols.
+find_package(ROOT REQUIRED COMPONENTS Core EG MathCore MathMore RIO Hist Tree Net)
 include(${ROOT_USE_FILE})
 add_definitions(${ROOT_CXX_FLAGS})
 
