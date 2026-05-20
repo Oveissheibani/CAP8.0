@@ -200,6 +200,21 @@ if [ -n "${CAP_FASTJET_PATH:-}" ]; then
     fi
 fi
 
+# ---------- Put external library directories on the loader search path ----------
+# CAP links Pythia 8 / FastJet as shared libraries whose install-name is
+# @rpath/lib*.dylib.  At run time the loader must therefore know which
+# directories hold them, or it fails with e.g.
+#   dyld: Library not loaded: @rpath/libpythia8.dylib
+# CAP_LIB_PATH was already added above; here we add the externals' dirs too.
+_cap_add_libdir() {
+    [ -n "${1:-}" ] && [ -d "$1" ] || return 0
+    case ":${LD_LIBRARY_PATH:-}:"   in *":$1:"*) ;; *) export LD_LIBRARY_PATH="$1:${LD_LIBRARY_PATH:-}" ;; esac
+    case ":${DYLD_LIBRARY_PATH:-}:" in *":$1:"*) ;; *) export DYLD_LIBRARY_PATH="$1:${DYLD_LIBRARY_PATH:-}" ;; esac
+}
+_cap_add_libdir "${CAP_PYTHIA8_LIB_PATH:-}"
+_cap_add_libdir "${CAP_FASTJET_LIB_PATH:-}"
+unset -f _cap_add_libdir
+
 unset -f _cap_brew_prefix
 
 # ---------- Print the resolved configuration ----------

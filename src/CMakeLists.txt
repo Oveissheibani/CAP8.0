@@ -71,6 +71,24 @@ set(CAP_INSTALL_BINDIR "bin" CACHE STRING "Binary install dir under prefix")
 # Make per-module install targets work without sourcing SetupCAP.sh.
 # All sub-CMakeLists.txt now reference ${CAP_INSTALL_LIBDIR}.
 
+# ------------------------------------------------------------------------------
+# RPATH — bake the library search paths into the installed binaries so CAP
+# runs without DYLD_LIBRARY_PATH / LD_LIBRARY_PATH having to be set by hand.
+#
+# Without this, the installed bin/CAP aborts at run time with
+#   dyld: Library not loaded: @rpath/libpythia8.dylib
+# because Pythia 8 / FastJet ship dylibs whose install-name is @rpath/... and
+# nothing recorded where they actually live.
+#
+#   * CMAKE_INSTALL_RPATH           — CAP's own libraries (<prefix>/lib)
+#   * ..._USE_LINK_PATH = TRUE      — also records the directories of every
+#                                     linked external (ROOT, Pythia 8, FastJet)
+# ------------------------------------------------------------------------------
+set(CMAKE_SKIP_BUILD_RPATH            FALSE)
+set(CMAKE_BUILD_WITH_INSTALL_RPATH    FALSE)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${CAP_INSTALL_LIBDIR}")
+
 # Help find_package locate ROOT and our own modules.
 list(PREPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/../cmake")
 if(DEFINED ENV{ROOTSYS})
