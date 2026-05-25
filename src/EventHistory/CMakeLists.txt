@@ -14,7 +14,8 @@
 set(_eventhistory_sources
     EventHistory.cpp
     StageSelector.cpp
-    ProvenanceTagger.cpp)
+    ProvenanceTagger.cpp
+    ProvenanceObservables.cpp)
 set(_eventhistory_libs)
 
 if(CAP_ENABLE_PYTHIA AND PYTHIA8_FOUND)
@@ -37,3 +38,16 @@ target_include_directories(EventHistory
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 install(TARGETS EventHistory LIBRARY DESTINATION ${CAP_INSTALL_LIBDIR})
+
+# ---------------------------------------------------------------------------
+# Phase 3b — provenance-study : a self-contained Pythia + ROOT runner that
+# produces the provenance-decomposed Single/Global observables.  Built only
+# when Pythia is available (it generates its own events).
+# ---------------------------------------------------------------------------
+if(CAP_ENABLE_PYTHIA AND PYTHIA8_FOUND)
+    add_executable(provenance-study provenance-study.cpp)
+    target_link_libraries(provenance-study
+        PRIVATE EventHistory Pythia8::Pythia8 ${ROOT_LIBRARIES})
+    install(TARGETS provenance-study
+            RUNTIME DESTINATION ${CAP_INSTALL_BINDIR})
+endif()

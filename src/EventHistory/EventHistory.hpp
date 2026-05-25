@@ -61,6 +61,15 @@ struct ParticleNode
     const double m2 = e*e - px*px - py*py - pz*pz;
     return m2 > 0.0 ? std::sqrt(m2) : 0.0;
   }
+  // Pseudorapidity, with guards for exactly-forward / backward tracks.
+  double eta() const
+  {
+    const double p = pmag();
+    if (p <= 0.0)        return  0.0;
+    if (p - pz <= 0.0)   return  20.0;
+    if (p + pz <= 0.0)   return -20.0;
+    return 0.5 * std::log((p + pz) / (p - pz));
+  }
   // Quarks (|pdg|<10) and gluons (21).  Diquarks are intentionally left
   // out at Phase 1 — see HepMC3HistoryBuilder for the rationale.
   bool isParton() const { return std::abs(pdg) < 10 || pdg == 21; }
