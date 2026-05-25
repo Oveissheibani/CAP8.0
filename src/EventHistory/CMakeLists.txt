@@ -13,7 +13,8 @@
 
 set(_eventhistory_sources
     EventHistory.cpp
-    StageSelector.cpp)
+    StageSelector.cpp
+    ProvenanceTagger.cpp)
 set(_eventhistory_libs)
 
 if(CAP_ENABLE_PYTHIA AND PYTHIA8_FOUND)
