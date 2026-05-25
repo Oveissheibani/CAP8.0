@@ -44,6 +44,8 @@ Makefile
 provenance*.txt
 # cap-mechanism-ladder run outputs (.cmnd / .root / comparison files)
 ladder-runs/
+# cap-provenance-plot figure outputs
+provenance-plots/
 *.com
 *.class
 *.dll

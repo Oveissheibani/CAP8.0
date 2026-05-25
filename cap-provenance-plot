@@ -1,0 +1,297 @@
+#!/usr/bin/env python3
+# *********************************************************************
+# cap-provenance-plot
+#
+# Publication-style overlay plots for the parton-tracking feature.
+# Reads the ROOT files written by provenance-study (and by the
+# cap-mechanism-ladder rungs) and produces overlay figures:
+#
+#   single run  (--root FILE)
+#     origin_pt     pion p_T spectrum, split by production origin
+#     origin_eta    pion eta distribution, split by origin
+#     parton_pt     pion p_T spectrum, grouped by ancestor-parton flavour
+#     pair_dphi     two-particle dPhi correlation, split by pair ancestry
+#     pair_deta     two-particle dEta correlation, split by pair ancestry
+#
+#   mechanism ladder  (--ladder DIR)
+#     ladder_<hist>  one observable overlaid across the ladder rungs
+#
+# It also writes a figures.manifest ("file | caption" per line) that the
+# report-builder consumes.
+#
+# Modelled on cap-bf-evolution: PyROOT in batch mode, overlay onto a
+# TCanvas with a legend, SaveAs.  ROOT is imported lazily so --help and
+# file discovery work without ROOT loaded.
+#
+# Usage:
+#   cap-provenance-plot --root pions.root
+#   cap-provenance-plot --ladder ladder-runs
+#   cap-provenance-plot --root pions.root --ladder ladder-runs --format png
+# *********************************************************************
+from __future__ import annotations
+
+import argparse
+import csv
+import glob
+import os
+import sys
+
+REPO = os.path.dirname(os.path.abspath(__file__))
+
+# --- colour schemes: ROOT colour expressions, resolved after import ----------
+# Each series entry: (histogram-base-name, legend label, ROOT colour).
+ORIGIN_SERIES = [
+    ("all",                  "all pions",        "kBlack"),
+    ("origin_Primary",       "primary",          "kAzure+1"),
+    ("origin_FromResonance", "from resonance",    "kRed+1"),
+    ("origin_FromWeakDecay", "from weak decay",  "kGreen+2"),
+]
+PARTON_SERIES = [
+    ("parton_LightQuark", "light quark (u/d)", "kAzure+1"),
+    ("parton_Strange",    "strange",           "kRed+1"),
+    ("parton_Charm",      "charm",             "kOrange+7"),
+    ("parton_Bottom",     "bottom",            "kViolet+1"),
+    ("parton_Gluon",      "gluon",             "kGreen+2"),
+]
+PAIR_SERIES = [
+    ("pair_All",            "all pairs",        "kBlack"),
+    ("pair_SameResonance",  "same resonance",   "kRed+1"),
+    ("pair_SameWeakParent", "same weak parent", "kOrange+7"),
+    ("pair_SharedParton",   "shared parton",    "kAzure+1"),
+    ("pair_Unrelated",      "unrelated",        "kGray+1"),
+]
+
+# Single-run figures: (out-name, prefix, series, x-title, logy, caption).
+FIGURES = [
+    ("origin_pt", "pt_",   ORIGIN_SERIES, "p_{T} [GeV]", True,
+     "Pion transverse-momentum spectrum, decomposed by production origin "
+     "(primary hadronization product vs resonance / weak-decay feed-down)."),
+    ("origin_eta", "eta_", ORIGIN_SERIES, "#eta", False,
+     "Pion pseudorapidity distribution, decomposed by production origin."),
+    ("parton_pt", "pt_",   PARTON_SERIES, "p_{T} [GeV]", True,
+     "Pion transverse-momentum spectrum grouped by the flavour of the "
+     "ancestor pre-hadronization parton."),
+    ("pair_dphi", "dphi_", PAIR_SERIES, "#Delta#phi [rad]", False,
+     "Two-particle #Delta#phi correlation decomposed by pair ancestry. "
+     "Ancestry-related pairs peak near zero; unrelated pairs are flat."),
+    ("pair_deta", "deta_", PAIR_SERIES, "#Delta#eta", False,
+     "Two-particle #Delta#eta correlation decomposed by pair ancestry."),
+]
+
+# Ladder figures: (histogram name, x-title, logy, caption).
+LADDER_HISTS = [
+    ("dphi_pair_SharedParton", "#Delta#phi [rad]", False,
+     "#Delta#phi of shared-parton pairs across the mechanism ladder."),
+    ("dphi_pair_Unrelated",    "#Delta#phi [rad]", False,
+     "#Delta#phi of unrelated (combinatorial) pairs across the ladder."),
+    ("pt_origin_FromResonance", "p_{T} [GeV]", True,
+     "p_{T} of resonance-feed-down pions across the mechanism ladder."),
+    ("pt_parton_Strange",       "p_{T} [GeV]", True,
+     "p_{T} of strange-ancestor pions across the mechanism ladder."),
+]
+
+LADDER_COLOURS = ["kGray+2", "kAzure+1", "kOrange+7", "kRed+1",
+                  "kViolet+1", "kGreen+2"]
+
+
+def root_color(expr, ROOT):
+    """Resolve a colour expression like 'kRed+1' against the ROOT module."""
+    expr = expr.strip()
+    for op in ("+", "-"):
+        if op in expr:
+            base, off = expr.split(op, 1)
+            val = getattr(ROOT, base.strip())
+            return val + int(off) if op == "+" else val - int(off)
+    return getattr(ROOT, expr)
+
+
+def overlay(root_path, series, prefix, xtitle, out_path, caption,
+            logy=False, normalize=False, title=""):
+    """Overlay the named histograms from one ROOT file onto a canvas."""
+    import ROOT
+    ROOT.gROOT.SetBatch(True)
+    ROOT.gStyle.SetOptStat(0)
+
+    f = ROOT.TFile.Open(root_path)
+    if not f or f.IsZombie():
+        print("  ! cannot open %s — skipping" % root_path)
+        return None
+
+    canvas = ROOT.TCanvas("c_" + os.path.basename(out_path), title, 900, 680)
+    if logy:
+        canvas.SetLogy()
+    legend = ROOT.TLegend(0.60, 0.66, 0.88, 0.88)
+    legend.SetBorderSize(0)
+    legend.SetFillStyle(0)
+
+    keep, drawn = [], 0
+    for base, label, colexpr in series:
+        h = f.Get(prefix + base)
+        if not h:
+            continue
+        h = h.Clone(prefix + base + "_c")
+        h.SetDirectory(0)
+        keep.append(h)
+        if normalize and h.Integral() > 0:
+            h.Scale(1.0 / h.Integral())
+        col = root_color(colexpr, ROOT)
+        h.SetLineColor(col)
+        h.SetLineWidth(2)
+        h.SetMarkerColor(col)
+        h.GetXaxis().SetTitle(xtitle)
+        h.GetYaxis().SetTitle("normalized" if normalize else "counts")
+        if title:
+            h.SetTitle(title)
+        h.Draw("HIST" if drawn == 0 else "HIST SAME")
+        legend.AddEntry(h, label, "l")
+        drawn += 1
+
+    if drawn == 0:
+        print("  ! %s: none of the expected histograms were found" % root_path)
+        f.Close()
+        return None
+
+    legend.Draw()
+    canvas.SaveAs(out_path)
+    f.Close()
+    print("  wrote %s" % out_path)
+    return caption
+
+
+def overlay_ladder(rung_files, histname, xtitle, out_path, caption,
+                   logy=False, normalize=True):
+    """Overlay one histogram across the ladder rungs (one ROOT file each)."""
+    import ROOT
+    ROOT.gROOT.SetBatch(True)
+    ROOT.gStyle.SetOptStat(0)
+
+    canvas = ROOT.TCanvas("cl_" + os.path.basename(out_path), histname, 900, 680)
+    if logy:
+        canvas.SetLogy()
+    legend = ROOT.TLegend(0.58, 0.66, 0.88, 0.88)
+    legend.SetBorderSize(0)
+    legend.SetFillStyle(0)
+
+    keep, drawn = [], 0
+    for i, (label, path) in enumerate(rung_files):
+        f = ROOT.TFile.Open(path)
+        if not f or f.IsZombie():
+            print("  ! cannot open rung file %s" % path)
+            continue
+        h = f.Get(histname)
+        if not h:
+            print("  ! %s: histogram '%s' not found" % (path, histname))
+            f.Close()
+            continue
+        h = h.Clone("%s_rung%d" % (histname, i))
+        h.SetDirectory(0)
+        keep.append(h)
+        f.Close()
+        if normalize and h.Integral() > 0:
+            h.Scale(1.0 / h.Integral())
+        col = root_color(LADDER_COLOURS[i % len(LADDER_COLOURS)], ROOT)
+        h.SetLineColor(col)
+        h.SetLineWidth(2)
+        h.GetXaxis().SetTitle(xtitle)
+        h.GetYaxis().SetTitle("normalized" if normalize else "counts")
+        h.SetTitle(histname + " across the mechanism ladder")
+        h.Draw("HIST" if drawn == 0 else "HIST SAME")
+        legend.AddEntry(h, label, "l")
+        drawn += 1
+
+    if drawn == 0:
+        print("  ! ladder: no rung produced histogram '%s'" % histname)
+        return None
+
+    legend.Draw()
+    canvas.SaveAs(out_path)
+    print("  wrote %s" % out_path)
+    return caption
+
+
+def discover_rungs(ladder_dir):
+    """Return [(rung-label, root-path), ...] in ladder order.
+
+    Prefers the column order in ladder-comparison.csv; falls back to a
+    sorted glob of *.root in the directory."""
+    csv_path = os.path.join(ladder_dir, "ladder-comparison.csv")
+    rungs = []
+    if os.path.exists(csv_path):
+        with open(csv_path) as fh:
+            header = next(csv.reader(fh))
+        # header: group, observable, <rung1>, <rung2>, ...
+        for name in header[2:]:
+            tag = name.replace("+", "_").replace(" ", "_")
+            path = os.path.join(ladder_dir, tag + ".root")
+            if os.path.exists(path):
+                rungs.append((name, path))
+    if not rungs:
+        for path in sorted(glob.glob(os.path.join(ladder_dir, "*.root"))):
+            label = os.path.splitext(os.path.basename(path))[0]
+            rungs.append((label, path))
+    return rungs
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description="Overlay plots for provenance-study / mechanism-ladder "
+                    "output.")
+    ap.add_argument("--root", metavar="FILE",
+                    help="a single provenance-study .root file")
+    ap.add_argument("--ladder", metavar="DIR",
+                    help="a cap-mechanism-ladder output directory")
+    ap.add_argument("--outdir", default=os.path.join(REPO, "provenance-plots"),
+                    help="directory for the figures (default provenance-plots/)")
+    ap.add_argument("--format", default="pdf", choices=["pdf", "png", "svg"],
+                    help="figure file format (default pdf)")
+    ap.add_argument("--normalize", action="store_true",
+                    help="normalize every histogram to unit integral")
+    args = ap.parse_args()
+
+    if not args.root and not args.ladder:
+        ap.error("give --root FILE and/or --ladder DIR")
+
+    os.makedirs(args.outdir, exist_ok=True)
+    manifest = []   # (filename, caption)
+
+    print("cap-provenance-plot — figures -> %s" % args.outdir)
+
+    # ---- single-run decomposition figures -------------------------------
+    if args.root:
+        if not os.path.exists(args.root):
+            sys.exit("ROOT file not found: " + args.root)
+        print("single run: %s" % args.root)
+        for name, prefix, series, xtitle, logy, caption in FIGURES:
+            out = os.path.join(args.outdir, name + "." + args.format)
+            cap = overlay(args.root, series, prefix, xtitle, out, caption,
+                          logy=logy, normalize=args.normalize)
+            if cap:
+                manifest.append((os.path.basename(out), cap))
+
+    # ---- mechanism-ladder comparison figures ----------------------------
+    if args.ladder:
+        if not os.path.isdir(args.ladder):
+            sys.exit("ladder directory not found: " + args.ladder)
+        rungs = discover_rungs(args.ladder)
+        if not rungs:
+            sys.exit("no rung .root files found in " + args.ladder)
+        print("ladder: %d rung(s) — %s"
+              % (len(rungs), ", ".join(r[0] for r in rungs)))
+        for histname, xtitle, logy, caption in LADDER_HISTS:
+            out = os.path.join(args.outdir, "ladder_" + histname + "."
+                               + args.format)
+            cap = overlay_ladder(rungs, histname, xtitle, out, caption,
+                                 logy=logy, normalize=True)
+            if cap:
+                manifest.append((os.path.basename(out), cap))
+
+    # ---- manifest for the report-builder --------------------------------
+    man_path = os.path.join(args.outdir, "figures.manifest")
+    with open(man_path, "w") as fh:
+        for fname, caption in manifest:
+            fh.write("%s | %s\n" % (fname, caption))
+    print("\nwrote %d figure(s); manifest -> %s" % (len(manifest), man_path))
+
+
+if __name__ == "__main__":
+    main()
