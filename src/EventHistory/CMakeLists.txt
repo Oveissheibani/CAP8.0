@@ -52,3 +52,12 @@ if(CAP_ENABLE_PYTHIA AND PYTHIA8_FOUND)
     install(TARGETS provenance-study
             RUNTIME DESTINATION ${CAP_INSTALL_BINDIR})
 endif()
+
+# ---------------------------------------------------------------------------
+# provenance-report : assembles the provenance report (paper + presentation
+# modes) via CAP's src/Latex module.  Reads only plain-text inputs, so it
+# links the Latex module but needs neither Pythia nor the EventHistory lib.
+# ---------------------------------------------------------------------------
+add_executable(provenance-report provenance-report.cpp)
+target_link_libraries(provenance-report PRIVATE Latex ${ROOT_LIBRARIES})
+install(TARGETS provenance-report RUNTIME DESTINATION ${CAP_INSTALL_BINDIR})

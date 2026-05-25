@@ -419,9 +419,6 @@ endif()
 # Always-on modules
 # ------------------------------------------------------------------------------
 add_subdirectory(Base)
-# EventHistory — generator-agnostic provenance graph (parton-tracking,
-# Phase 1).  Standalone library; no existing task depends on it yet.
-add_subdirectory(EventHistory)
 add_subdirectory(BasicEventGen)
 add_subdirectory(Math)
 add_subdirectory(Helpers)
@@ -437,6 +434,10 @@ add_subdirectory(Spherocity)
 add_subdirectory(SubSample)
 add_subdirectory(Xml)
 add_subdirectory(Latex)
+# EventHistory — generator-agnostic provenance graph + tools (parton-tracking).
+# Added after Latex so the provenance-report executable can link the Latex
+# module.  The EventHistory library itself has no dependency on other modules.
+add_subdirectory(EventHistory)
 
 # ------------------------------------------------------------------------------
 # Optional modules
