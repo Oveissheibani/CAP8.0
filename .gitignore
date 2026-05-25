@@ -42,6 +42,8 @@ Makefile
 # analysis outputs — e.g. provenance-study writes <name>.root + <name>.root.txt
 *.root.txt
 provenance*.txt
+# cap-mechanism-ladder run outputs (.cmnd / .root / comparison files)
+ladder-runs/
 *.com
 *.class
 *.dll
