@@ -79,14 +79,34 @@ namespace CAP
 
   void LatexDocument::writeHeader(std::ofstream & out)
   {
+  // Document-class aware: a 'beamer' document gets a theme + a title-page
+  // frame; any other class (e.g. 'article') gets \maketitle + abstract.
+  // An empty class name defaults to beamer, preserving the old behaviour.
+  const bool beamer = (_documentClassName.Length()<1) ||
+                      (_documentClassName == "beamer");
+
   if (_documentClassName.Length()<1)
     out << "\\documentclass{beamer}" << endl;
   else
     out << "\\documentclass{" << _documentClassName << "}" << endl;
-  if (_themeName.Length()<1)
-    out << "\\usetheme{Warsaw}" << endl;
-  else
-    out << "\\usetheme{" << _themeName << "}" << endl;
+
+  if (beamer)
+    {
+    if (_themeName.Length()<1)
+      out << "\\usetheme{Warsaw}" << endl;
+    else
+      out << "\\usetheme{" << _themeName << "}" << endl;
+    }
+
+  // User-requested packages belong in the preamble, before \begin{document}.
+  for (auto package : _packages) package->write(out);
+  for (auto command : _commands) command->write(out);
+
+  // Make \institute a no-op when the class does not define it (article),
+  // so a LatexAuthor written for beamer does not break a paper build.
+  if (!beamer)
+    out << "\\providecommand{\\institute}[1]{}" << endl;
+
   skipLines(out,2);
   out << "\\title{" << _title << "}" << endl;
   if (_subtitle.Length()>0)  out << "\\subtitle{" << _subtitle << "}" << endl;
@@ -98,9 +118,22 @@ namespace CAP
   skipLines(out,2);
   out << "\\begin{document}" << endl;
   skipLines(out,2);
-  out << "\\begin{frame}" << endl;
-  out << "\\titlepage" << endl;
-  out << "\\end{frame}" << endl;
+  if (beamer)
+    {
+    out << "\\begin{frame}" << endl;
+    out << "\\titlepage" << endl;
+    out << "\\end{frame}" << endl;
+    }
+  else
+    {
+    out << "\\maketitle" << endl;
+    if (_abstract.Length()>0)
+      {
+      out << "\\begin{abstract}" << endl;
+      out << _abstract << endl;
+      out << "\\end{abstract}" << endl;
+      }
+    }
   skipLines(out,2);
   }
 
@@ -255,6 +288,15 @@ namespace CAP
   figure->setCaption(caption);
   currentScope()->addChild(figure);
   return *figure;
+  }
+
+  LatexTable &  LatexDocument::addTable(const String & caption, const String & label)
+  {
+  LatexTable * table = new LatexTable();
+  table->setCaption(caption);
+  table->setLabel(label);
+  currentScope()->addChild(table);
+  return *table;
   }
 
   LatexText &  LatexDocument::addText(const String & text)

@@ -16,6 +16,7 @@
 #pragma link C++ class CAP::LatexSection+;
 #pragma link C++ class CAP::LatexSubsection+;
 #pragma link C++ class CAP::LatexSubsubsection+;
+#pragma link C++ class CAP::LatexTable+;
 #pragma link C++ class CAP::LatexText+;
 #endif // __CINT__
 

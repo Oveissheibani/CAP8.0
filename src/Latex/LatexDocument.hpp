@@ -11,6 +11,7 @@
 #include "LatexSection.hpp"
 #include "LatexSubsection.hpp"
 #include "LatexSubsubsection.hpp"
+#include "LatexTable.hpp"
 #include "LatexText.hpp"
 
 namespace CAP
@@ -72,6 +73,7 @@ namespace CAP
   LatexFigure &        addFigure(const String & name, const String & label, const String & caption);
   void                 addFigures(const String & path, const std::vector<String> & fileNames);
   void                 addFiguresFrom(const String & path, const String & ext=".pdf", int depth=1);
+  LatexTable &         addTable(const String & caption, const String & label);
   LatexText &          addText(const String & text);
   void endSection();
 

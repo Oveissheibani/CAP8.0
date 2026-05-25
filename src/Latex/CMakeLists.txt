@@ -21,6 +21,7 @@ LatexParagraph.hpp
 LatexSection.hpp
 LatexSubsection.hpp
 LatexSubsubsection.hpp
+LatexTable.hpp
 LatexText.hpp
 LINKDEF LatexLinkDef.h)
 
@@ -43,6 +44,7 @@ LatexParagraph.cpp
 LatexSection.cpp
 LatexSubsection.cpp
 LatexSubsubsection.cpp
+LatexTable.cpp
 LatexText.cpp
 G__Latex.cxx)
 
