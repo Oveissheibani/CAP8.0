@@ -39,6 +39,9 @@ Makefile
 */CMakeFiles
 */*/CMakeFiles
 *.root
+# analysis outputs — e.g. provenance-study writes <name>.root + <name>.root.txt
+*.root.txt
+provenance*.txt
 *.com
 *.class
 *.dll
