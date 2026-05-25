@@ -102,10 +102,15 @@ namespace CAP
   for (auto package : _packages) package->write(out);
   for (auto command : _commands) command->write(out);
 
-  // Make \institute a no-op when the class does not define it (article),
-  // so a LatexAuthor written for beamer does not break a paper build.
+  // Make beamer-only title commands harmless in a non-beamer class
+  // (article), so an author / subtitle written for beamer does not
+  // break a paper build.
   if (!beamer)
+    {
     out << "\\providecommand{\\institute}[1]{}" << endl;
+    out << "\\providecommand{\\subtitle}[1]{}"  << endl;
+    out << "\\providecommand{\\email}[1]{}"     << endl;
+    }
 
   skipLines(out,2);
   out << "\\title{" << _title << "}" << endl;
@@ -284,6 +289,7 @@ namespace CAP
   {
   LatexFigure * figure = new LatexFigure();
   figure->setName(name);
+  figure->setFileName(name);   // LatexFigure::writeContent emits _fileName
   figure->setLabel(label);
   figure->setCaption(caption);
   currentScope()->addChild(figure);

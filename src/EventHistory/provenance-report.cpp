@@ -51,6 +51,28 @@ std::string trim(const std::string & s)
   return s.substr(a, b - a + 1);
 }
 
+// Escape LaTeX-special characters in text taken from external sources
+// (figure captions etc.), so a stray '#', '_' or '%' cannot break the
+// LaTeX compile.  Our own hard-coded prose / math is not passed through.
+std::string texEscape(const std::string & s)
+{
+  std::string o;
+  for (char c : s)
+    {
+    switch (c)
+      {
+      case '#': case '$': case '%': case '&':
+      case '_': case '{': case '}':
+        o += '\\'; o += c;                 break;
+      case '~':  o += "\\textasciitilde{}"; break;
+      case '^':  o += "\\textasciicircum{}";break;
+      case '\\': o += "\\textbackslash{}";  break;
+      default:   o += c;                    break;
+      }
+    }
+  return o;
+}
+
 std::vector<std::string> splitCSV(const std::string & line)
 {
   std::vector<std::string> out;
@@ -285,7 +307,7 @@ void buildPaper(LatexDocument & doc, const ReportData & d)
   for (std::size_t i = 0; i < d.figures.size(); ++i)
     if (figIs(d.figures[i].first, "origin") ||
         figIs(d.figures[i].first, "parton"))
-      doc.addFigure(L(d.figures[i].first), L(""), L(d.figures[i].second));
+      doc.addFigure(L(d.figures[i].first), L(""), L(texEscape(d.figures[i].second)));
   doc.endSection();
 
   doc.addSection(L("Two-particle results"), L("sec:pair"));
@@ -294,7 +316,7 @@ void buildPaper(LatexDocument & doc, const ReportData & d)
                                 L("tab:pair")), "pair class", d.pairs);
   for (std::size_t i = 0; i < d.figures.size(); ++i)
     if (figIs(d.figures[i].first, "pair"))
-      doc.addFigure(L(d.figures[i].first), L(""), L(d.figures[i].second));
+      doc.addFigure(L(d.figures[i].first), L(""), L(texEscape(d.figures[i].second)));
   doc.endSection();
 
   if (!d.ladderRows.empty())
@@ -309,7 +331,7 @@ void buildPaper(LatexDocument & doc, const ReportData & d)
                                  L("tab:ladder")), d);
     for (std::size_t i = 0; i < d.figures.size(); ++i)
       if (figIs(d.figures[i].first, "ladder"))
-        doc.addFigure(L(d.figures[i].first), L(""), L(d.figures[i].second));
+        doc.addFigure(L(d.figures[i].first), L(""), L(texEscape(d.figures[i].second)));
     doc.endSection();
     }
 
@@ -367,7 +389,7 @@ void buildPresentation(LatexDocument & doc, const ReportData & d)
     {
     LatexFrame & f = doc.addFrame(L("Figure"));
     doc.setCurrentScope(&f);
-    doc.addFigure(L(d.figures[i].first), L(""), L(d.figures[i].second));
+    doc.addFigure(L(d.figures[i].first), L(""), L(texEscape(d.figures[i].second)));
     doc.setCurrentScope(&doc);
     }
 

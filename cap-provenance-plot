@@ -72,22 +72,27 @@ FIGURES = [
      "Pion transverse-momentum spectrum grouped by the flavour of the "
      "ancestor pre-hadronization parton."),
     ("pair_dphi", "dphi_", PAIR_SERIES, "#Delta#phi [rad]", False,
-     "Two-particle #Delta#phi correlation decomposed by pair ancestry. "
-     "Ancestry-related pairs peak near zero; unrelated pairs are flat."),
+     "Two-particle azimuthal (Delta-phi) correlation decomposed by pair "
+     "ancestry. Ancestry-related pairs peak near zero; unrelated pairs are flat."),
     ("pair_deta", "deta_", PAIR_SERIES, "#Delta#eta", False,
-     "Two-particle #Delta#eta correlation decomposed by pair ancestry."),
+     "Two-particle pseudorapidity-gap (Delta-eta) correlation decomposed "
+     "by pair ancestry."),
 ]
 
 # Ladder figures: (histogram name, x-title, logy, caption).
 LADDER_HISTS = [
     ("dphi_pair_SharedParton", "#Delta#phi [rad]", False,
-     "#Delta#phi of shared-parton pairs across the mechanism ladder."),
+     "Azimuthal (Delta-phi) correlation of shared-parton pairs across "
+     "the mechanism ladder."),
     ("dphi_pair_Unrelated",    "#Delta#phi [rad]", False,
-     "#Delta#phi of unrelated (combinatorial) pairs across the ladder."),
+     "Azimuthal (Delta-phi) correlation of unrelated (combinatorial) "
+     "pairs across the mechanism ladder."),
     ("pt_origin_FromResonance", "p_{T} [GeV]", True,
-     "p_{T} of resonance-feed-down pions across the mechanism ladder."),
+     "Transverse momentum of resonance-feed-down pions across the "
+     "mechanism ladder."),
     ("pt_parton_Strange",       "p_{T} [GeV]", True,
-     "p_{T} of strange-ancestor pions across the mechanism ladder."),
+     "Transverse momentum of strange-ancestor pions across the "
+     "mechanism ladder."),
 ]
 
 LADDER_COLOURS = ["kGray+2", "kAzure+1", "kOrange+7", "kRed+1",
