@@ -22,6 +22,7 @@
 #include "PythiaHistoryBuilder.hpp"
 #include "ProvenanceTagger.hpp"
 #include "ProvenanceObservables.hpp"
+#include "PairProvenanceObservables.hpp"
 
 #include "Pythia8/Pythia.h"
 
@@ -130,10 +131,11 @@ int main(int argc, char ** argv)
     { std::cerr << "Pythia initialisation failed.\n"; return 1; }
 
   // ---- event loop -----------------------------------------------------
-  PythiaHistoryBuilder  builder;
-  ProvenanceTagger      tagger;
-  ProvenanceObservables obs(species);
-  EventHistory          history;
+  PythiaHistoryBuilder      builder;
+  ProvenanceTagger          tagger;
+  ProvenanceObservables     obs(species);       // single-particle, by origin
+  PairProvenanceObservables pairObs(species);   // two-particle, by ancestry
+  EventHistory              history;
 
   long generated = 0;
   for (long i = 0; i < nEvents; ++i)
@@ -142,32 +144,41 @@ int main(int argc, char ** argv)
     builder.build(pythia->event, history);
     const std::vector<ProvenanceTag> tags = tagger.tagFinalState(history);
     obs.accumulate(history, tags);
+    pairObs.accumulate(history, tags);
     ++generated;
     if (generated % 1000 == 0)
       std::cout << "  ... " << generated << " events\r" << std::flush;
     }
   std::cout << "  generated " << generated << " event(s)\n\n";
 
-  // ---- report ---------------------------------------------------------
-  const std::string summary = obs.report();
-  std::cout << summary << "\n";
+  // ---- reports --------------------------------------------------------
+  const std::string summarySingle = obs.report();
+  const std::string summaryPair   = pairObs.report();
+  std::cout << summarySingle << "\n" << summaryPair << "\n";
 
   // ---- ROOT output ----------------------------------------------------
   TFile fout(outName.c_str(), "RECREATE");
   if (fout.IsZombie())
     { std::cerr << "cannot open output file: " << outName << "\n"; return 1; }
-  for (const auto & kv : obs.histograms())
+
+  // Convert every in-memory Hist1D in a map to a ROOT TH1D and write it.
+  auto writeHistos = [](const std::map<std::string,Hist1D> & hs)
     {
-    const Hist1D & h = kv.second;
-    TH1D th(h.name.c_str(), h.title.c_str(), h.nbins, h.lo, h.hi);
-    for (int b = 0; b < h.nbins; ++b)
-      th.SetBinContent(b + 1, h.counts[static_cast<size_t>(b)]);
-    th.SetEntries(h.entries);
-    th.Write();
-    }
+    for (const auto & kv : hs)
+      {
+      const Hist1D & h = kv.second;
+      TH1D th(h.name.c_str(), h.title.c_str(), h.nbins, h.lo, h.hi);
+      for (int b = 0; b < h.nbins; ++b)
+        th.SetBinContent(b + 1, h.counts[static_cast<size_t>(b)]);
+      th.SetEntries(h.entries);
+      th.Write();
+      }
+    };
+  writeHistos(obs.histograms());
+  writeHistos(pairObs.histograms());
+  const size_t nHist = obs.histograms().size() + pairObs.histograms().size();
   fout.Close();
-  std::cout << "wrote " << obs.histograms().size()
-            << " histograms to " << outName << "\n";
+  std::cout << "wrote " << nHist << " histograms to " << outName << "\n";
 
   // ---- text summary next to the ROOT file -----------------------------
   const std::string txtName = outName + ".txt";
@@ -177,7 +188,7 @@ int main(int argc, char ** argv)
     tf << "provenance-study summary\n"
        << "  events="  << generated << "  ecm=" << ecm
        << "  process=" << process   << "  seed=" << seed << "\n\n"
-       << summary;
+       << summarySingle << "\n" << summaryPair;
     std::cout << "wrote summary to " << txtName << "\n";
     }
 

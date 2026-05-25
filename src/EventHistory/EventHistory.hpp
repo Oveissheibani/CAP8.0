@@ -70,6 +70,8 @@ struct ParticleNode
     if (p + pz <= 0.0)   return -20.0;
     return 0.5 * std::log((p + pz) / (p - pz));
   }
+  // Azimuthal angle in (-pi, pi].
+  double phi() const { return std::atan2(py, px); }
   // Quarks (|pdg|<10) and gluons (21).  Diquarks are intentionally left
   // out at Phase 1 — see HepMC3HistoryBuilder for the rationale.
   bool isParton() const { return std::abs(pdg) < 10 || pdg == 21; }
