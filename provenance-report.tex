@@ -1,0 +1,230 @@
+\documentclass{article}
+\usepackage{graphicx}
+\providecommand{\institute}[1]{}
+
+
+\title{Provenance Decomposition of Pion Production in Pythia 8}
+\subtitle{Latex Galore}
+
+\author{CAP parton-tracking}
+\institute{Wayne State University}
+\date{\today}
+
+
+\begin{document}
+
+
+\maketitle
+\begin{abstract}
+This report presents a provenance decomposition of pion production in Pythia 8.  Every final-state hadron is traced through a generator-agnostic event-history graph back to its parent partons, separating the yield and the two-particle correlation into the parts that originate in the partonic stage, in hadronization, and in subsequent decays.
+\end{abstract}
+
+
+
+
+\section{Introduction}
+
+
+Final-state hadron observables mix several physical origins: direct hadronization products, resonance feed-down, and weak-decay products.  This analysis attaches a full provenance record to every hadron so that each contribution can be measured separately.
+
+
+
+
+\section{Method}
+
+
+For every event the Pythia record is converted into an EventHistory directed graph.  A ProvenanceTagger walks each final hadron back up the graph, recording its production stage, its parent hadron (and whether that parent is a short-lived resonance), and its ancestor partons.  Single-particle spectra and two-particle correlations are then accumulated, decomposed by those provenance classes.
+
+
+
+
+\section{Configuration and binning}
+
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{l l}
+\hline
+parameter & value \\
+\hline\hline
+events & 20000 \\
+$\sqrt{s}$ & 13000 GeV \\
+QCD process & soft \\
+random seed & 12345 \\
+species (|pdg|) & 211 \\
+\hline
+\end{tabular}
+\caption{Monte-Carlo run configuration.}
+\label{tab:config}
+\end{table}
+
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{l r l}
+\hline
+observable & bins & range \\
+\hline\hline
+$p_{T}$ & 100 & 0 -- 10 GeV \\
+$\eta$ & 120 & $-6$ -- $6$ \\
+$\Delta\eta$ & 80 & $-8$ -- $8$ \\
+$\Delta\phi$ & 72 & $-\pi$ -- $\pi$ \\
+\hline
+\end{tabular}
+\caption{Analysis binning.}
+\label{tab:binning}
+\end{table}
+
+
+
+
+\section{Single-particle results}
+
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{l r r}
+\hline
+origin class & count & fraction \\
+\hline\hline
+Primary & 587869 & 31.67\% \\
+FromResonance & 1071302 & 57.72\% \\
+FromWeakDecay & 196763 & 10.60\% \\
+Unknown & 0 & 0.00\% \\
+\hline
+\end{tabular}
+\caption{Pion yield by production origin.}
+\label{tab:origin}
+\end{table}
+
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{l r r}
+\hline
+parton class & count & fraction \\
+\hline\hline
+LightQuark & 1435838 & 77.36\% \\
+Strange & 235015 & 12.66\% \\
+Charm & 58315 & 3.14\% \\
+Bottom & 4895 & 0.26\% \\
+Gluon & 90202 & 4.86\% \\
+NonPartonic & 31669 & 1.71\% \\
+\hline
+\end{tabular}
+\caption{Pion yield by ancestor-parton flavour.}
+\label{tab:parton}
+\end{table}
+
+\begin{figure}
+\includegraphics[scale=0.75,height=2in]{}
+\caption{Pion transverse-momentum spectrum, decomposed by production origin (primary hadronization product vs resonance / weak-decay feed-down).}
+\label{}
+\end{figure}
+\begin{figure}
+\includegraphics[scale=0.75,height=2in]{}
+\caption{Pion pseudorapidity distribution, decomposed by production origin.}
+\label{}
+\end{figure}
+\begin{figure}
+\includegraphics[scale=0.75,height=2in]{}
+\caption{Pion transverse-momentum spectrum grouped by the flavour of the ancestor pre-hadronization parton.}
+\label{}
+\end{figure}
+
+
+
+\section{Two-particle results}
+
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{l r r}
+\hline
+pair class & count & fraction \\
+\hline\hline
+SameResonance & 318962 & 0.26\% \\
+SameWeakParent & 72371 & 0.06\% \\
+SharedParton & 22638651 & 18.35\% \\
+Unrelated & 100350086 & 81.33\% \\
+\hline
+\end{tabular}
+\caption{Same-event pion pairs by ancestry.}
+\label{tab:pair}
+\end{table}
+
+\begin{figure}
+\includegraphics[scale=0.75,height=2in]{}
+\caption{Two-particle #Delta#phi correlation decomposed by pair ancestry. Ancestry-related pairs peak near zero; unrelated pairs are flat.}
+\label{}
+\end{figure}
+\begin{figure}
+\includegraphics[scale=0.75,height=2in]{}
+\caption{Two-particle #Delta#eta correlation decomposed by pair ancestry.}
+\label{}
+\end{figure}
+
+
+
+\section{Mechanism ladder}
+
+
+The same analysis is repeated as Pythia mechanisms are switched on one at a time (shower, MPI, colour reconnection, rope hadronization), showing how each mechanism shifts the provenance breakdown.
+
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{l l r r r r}
+\hline
+group & observable & shower & shower+MPI & shower+MPI+CR & shower+MPI+CR+rope \\
+\hline\hline
+origin & Primary & 31.7900 & 31.6500 & 31.6700 & 31.5300 \\
+origin & FromResonance & 57.9000 & 57.8800 & 57.7200 & 57.7700 \\
+origin & FromWeakDecay & 10.3000 & 10.4700 & 10.6000 & 10.7000 \\
+parton & LightQuark & 89.9000 & 76.2400 & 77.3600 & 79.4300 \\
+parton & Strange & 6.1800 & 11.8800 & 12.6600 & 12.3500 \\
+parton & Charm & 1.8500 & 2.7900 & 3.1400 & 2.9400 \\
+parton & Bottom & 0.2800 & 0.2300 & 0.2600 & 0.2400 \\
+parton & Gluon & 0.0000 & 8.0700 & 4.8600 & 4.3500 \\
+pair & SameResonance & 0.7400 & 0.1700 & 0.2600 & 0.2300 \\
+pair & SameWeakParent & 0.1600 & 0.0400 & 0.0600 & 0.0500 \\
+pair & SharedParton & 39.3000 & 15.9500 & 18.3500 & 19.9100 \\
+pair & Unrelated & 59.8000 & 83.8400 & 81.3300 & 79.8100 \\
+\hline
+\end{tabular}
+\caption{Provenance breakdown across the mechanism ladder (percentages).}
+\label{tab:ladder}
+\end{table}
+
+\begin{figure}
+\includegraphics[scale=0.75,height=2in]{}
+\caption{#Delta#phi of shared-parton pairs across the mechanism ladder.}
+\label{}
+\end{figure}
+\begin{figure}
+\includegraphics[scale=0.75,height=2in]{}
+\caption{#Delta#phi of unrelated (combinatorial) pairs across the ladder.}
+\label{}
+\end{figure}
+\begin{figure}
+\includegraphics[scale=0.75,height=2in]{}
+\caption{p_{T} of resonance-feed-down pions across the mechanism ladder.}
+\label{}
+\end{figure}
+\begin{figure}
+\includegraphics[scale=0.75,height=2in]{}
+\caption{p_{T} of strange-ancestor pions across the mechanism ladder.}
+\label{}
+\end{figure}
+
+
+
+\section{Discussion}
+
+
+The resonance / weak-decay split depends on a curated resonance list; the primary fraction, taken directly from the production stage, is exact.  Sub-percent pair fractions carry statistical uncertainty that should be quantified before quotation.
+
+
+
+
+\end{document}
