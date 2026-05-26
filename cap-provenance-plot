@@ -61,6 +61,42 @@ PAIR_SERIES = [
     ("pair_Unrelated",      "unrelated",        "kGray+1"),
 ]
 
+# Same-Sign / Opposite-Sign breakdowns of every pair class.
+PAIR_SERIES_SS = [
+    ("pair_All_SS",            "all pairs (SS)",        "kBlack"),
+    ("pair_SameResonance_SS",  "same resonance (SS)",   "kRed+1"),
+    ("pair_SameWeakParent_SS", "same weak parent (SS)", "kOrange+7"),
+    ("pair_SharedParton_SS",   "shared parton (SS)",    "kAzure+1"),
+    ("pair_Unrelated_SS",      "unrelated (SS)",        "kGray+1"),
+]
+PAIR_SERIES_OS = [
+    ("pair_All_OS",            "all pairs (OS)",        "kBlack"),
+    ("pair_SameResonance_OS",  "same resonance (OS)",   "kRed+1"),
+    ("pair_SameWeakParent_OS", "same weak parent (OS)", "kOrange+7"),
+    ("pair_SharedParton_OS",   "shared parton (OS)",    "kAzure+1"),
+    ("pair_Unrelated_OS",      "unrelated (OS)",        "kGray+1"),
+]
+
+# Resonance-type sub-classes — only SameResonance is subdivided.
+RESONANCE_SERIES = [
+    ("pair_SameResonance_Rho",      "rho (770)",     "kRed+1"),
+    ("pair_SameResonance_Omega",    "omega (782)",   "kOrange+7"),
+    ("pair_SameResonance_Phi",      "phi (1020)",    "kAzure+1"),
+    ("pair_SameResonance_KStar",    "K* (892)",      "kGreen+2"),
+    ("pair_SameResonance_Eta",      "eta",           "kViolet+1"),
+    ("pair_SameResonance_EtaPrime", "eta'",          "kMagenta+1"),
+    ("pair_SameResonance_Delta",    "Delta (1232)",  "kCyan+1"),
+    ("pair_SameResonance_Other",    "other",         "kGray+1"),
+]
+
+# SharedParton depth — hard-process shared (jet-like) vs shower-only shared.
+SHARED_PARTON_DEPTH_SERIES = [
+    ("pair_SharedParton_HardProcessShared",
+     "hard-process shared (jet-like)",  "kRed+1"),
+    ("pair_SharedParton_ShowerOnlyShared",
+     "shower/MPI-only shared",          "kAzure+1"),
+]
+
 # Single-run overlay figures.
 #   tuple = (out-name, prefix, series, x-title, logy, normalize, caption)
 FIGURES = [
@@ -92,6 +128,50 @@ FIGURES = [
      "near-side spike, SharedParton is a broader peak, Unrelated is flat."),
     ("pair_deta_shapes", "deta_", PAIR_SERIES, "#Delta#eta", False, True,
      "pair_deta with each class normalized to unit area for shape comparison."),
+    # ---- new: Same-Sign / Opposite-Sign breakdown (balance-function split)
+    ("pair_dphi_SS", "dphi_", PAIR_SERIES_SS, "#Delta#phi [rad]", True, False,
+     "Same-Sign pair-class breakdown of the Delta-phi correlation. Direct "
+     "decomposition of the SS half of a balance function by ancestry."),
+    ("pair_dphi_OS", "dphi_", PAIR_SERIES_OS, "#Delta#phi [rad]", True, False,
+     "Opposite-Sign pair-class breakdown of the Delta-phi correlation. "
+     "Direct decomposition of the OS half of a balance function by ancestry."),
+    ("pair_deta_SS", "deta_", PAIR_SERIES_SS, "#Delta#eta", True, False,
+     "Same-Sign Delta-eta correlation, decomposed by pair ancestry."),
+    ("pair_deta_OS", "deta_", PAIR_SERIES_OS, "#Delta#eta", True, False,
+     "Opposite-Sign Delta-eta correlation, decomposed by pair ancestry."),
+    ("pair_mass_SS", "mass_", PAIR_SERIES_SS, "pair invariant mass [GeV]",
+     True, False,
+     "Same-Sign pair invariant-mass spectrum, decomposed by ancestry. "
+     "Resonance peaks live in the OS plot; SS is dominated by combinatorics."),
+    ("pair_mass_OS", "mass_", PAIR_SERIES_OS, "pair invariant mass [GeV]",
+     True, False,
+     "Opposite-Sign pair invariant-mass spectrum, decomposed by ancestry. "
+     "The rho/omega/K*/phi peaks live in the SameResonance (OS) line."),
+    # ---- new: resonance-type sub-classes (refines SameResonance) ---------
+    ("pair_dphi_resonance", "dphi_", RESONANCE_SERIES, "#Delta#phi [rad]",
+     True, False,
+     "Delta-phi correlation among Same-Resonance pairs, broken down by "
+     "the parent resonance species."),
+    ("pair_deta_resonance", "deta_", RESONANCE_SERIES, "#Delta#eta",
+     True, False,
+     "Delta-eta correlation among Same-Resonance pairs, by parent species."),
+    ("pair_mass_resonance", "mass_", RESONANCE_SERIES,
+     "pair invariant mass [GeV]", True, False,
+     "Invariant mass of Same-Resonance pairs, broken down by parent species. "
+     "Each curve peaks at the corresponding mother resonance's mass — "
+     "rho near 0.77, omega near 0.78, K* near 0.89, phi near 1.02 GeV."),
+    # ---- new: SharedParton depth (hard-process vs shower-only) -----------
+    ("pair_dphi_sharedparton_depth", "dphi_", SHARED_PARTON_DEPTH_SERIES,
+     "#Delta#phi [rad]", True, False,
+     "Delta-phi correlation of SharedParton pairs, split into pairs that "
+     "descend from the SAME hard-process parton (jet-like, narrow peak) "
+     "and pairs that share only at the shower/MPI level (soft, broader)."),
+    ("pair_deta_sharedparton_depth", "deta_", SHARED_PARTON_DEPTH_SERIES,
+     "#Delta#eta", True, False,
+     "Delta-eta correlation of SharedParton pairs, split by sharing depth."),
+    ("pair_mass_sharedparton_depth", "mass_", SHARED_PARTON_DEPTH_SERIES,
+     "pair invariant mass [GeV]", True, False,
+     "Pair invariant mass of SharedParton pairs, split by sharing depth."),
 ]
 
 # Single-histogram figures.  (out-name, hist-name, x-title, logy, caption)
@@ -101,6 +181,14 @@ SINGLE_FIGURES = [
      "How many pre-hadronization partons each final pion descends from. "
      "1 = single-parton ancestry (one string endpoint), 2+ = several "
      "(string gluon kinks, MPI merging), 0 = no partonic origin found."),
+    ("common_ancestor_depth", "common_ancestor_depth",
+     "Stage of deepest common ancestor (Unknown=0, HardProcess=20, "
+     "PartonsPreHadronization=70, PrimaryHadrons=80)", True,
+     "Distribution over pion PAIRS of the earliest stage at which the two "
+     "tracks share an ancestor.  Bin 0 = no common ancestor (Unrelated). "
+     "Higher bin = deeper sharing: 20 = same hard-process parton, "
+     "70 = same pre-hadronization parton, 80 = same primary hadron parent. "
+     "Single-plot summary of how genealogically close pion pairs are."),
 ]
 
 # Fraction (ratio-to-all) figures: f_class(x) = N_class(x) / N_all(x).

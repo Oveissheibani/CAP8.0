@@ -84,7 +84,10 @@ ProvenanceTag ProvenanceTagger::tag(const EventHistory & h, int idx) const
 
   const std::vector<int> hard = h.ancestorsAtStage(idx, Stage::HardProcess);
   if (!hard.empty())
-    t.hardPartonPdg = h.node(hard.front()).pdg;
+    {
+    t.hardPartonPdg   = h.node(hard.front()).pdg;
+    t.hardPartonIndex = hard.front();
+    }
 
   // How far back the chain reaches.
   if (!hard.empty())
@@ -122,6 +125,11 @@ bool sharesPartonAncestor(const ProvenanceTag & a, const ProvenanceTag & b)
     for (int y : b.partonAncestorIndices)
       if (x == y) return true;
   return false;
+}
+
+bool sharesHardProcessAncestor(const ProvenanceTag & a, const ProvenanceTag & b)
+{
+  return a.hardPartonIndex >= 0 && a.hardPartonIndex == b.hardPartonIndex;
 }
 
 } // namespace CAP

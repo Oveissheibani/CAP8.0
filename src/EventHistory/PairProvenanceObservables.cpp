@@ -28,6 +28,30 @@ double wrapPi(double d)
 // dEta / dPhi histogram axes.
 const int    DETA_NBINS = 80;   const double DETA_LO = -8.0;  const double DETA_HI = 8.0;
 const int    DPHI_NBINS = 72;   const double DPHI_LO = -PI;   const double DPHI_HI = PI;
+
+// Group a resonance PDG into the major contributors that show up in pion
+// pairs.  Anything unrecognised falls into "Other".
+std::string classifyResonanceType(int pdg)
+{
+  switch (std::abs(pdg))
+    {
+    case 113:  case 213:                                    return "Rho";
+    case 223:                                               return "Omega";
+    case 333:                                               return "Phi";
+    case 313:  case 323:                                    return "KStar";
+    case 221:                                               return "Eta";
+    case 331:                                               return "EtaPrime";
+    case 1114: case 2114: case 2214: case 2224:             return "Delta";
+    default:                                                return "Other";
+    }
+}
+
+// Charge tag derived from two final-state PDGs.  Same sign (both > 0 or
+// both < 0) -> "SS"; opposite -> "OS".
+std::string pairChargeTag(int pdgA, int pdgB)
+{
+  return ((pdgA > 0) == (pdgB > 0)) ? "SS" : "OS";
+}
 } // namespace
 
 // ----------------------------------------------------------------------
@@ -73,6 +97,8 @@ Hist1D & PairProvenanceObservables::H(const std::string & name)
     { nb = DETA_NBINS; lo = DETA_LO; hi = DETA_HI; }
   else if (name.rfind("mass_", 0) == 0)
     { nb = 150; lo = 0.0; hi = 3.0; }      // pair invariant mass, 20 MeV bins
+  else if (name.rfind("common_ancestor_depth", 0) == 0)
+    { nb = 11; lo = -5.0; hi = 105.0; }    // one bin per Stage value
   else  // dphi_*
     { nb = DPHI_NBINS; lo = DPHI_LO; hi = DPHI_HI; }
 
@@ -140,6 +166,54 @@ void PairProvenanceObservables::accumulate(const EventHistory &               hi
       H("deta_pair_" + pairClassName(pc)).fill(deta);
       H("dphi_pair_" + pairClassName(pc)).fill(dphi);
       H("mass_pair_" + pairClassName(pc)).fill(m);
+
+      // ---- Same-Sign / Opposite-Sign breakdown --------------------------
+      // Applies to every class; this is the direct balance-function split.
+      const std::string sign = pairChargeTag(parts[i].tag->finalPdg,
+                                             parts[j].tag->finalPdg);
+      H("deta_pair_All_"             + sign).fill(deta);
+      H("dphi_pair_All_"             + sign).fill(dphi);
+      H("mass_pair_All_"             + sign).fill(m);
+      H("deta_pair_" + pairClassName(pc) + "_" + sign).fill(deta);
+      H("dphi_pair_" + pairClassName(pc) + "_" + sign).fill(dphi);
+      H("mass_pair_" + pairClassName(pc) + "_" + sign).fill(m);
+
+      // ---- Resonance-type sub-classes (only when SameResonance) --------
+      // Names the peaks visible in the mass overlay: rho, omega, phi, K*, ...
+      if (pc == PairClass::SameResonance)
+        {
+        const std::string rt =
+          classifyResonanceType(parts[i].tag->resonancePdg);
+        H("dphi_pair_SameResonance_" + rt).fill(dphi);
+        H("deta_pair_SameResonance_" + rt).fill(deta);
+        H("mass_pair_SameResonance_" + rt).fill(m);
+        }
+
+      // ---- SharedParton depth — hard-process vs shower-only ------------
+      // HardProcessShared: both pions descend from the SAME hard-process
+      // parton (jet-like).  ShowerOnlyShared: share only at the soft /
+      // shower / MPI level.
+      if (pc == PairClass::SharedParton)
+        {
+        const std::string depth =
+          sharesHardProcessAncestor(*parts[i].tag, *parts[j].tag)
+            ? "HardProcessShared" : "ShowerOnlyShared";
+        H("dphi_pair_SharedParton_" + depth).fill(dphi);
+        H("deta_pair_SharedParton_" + depth).fill(deta);
+        H("mass_pair_SharedParton_" + depth).fill(m);
+        }
+
+      // ---- Common-ancestor depth (single 1D histogram) -----------------
+      // For each pair, the EARLIEST stage at which they share an ancestor.
+      // Stage::Unknown = no shared ancestor (Unrelated).
+      Stage commonStage = Stage::Unknown;
+      if (sharesHardProcessAncestor(*parts[i].tag, *parts[j].tag))
+        commonStage = Stage::HardProcess;
+      else if (sharesPartonAncestor(*parts[i].tag, *parts[j].tag))
+        commonStage = Stage::PartonsPreHadronization;
+      else if (sharesDecayParent(*parts[i].tag, *parts[j].tag))
+        commonStage = Stage::PrimaryHadrons;
+      H("common_ancestor_depth").fill(static_cast<double>(stageOrder(commonStage)));
 
       _pairs++;
       _count[static_cast<int>(pc)]++;

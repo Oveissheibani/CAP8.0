@@ -56,9 +56,13 @@ struct ProvenanceTag
 
   // --- partonic ancestry ---
   std::vector<int> partonAncestorIndices;  // pre-hadronization partons
-  int   leadPartonPdg = 0;        // flavour of the first parton ancestor
-  int   hardPartonPdg = 0;        // ancestor flavour at the hard process
-  Stage deepestStage  = Stage::Unknown;    // earliest stage reached
+  int   leadPartonPdg     = 0;    // flavour of the first parton ancestor
+  int   hardPartonPdg     = 0;    // ancestor flavour at the hard process
+  int   hardPartonIndex   = -1;   // node index of the hard-process ancestor
+                                  // (allows "same hard parton" check at the
+                                  // pair level: two hadrons sharing the same
+                                  // hard parton came from one hard scatter)
+  Stage deepestStage      = Stage::Unknown;    // earliest stage reached
 
   bool hasPartonicOrigin() const { return !partonAncestorIndices.empty(); }
 };
@@ -98,6 +102,11 @@ bool sharesDecayParent(const ProvenanceTag & a, const ProvenanceTag & b);
 // parton ancestor — i.e. their correlation is, at least in part,
 // inherited from the partonic stage.
 bool sharesPartonAncestor(const ProvenanceTag & a, const ProvenanceTag & b);
+
+// True when both hadrons descend from the SAME hard-process parton —
+// the deepest possible ancestry sharing.  Distinguishes hard-scattering
+// (jet-like) sharing from soft / shower / MPI-only sharing.
+bool sharesHardProcessAncestor(const ProvenanceTag & a, const ProvenanceTag & b);
 
 } // namespace CAP
 
