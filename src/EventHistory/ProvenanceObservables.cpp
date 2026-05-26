@@ -120,6 +120,8 @@ Hist1D & ProvenanceObservables::H(const std::string & name)
     { nb = PT_NBINS;  lo = PT_LO;  hi = PT_HI;  }
   else if (name.rfind("eta_", 0) == 0)
     { nb = ETA_NBINS; lo = ETA_LO; hi = ETA_HI; }
+  else if (name.rfind("n_parton_ancestors", 0) == 0)
+    { nb = 11;  lo = -0.5; hi = 10.5; }   // integer-valued, bins per count
   else  // mult_*
     { nb = MUL_NBINS; lo = MUL_LO; hi = MUL_HI; }
 
@@ -156,6 +158,13 @@ void ProvenanceObservables::accumulate(const EventHistory &               histor
     H("pt_origin_"  + originClassName(oc)).fill(pt);
     H("eta_origin_" + originClassName(oc)).fill(eta);
     H("pt_parton_"  + partonClassName(pc)).fill(pt);
+
+    // ancestry-depth diagnostic: how many pre-hadronization partons does
+    // this final hadron actually descend from?  Tells the user whether
+    // hadrons typically trace to a single parton (string endpoint) or
+    // share several (gluon kinks, MPI merging).
+    H("n_parton_ancestors")
+      .fill(static_cast<double>(t.partonAncestorIndices.size()));
 
     if      (oc == OriginClass::Primary)       mPrim++;
     else if (oc == OriginClass::FromResonance) mRes++;

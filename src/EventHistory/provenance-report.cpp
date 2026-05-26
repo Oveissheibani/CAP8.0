@@ -318,9 +318,11 @@ void buildPaper(LatexDocument & doc, const ReportData & d)
   if (!d.parton.empty())
     fillClassTable(doc.addTable(L("Pion yield by ancestor-parton flavour."),
                                 L("tab:parton")), "parton class", d.parton);
+  // Single-particle section catches anything that is not a pair / ladder
+  // figure — origin, parton, n_parton_ancestors, future single-particle.
   for (std::size_t i = 0; i < d.figures.size(); ++i)
-    if (figIs(d.figures[i].first, "origin") ||
-        figIs(d.figures[i].first, "parton"))
+    if (!figIs(d.figures[i].first, "pair") &&
+        !figIs(d.figures[i].first, "ladder"))
       doc.addFigure(L(d.figures[i].first), L(""), L(texEscape(d.figures[i].second)));
   doc.endSection();
 

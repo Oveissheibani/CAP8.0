@@ -61,23 +61,64 @@ PAIR_SERIES = [
     ("pair_Unrelated",      "unrelated",        "kGray+1"),
 ]
 
-# Single-run figures: (out-name, prefix, series, x-title, logy, caption).
+# Single-run overlay figures.
+#   tuple = (out-name, prefix, series, x-title, logy, normalize, caption)
 FIGURES = [
-    ("origin_pt", "pt_",   ORIGIN_SERIES, "p_{T} [GeV]", True,
+    ("origin_pt", "pt_",   ORIGIN_SERIES, "p_{T} [GeV]", True, False,
      "Pion transverse-momentum spectrum, decomposed by production origin "
      "(primary hadronization product vs resonance / weak-decay feed-down)."),
-    ("origin_eta", "eta_", ORIGIN_SERIES, "#eta", False,
+    ("origin_eta", "eta_", ORIGIN_SERIES, "#eta", False, False,
      "Pion pseudorapidity distribution, decomposed by production origin."),
-    ("parton_pt", "pt_",   PARTON_SERIES, "p_{T} [GeV]", True,
+    ("parton_pt", "pt_",   PARTON_SERIES, "p_{T} [GeV]", True, False,
      "Pion transverse-momentum spectrum grouped by the flavour of the "
      "ancestor pre-hadronization parton."),
-    ("pair_dphi", "dphi_", PAIR_SERIES, "#Delta#phi [rad]", True,
+    ("pair_dphi", "dphi_", PAIR_SERIES, "#Delta#phi [rad]", True, False,
      "Two-particle azimuthal (Delta-phi) correlation decomposed by pair "
-     "ancestry (log y, since the classes span four orders of magnitude). "
-     "Ancestry-related pairs peak near zero; unrelated pairs are flat."),
-    ("pair_deta", "deta_", PAIR_SERIES, "#Delta#eta", True,
+     "ancestry (log y, since the classes span four orders of magnitude)."),
+    ("pair_deta", "deta_", PAIR_SERIES, "#Delta#eta", True, False,
      "Two-particle pseudorapidity-gap (Delta-eta) correlation decomposed "
      "by pair ancestry (log y)."),
+    # ---- new: pair invariant mass — VALIDATES the tagger ----
+    # SameResonance pairs cluster at the rho(770), K*(892), omega(782),
+    # phi(1020), Delta(1232) masses; the All curve smears over everything.
+    ("pair_mass", "mass_", PAIR_SERIES, "pair invariant mass [GeV]", True, False,
+     "Two-particle invariant mass decomposed by pair ancestry. Same-resonance "
+     "pairs cluster at the rho / K* / omega / phi / Delta masses, a direct "
+     "physics check that the resonance tagger is correct."),
+    # ---- new: shape comparison (each class normalized to unit area) ----
+    ("pair_dphi_shapes", "dphi_", PAIR_SERIES, "#Delta#phi [rad]", False, True,
+     "Same as pair_dphi but each class is normalized to unit area so the "
+     "correlation shapes are directly comparable: SameResonance is a tight "
+     "near-side spike, SharedParton is a broader peak, Unrelated is flat."),
+    ("pair_deta_shapes", "deta_", PAIR_SERIES, "#Delta#eta", False, True,
+     "pair_deta with each class normalized to unit area for shape comparison."),
+]
+
+# Single-histogram figures.  (out-name, hist-name, x-title, logy, caption)
+SINGLE_FIGURES = [
+    ("n_parton_ancestors", "n_parton_ancestors",
+     "number of pre-hadronization parton ancestors per pion", True,
+     "How many pre-hadronization partons each final pion descends from. "
+     "1 = single-parton ancestry (one string endpoint), 2+ = several "
+     "(string gluon kinks, MPI merging), 0 = no partonic origin found."),
+]
+
+# Fraction (ratio-to-all) figures: f_class(x) = N_class(x) / N_all(x).
+# Answers 'where does each class dominate locally', i.e. how a small global
+# fraction can be a large local one (e.g. SameResonance near #Delta#phi=0).
+#   tuple = (out-name, prefix, series, x-title, divisor-base, caption)
+FRACTION_FIGURES = [
+    ("pair_dphi_fraction", "dphi_", PAIR_SERIES, "#Delta#phi [rad]", "pair_All",
+     "Local pair-class fraction vs Delta-phi:  N_class(Delta-phi) / N_all. "
+     "Even a class with a tiny global fraction can dominate locally near "
+     "Delta-phi = 0."),
+    ("pair_deta_fraction", "deta_", PAIR_SERIES, "#Delta#eta", "pair_All",
+     "Local pair-class fraction vs Delta-eta."),
+    ("origin_pt_fraction", "pt_", ORIGIN_SERIES, "p_{T} [GeV]", "all",
+     "Local origin-class fraction vs p_T:  whether feed-down or primary "
+     "dominates depends on the momentum window."),
+    ("parton_pt_fraction", "pt_", PARTON_SERIES, "p_{T} [GeV]", "all",
+     "Local parton-flavour fraction vs p_T."),
 ]
 
 # Ladder figures: (histogram name, x-title, logy, caption).
@@ -158,6 +199,92 @@ def overlay(root_path, series, prefix, xtitle, out_path, caption,
         return None
 
     legend.Draw()
+    canvas.SaveAs(out_path)
+    f.Close()
+    print("  wrote %s" % out_path)
+    return caption
+
+
+def overlay_fractions(root_path, series, prefix, divisor_base,
+                      xtitle, out_path, caption):
+    """Plot N_class / N_divisor per bin for each series entry.  Shows the
+    LOCAL composition of the observable — e.g. what fraction of pairs at
+    Delta-phi=0 is SameResonance, even though it is 0.26% globally."""
+    import ROOT
+    ROOT.gROOT.SetBatch(True)
+    ROOT.gStyle.SetOptStat(0)
+
+    f = ROOT.TFile.Open(root_path)
+    if not f or f.IsZombie():
+        print("  ! cannot open %s" % root_path)
+        return None
+    den = f.Get(prefix + divisor_base)
+    if not den:
+        print("  ! %s: divisor %s not found" % (root_path, prefix + divisor_base))
+        f.Close()
+        return None
+    den = den.Clone(prefix + divisor_base + "_den")
+    den.SetDirectory(0)
+
+    canvas = ROOT.TCanvas("cf_" + os.path.basename(out_path), out_path, 900, 680)
+    legend = ROOT.TLegend(0.60, 0.66, 0.88, 0.88)
+    legend.SetBorderSize(0); legend.SetFillStyle(0)
+
+    keep, drawn = [], 0
+    for base, label, colexpr in series:
+        if base == divisor_base:
+            continue   # don't divide all-by-all
+        num = f.Get(prefix + base)
+        if not num:
+            continue
+        ratio = num.Clone(prefix + base + "_ratio")
+        ratio.SetDirectory(0)
+        ratio.Divide(den)          # bin-by-bin, with auto error handling
+        keep.append(ratio)
+        col = root_color(colexpr, ROOT)
+        ratio.SetLineColor(col); ratio.SetLineWidth(2)
+        ratio.GetXaxis().SetTitle(xtitle)
+        ratio.GetYaxis().SetTitle("fraction of all")
+        ratio.SetTitle("local class fraction")
+        ratio.Draw("HIST" if drawn == 0 else "HIST SAME")
+        legend.AddEntry(ratio, label, "l")
+        drawn += 1
+
+    if drawn == 0:
+        print("  ! %s: no classes to divide" % root_path)
+        f.Close()
+        return None
+    legend.Draw()
+    canvas.SaveAs(out_path)
+    f.Close()
+    print("  wrote %s" % out_path)
+    return caption
+
+
+def single_histogram(root_path, histname, xtitle, out_path, caption, logy=False):
+    """Draw one histogram (no overlay)."""
+    import ROOT
+    ROOT.gROOT.SetBatch(True)
+    ROOT.gStyle.SetOptStat(0)
+
+    f = ROOT.TFile.Open(root_path)
+    if not f or f.IsZombie():
+        print("  ! cannot open %s" % root_path)
+        return None
+    h = f.Get(histname)
+    if not h:
+        print("  ! %s: histogram '%s' not found" % (root_path, histname))
+        f.Close()
+        return None
+    h = h.Clone(histname + "_c"); h.SetDirectory(0)
+
+    canvas = ROOT.TCanvas("cs_" + os.path.basename(out_path), out_path, 900, 680)
+    if logy:
+        canvas.SetLogy()
+    h.SetLineColor(root_color("kAzure+1", ROOT)); h.SetLineWidth(2)
+    h.GetXaxis().SetTitle(xtitle)
+    h.GetYaxis().SetTitle("entries")
+    h.Draw("HIST")
     canvas.SaveAs(out_path)
     f.Close()
     print("  wrote %s" % out_path)
@@ -268,10 +395,26 @@ def main():
         if not os.path.exists(args.root):
             sys.exit("ROOT file not found: " + args.root)
         print("single run: %s" % args.root)
-        for name, prefix, series, xtitle, logy, caption in FIGURES:
+        for name, prefix, series, xtitle, logy, norm, caption in FIGURES:
             out = os.path.join(args.outdir, name + "." + args.format)
             cap = overlay(args.root, series, prefix, xtitle, out, caption,
-                          logy=logy, normalize=args.normalize)
+                          logy=logy, normalize=(args.normalize or norm))
+            if cap:
+                manifest.append((os.path.basename(out), cap))
+
+        # ---- single-histogram figures (e.g. n_parton_ancestors) ----------
+        for name, hist, xtitle, logy, caption in SINGLE_FIGURES:
+            out = os.path.join(args.outdir, name + "." + args.format)
+            cap = single_histogram(args.root, hist, xtitle, out, caption,
+                                   logy=logy)
+            if cap:
+                manifest.append((os.path.basename(out), cap))
+
+        # ---- fraction-per-bin figures (local class composition) ----------
+        for name, prefix, series, xtitle, divisor, caption in FRACTION_FIGURES:
+            out = os.path.join(args.outdir, name + "." + args.format)
+            cap = overlay_fractions(args.root, series, prefix, divisor,
+                                    xtitle, out, caption)
             if cap:
                 manifest.append((os.path.basename(out), cap))
 

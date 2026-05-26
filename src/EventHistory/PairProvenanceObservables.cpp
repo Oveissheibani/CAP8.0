@@ -3,6 +3,7 @@
  * ********************************************************************/
 #include "PairProvenanceObservables.hpp"
 
+#include <cmath>     // std::sqrt
 #include <cstdlib>   // std::abs
 #include <sstream>
 #include <iomanip>
@@ -70,6 +71,8 @@ Hist1D & PairProvenanceObservables::H(const std::string & name)
   int nb; double lo, hi;
   if (name.rfind("deta_", 0) == 0)
     { nb = DETA_NBINS; lo = DETA_LO; hi = DETA_HI; }
+  else if (name.rfind("mass_", 0) == 0)
+    { nb = 150; lo = 0.0; hi = 3.0; }      // pair invariant mass, 20 MeV bins
   else  // dphi_*
     { nb = DPHI_NBINS; lo = DPHI_LO; hi = DPHI_HI; }
 
@@ -89,7 +92,13 @@ void PairProvenanceObservables::accumulate(const EventHistory &               hi
   _events++;
 
   // Collect the studied final hadrons with their kinematics, once.
-  struct P { const ProvenanceTag * tag; double eta; double phi; };
+  // The four-momentum is kept so we can form the pair invariant mass.
+  struct P
+  {
+    const ProvenanceTag * tag;
+    double eta, phi;
+    double px, py, pz, e;
+  };
   std::vector<P> parts;
   parts.reserve(tags.size());
   for (const ProvenanceTag & t : tags)
@@ -97,7 +106,11 @@ void PairProvenanceObservables::accumulate(const EventHistory &               hi
     if (_speciesPdg != 0 && std::abs(t.finalPdg) != _speciesPdg) continue;
     if (t.finalIndex < 0 || t.finalIndex >= history.size())      continue;
     const ParticleNode & node = history.node(t.finalIndex);
-    P p; p.tag = &t; p.eta = node.eta(); p.phi = node.phi();
+    P p;
+    p.tag = &t;
+    p.eta = node.eta();  p.phi = node.phi();
+    p.px  = node.px;     p.py  = node.py;
+    p.pz  = node.pz;     p.e   = node.e;
     parts.push_back(p);
     }
 
@@ -111,10 +124,22 @@ void PairProvenanceObservables::accumulate(const EventHistory &               hi
       const double deta = parts[i].eta - parts[j].eta;
       const double dphi = wrapPi(parts[i].phi - parts[j].phi);
 
+      // Pair invariant mass — for SameResonance pairs this clusters at
+      // the rho / K* / omega / phi / Delta masses, giving a direct,
+      // visible check that the resonance tagger is working.
+      const double Ep = parts[i].e  + parts[j].e;
+      const double xp = parts[i].px + parts[j].px;
+      const double yp = parts[i].py + parts[j].py;
+      const double zp = parts[i].pz + parts[j].pz;
+      const double m2 = Ep*Ep - xp*xp - yp*yp - zp*zp;
+      const double m  = m2 > 0.0 ? std::sqrt(m2) : 0.0;
+
       H("deta_pair_All").fill(deta);
       H("dphi_pair_All").fill(dphi);
+      H("mass_pair_All").fill(m);
       H("deta_pair_" + pairClassName(pc)).fill(deta);
       H("dphi_pair_" + pairClassName(pc)).fill(dphi);
+      H("mass_pair_" + pairClassName(pc)).fill(m);
 
       _pairs++;
       _count[static_cast<int>(pc)]++;
