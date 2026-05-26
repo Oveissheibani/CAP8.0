@@ -279,6 +279,7 @@ void fillLadderTable(LatexTable & t, const ReportData & d)
 void buildPaper(LatexDocument & doc, const ReportData & d)
 {
   doc.addPackage("graphicx", "");
+  doc.addPackage("float",    "");   // enables the [H] placement specifier
   doc.addAbstract(L(
     "This report presents a provenance decomposition of pion production in "
     "Pythia 8.  Every final-state hadron is traced through a generator-"
@@ -364,6 +365,7 @@ void buildPaper(LatexDocument & doc, const ReportData & d)
 void buildPresentation(LatexDocument & doc, const ReportData & d)
 {
   doc.addPackage("graphicx", "");
+  doc.addPackage("float",    "");   // enables the [H] placement specifier
 
   {
   LatexFrame & f = doc.addFrame(L("Motivation"));

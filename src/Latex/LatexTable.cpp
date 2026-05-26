@@ -7,7 +7,7 @@ namespace CAP
   LatexElement(),
   _columnSpec(),
   _caption(),
-  _placement("htbp"),
+  _placement("H"),     // pin tables in place (needs \usepackage{float})
   _nColumns(0),
   _headerRows(1),
   _cells()

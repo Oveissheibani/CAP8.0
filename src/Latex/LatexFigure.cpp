@@ -40,7 +40,11 @@ namespace CAP
 
   void LatexFigure::writeHeader(std::ofstream & out)
   {
-  out << "\\begin{figure}[htbp]" << endl;
+  // [H] (from the float package) pins the figure where it is written,
+  // instead of letting it float onto a separate float page and detach
+  // from its section.  Use \begin{figure} without H by overriding via
+  // a separate placement member if the user actually wants floating.
+  out << "\\begin{figure}[H]" << endl;
   out << "\\centering" << endl;
   }
 
