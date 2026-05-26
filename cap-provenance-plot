@@ -245,8 +245,9 @@ def main():
                     help="a single provenance-study .root file")
     ap.add_argument("--ladder", metavar="DIR",
                     help="a cap-mechanism-ladder output directory")
-    ap.add_argument("--outdir", default=os.path.join(REPO, "provenance-plots"),
-                    help="directory for the figures (default provenance-plots/)")
+    ap.add_argument("--outdir",
+                    default=os.path.join(REPO, "provenance", "plots"),
+                    help="directory for the figures (default provenance/plots/)")
     ap.add_argument("--format", default="pdf", choices=["pdf", "png", "svg"],
                     help="figure file format (default pdf)")
     ap.add_argument("--normalize", action="store_true",

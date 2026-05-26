@@ -191,8 +191,10 @@ def main():
                     help="Pythia seed, shared across rungs (default 12345)")
     ap.add_argument("--ladder", metavar="FILE",
                     help="custom ladder file ('name: MECH ...' per line)")
-    ap.add_argument("--outdir", default=os.path.join(here, "ladder-runs"),
-                    help="directory for .cmnd / .root outputs (default ladder-runs/)")
+    ap.add_argument("--outdir",
+                    default=os.path.join(here, "provenance", "ladder"),
+                    help="directory for .cmnd / .root outputs "
+                         "(default provenance/ladder/)")
     ap.add_argument("--study",  default=os.path.join(here, "bin", "provenance-study"),
                     help="path to the provenance-study binary")
     ap.add_argument("--xmldoc", default="",

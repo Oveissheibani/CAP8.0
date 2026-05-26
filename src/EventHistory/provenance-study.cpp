@@ -66,7 +66,7 @@ int main(int argc, char ** argv)
   std::string process = "soft";
   std::string config;
   std::string xmldoc;
-  std::string outName = "provenance.root";
+  std::string outName = "provenance/runs/provenance.root";
 
   for (int i = 1; i < argc; ++i)
     {
@@ -157,6 +157,16 @@ int main(int argc, char ** argv)
   std::cout << summarySingle << "\n" << summaryPair << "\n";
 
   // ---- ROOT output ----------------------------------------------------
+  // Ensure the parent directory of --out exists (mkdir -p), so a default
+  // like 'provenance/runs/...' works on a fresh checkout.
+  {
+    std::string::size_type sep = outName.find_last_of('/');
+    if (sep != std::string::npos)
+      {
+      std::string dir = outName.substr(0, sep);
+      (void)std::system(("mkdir -p '" + dir + "'").c_str());
+      }
+  }
   TFile fout(outName.c_str(), "RECREATE");
   if (fout.IsZombie())
     { std::cerr << "cannot open output file: " << outName << "\n"; return 1; }

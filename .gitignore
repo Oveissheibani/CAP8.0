@@ -42,9 +42,11 @@ Makefile
 # analysis outputs — e.g. provenance-study writes <name>.root + <name>.root.txt
 *.root.txt
 provenance*.txt
-# cap-mechanism-ladder run outputs (.cmnd / .root / comparison files)
+# parton-tracking feature outputs — runs, ladder, plots, reports — all under
+# one tidy tree, gitignored entirely.
+provenance/
+# legacy / pre-organization paths (kept ignored in case any stray run uses them)
 ladder-runs/
-# cap-provenance-plot figure outputs
 provenance-plots/
 *.com
 *.class

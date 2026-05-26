@@ -40,16 +40,22 @@ namespace CAP
 
   void LatexFigure::writeHeader(std::ofstream & out)
   {
-  out << "\\begin{figure}" << endl;
+  out << "\\begin{figure}[htbp]" << endl;
+  out << "\\centering" << endl;
   }
 
   void LatexFigure::writeContent(std::ofstream & out)
   {
+  // _scale is used as a fraction of \textwidth.  A width-based size keeps
+  // figures readable and centred, and avoids the distortion of pinning an
+  // absolute height regardless of the image's aspect ratio.
   String s(""); s += _scale;
-  String h(""); h += _height;
-  out << "\\includegraphics[scale=" << s << ",height=" << h << "in]{" << fileName() << "}" << endl;
-  out << "\\caption{" << caption() << "}" << endl;
-  out << "\\label{" << label() << "}" << endl;
+  out << "\\includegraphics[width=" << s << "\\textwidth]{"
+      << fileName() << "}" << endl;
+  if (caption().Length() > 0)
+    out << "\\caption{" << caption() << "}" << endl;
+  if (label().Length() > 0)
+    out << "\\label{" << label() << "}" << endl;
   }
 
   void LatexFigure::writeTrailer(std::ofstream & out)

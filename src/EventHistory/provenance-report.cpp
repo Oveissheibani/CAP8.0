@@ -34,6 +34,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <unistd.h>     // getcwd, for absolute figure paths
 
 using namespace CAP;
 
@@ -71,6 +72,16 @@ std::string texEscape(const std::string & s)
       }
     }
   return o;
+}
+
+// Resolve a possibly-relative path to absolute, so figure paths in the
+// generated .tex work no matter what directory pdflatex is invoked in.
+std::string absPath(const std::string & p)
+{
+  if (!p.empty() && p[0] == '/') return p;
+  char buf[4096];
+  if (::getcwd(buf, sizeof(buf))) return std::string(buf) + "/" + p;
+  return p;
 }
 
 std::vector<std::string> splitCSV(const std::string & line)
@@ -177,9 +188,11 @@ void parseLadder(const std::string & path, ReportData & d)
 }
 
 // Parse cap-provenance-plot's figures.manifest ("file | caption" per line).
+// Stores absolute figure paths so pdflatex finds them no matter where it runs.
 void parseFigures(const std::string & dir, ReportData & d)
 {
-  std::string manifest = dir + "/figures.manifest";
+  const std::string adir = absPath(dir);
+  std::string manifest = adir + "/figures.manifest";
   std::ifstream f(manifest.c_str());
   if (!f) { std::cerr << "  ! no figures.manifest in " << dir << "\n"; return; }
   std::string line;
@@ -190,7 +203,7 @@ void parseFigures(const std::string & dir, ReportData & d)
     std::string file = trim(line.substr(0, bar));
     std::string cap  = trim(line.substr(bar + 1));
     if (!file.empty())
-      d.figures.push_back(std::make_pair(dir + "/" + file, cap));
+      d.figures.push_back(std::make_pair(adir + "/" + file, cap));
     }
 }
 
@@ -413,7 +426,7 @@ int main(int argc, char ** argv)
   std::string author  = "CAP parton-tracking";
   std::string email   = "";
   std::string affil   = "Wayne State University";
-  std::string outdir  = ".";
+  std::string outdir  = "provenance/reports";
   std::string outName = "provenance-report";
   bool runPdf = false;
 
@@ -484,6 +497,8 @@ int main(int argc, char ** argv)
     buildPaper(doc, d);
     }
 
+  // Ensure the output directory exists before LatexDocument tries to write to it.
+  (void)std::system(("mkdir -p '" + outdir + "'").c_str());
   doc.create();
   std::cout << "  wrote " << outdir << "/" << outName << ".tex\n";
 
