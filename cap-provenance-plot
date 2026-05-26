@@ -152,9 +152,64 @@ def root_color(expr, ROOT):
     return getattr(ROOT, expr)
 
 
+# Standardized plot style used by every overlay --------------------------
+MARKER_STYLE = 20    # filled circle
+MARKER_SIZE  = 0.7
+
+def _legend_style(legend, ROOT):
+    """Standardize legend appearance: thin border, opaque white fill,
+    fixed text size.  Placed at top-right via the TLegend constructor."""
+    legend.SetBorderSize(1)
+    legend.SetFillStyle(1001)
+    legend.SetFillColor(ROOT.kWhite)
+    legend.SetTextSize(0.030)
+
+
+def _yrange(hists, logy, pad=0.10):
+    """Compute (ymin, ymax) covering every histogram with padding so the
+    curves never stick to the frame.
+
+      linear y :  [ymin - pad*range, ymax + pad*range]
+      log y    :  [smallest-positive / 2 ,  ymax * 2]
+    """
+    if logy:
+        ymin = float("inf")
+        ymax = 0.0
+        for h in hists:
+            for b in range(1, h.GetNbinsX() + 1):
+                v = h.GetBinContent(b)
+                if v > 0.0 and v < ymin: ymin = v
+                if v > ymax:             ymax = v
+        if ymin == float("inf") or ymin <= 0.0: ymin = 0.1
+        if ymax <= 0.0:                         ymax = 1.0
+        return ymin * 0.5, ymax * 2.0
+    ymin = min(h.GetMinimum() for h in hists)
+    ymax = max(h.GetMaximum() for h in hists)
+    rng = ymax - ymin
+    if rng <= 0.0:
+        rng = max(1.0, abs(ymax))
+    return ymin - pad * rng, ymax + pad * rng
+
+
+def _style_axes(hist, xtitle, ytitle, title=""):
+    hist.GetXaxis().SetTitle(xtitle)
+    hist.GetYaxis().SetTitle(ytitle)
+    if title:
+        hist.SetTitle(title)
+
+
+def _style_marker(hist, col):
+    hist.SetLineColor(col);   hist.SetLineWidth(1)
+    hist.SetMarkerColor(col); hist.SetMarkerStyle(MARKER_STYLE)
+    hist.SetMarkerSize(MARKER_SIZE)
+
+
 def overlay(root_path, series, prefix, xtitle, out_path, caption,
             logy=False, normalize=False, title=""):
-    """Overlay the named histograms from one ROOT file onto a canvas."""
+    """Overlay the named histograms from one ROOT file onto a canvas, using
+    the standardized plot style: filled-circle markers with vertical
+    error bars, framed legend (top-right), y-range that covers every
+    series with 10 % padding."""
     import ROOT
     ROOT.gROOT.SetBatch(True)
     ROOT.gStyle.SetOptStat(0)
@@ -164,41 +219,44 @@ def overlay(root_path, series, prefix, xtitle, out_path, caption,
         print("  ! cannot open %s — skipping" % root_path)
         return None
 
-    canvas = ROOT.TCanvas("c_" + os.path.basename(out_path), title, 900, 680)
-    if logy:
-        canvas.SetLogy()
-    legend = ROOT.TLegend(0.60, 0.66, 0.88, 0.88)
-    legend.SetBorderSize(0)
-    legend.SetFillStyle(0)
-
-    keep, drawn = [], 0
+    # Pass 1 — load + style each histogram.
+    prepared = []                        # [(h, label)]
     for base, label, colexpr in series:
         h = f.Get(prefix + base)
         if not h:
             continue
         h = h.Clone(prefix + base + "_c")
         h.SetDirectory(0)
-        keep.append(h)
         if normalize and h.Integral() > 0:
             h.Scale(1.0 / h.Integral())
-        col = root_color(colexpr, ROOT)
-        h.SetLineColor(col)
-        h.SetLineWidth(2)
-        h.SetMarkerColor(col)
-        h.GetXaxis().SetTitle(xtitle)
-        h.GetYaxis().SetTitle("normalized" if normalize else "counts")
-        if title:
-            h.SetTitle(title)
-        h.Draw("HIST" if drawn == 0 else "HIST SAME")
-        legend.AddEntry(h, label, "l")
-        drawn += 1
+        _style_marker(h, root_color(colexpr, ROOT))
+        prepared.append((h, label))
 
-    if drawn == 0:
+    if not prepared:
         print("  ! %s: none of the expected histograms were found" % root_path)
         f.Close()
         return None
 
+    # Pass 2 — set y-range on the first hist (governs the SAME-axis draw),
+    # then draw everything as points with error bars.
+    canvas = ROOT.TCanvas("c_" + os.path.basename(out_path), title, 900, 680)
+    if logy:
+        canvas.SetLogy()
+
+    ymin, ymax = _yrange([p[0] for p in prepared], logy)
+    prepared[0][0].SetMinimum(ymin)
+    prepared[0][0].SetMaximum(ymax)
+    _style_axes(prepared[0][0], xtitle,
+                "normalized" if normalize else "counts", title)
+
+    legend = ROOT.TLegend(0.62, 0.65, 0.88, 0.88)
+    _legend_style(legend, ROOT)
+
+    for i, (h, label) in enumerate(prepared):
+        h.Draw("PE" if i == 0 else "PE SAME")
+        legend.AddEntry(h, label, "pe")
     legend.Draw()
+
     canvas.SaveAs(out_path)
     f.Close()
     print("  wrote %s" % out_path)
@@ -207,9 +265,9 @@ def overlay(root_path, series, prefix, xtitle, out_path, caption,
 
 def overlay_fractions(root_path, series, prefix, divisor_base,
                       xtitle, out_path, caption):
-    """Plot N_class / N_divisor per bin for each series entry.  Shows the
-    LOCAL composition of the observable — e.g. what fraction of pairs at
-    Delta-phi=0 is SameResonance, even though it is 0.26% globally."""
+    """Plot N_class / N_divisor per bin for each series entry, showing the
+    LOCAL class composition.  Standardized style: points with error bars,
+    framed legend, padded y-range."""
     import ROOT
     ROOT.gROOT.SetBatch(True)
     ROOT.gStyle.SetOptStat(0)
@@ -226,35 +284,38 @@ def overlay_fractions(root_path, series, prefix, divisor_base,
     den = den.Clone(prefix + divisor_base + "_den")
     den.SetDirectory(0)
 
-    canvas = ROOT.TCanvas("cf_" + os.path.basename(out_path), out_path, 900, 680)
-    legend = ROOT.TLegend(0.60, 0.66, 0.88, 0.88)
-    legend.SetBorderSize(0); legend.SetFillStyle(0)
-
-    keep, drawn = [], 0
+    prepared = []
     for base, label, colexpr in series:
         if base == divisor_base:
-            continue   # don't divide all-by-all
+            continue                          # don't divide all-by-all
         num = f.Get(prefix + base)
         if not num:
             continue
         ratio = num.Clone(prefix + base + "_ratio")
         ratio.SetDirectory(0)
-        ratio.Divide(den)          # bin-by-bin, with auto error handling
-        keep.append(ratio)
-        col = root_color(colexpr, ROOT)
-        ratio.SetLineColor(col); ratio.SetLineWidth(2)
-        ratio.GetXaxis().SetTitle(xtitle)
-        ratio.GetYaxis().SetTitle("fraction of all")
-        ratio.SetTitle("local class fraction")
-        ratio.Draw("HIST" if drawn == 0 else "HIST SAME")
-        legend.AddEntry(ratio, label, "l")
-        drawn += 1
+        ratio.Divide(den)                     # bin-by-bin error propagation
+        _style_marker(ratio, root_color(colexpr, ROOT))
+        prepared.append((ratio, label))
 
-    if drawn == 0:
+    if not prepared:
         print("  ! %s: no classes to divide" % root_path)
         f.Close()
         return None
+
+    canvas = ROOT.TCanvas("cf_" + os.path.basename(out_path), out_path, 900, 680)
+    ymin, ymax = _yrange([p[0] for p in prepared], logy=False)
+    prepared[0][0].SetMinimum(ymin)
+    prepared[0][0].SetMaximum(ymax)
+    _style_axes(prepared[0][0], xtitle, "fraction of all",
+                "local class fraction")
+
+    legend = ROOT.TLegend(0.62, 0.65, 0.88, 0.88)
+    _legend_style(legend, ROOT)
+    for i, (h, label) in enumerate(prepared):
+        h.Draw("PE" if i == 0 else "PE SAME")
+        legend.AddEntry(h, label, "pe")
     legend.Draw()
+
     canvas.SaveAs(out_path)
     f.Close()
     print("  wrote %s" % out_path)
@@ -262,7 +323,7 @@ def overlay_fractions(root_path, series, prefix, divisor_base,
 
 
 def single_histogram(root_path, histname, xtitle, out_path, caption, logy=False):
-    """Draw one histogram (no overlay)."""
+    """Draw one histogram (no overlay) in the standardized style."""
     import ROOT
     ROOT.gROOT.SetBatch(True)
     ROOT.gStyle.SetOptStat(0)
@@ -277,14 +338,15 @@ def single_histogram(root_path, histname, xtitle, out_path, caption, logy=False)
         f.Close()
         return None
     h = h.Clone(histname + "_c"); h.SetDirectory(0)
+    _style_marker(h, root_color("kAzure+1", ROOT))
 
     canvas = ROOT.TCanvas("cs_" + os.path.basename(out_path), out_path, 900, 680)
-    if logy:
-        canvas.SetLogy()
-    h.SetLineColor(root_color("kAzure+1", ROOT)); h.SetLineWidth(2)
-    h.GetXaxis().SetTitle(xtitle)
-    h.GetYaxis().SetTitle("entries")
-    h.Draw("HIST")
+    if logy: canvas.SetLogy()
+    ymin, ymax = _yrange([h], logy)
+    h.SetMinimum(ymin); h.SetMaximum(ymax)
+    _style_axes(h, xtitle, "entries")
+    h.Draw("PE")
+
     canvas.SaveAs(out_path)
     f.Close()
     print("  wrote %s" % out_path)
@@ -293,19 +355,13 @@ def single_histogram(root_path, histname, xtitle, out_path, caption, logy=False)
 
 def overlay_ladder(rung_files, histname, xtitle, out_path, caption,
                    logy=False, normalize=True):
-    """Overlay one histogram across the ladder rungs (one ROOT file each)."""
+    """Overlay one histogram across the ladder rungs (one ROOT file each)
+    in the standardized plot style."""
     import ROOT
     ROOT.gROOT.SetBatch(True)
     ROOT.gStyle.SetOptStat(0)
 
-    canvas = ROOT.TCanvas("cl_" + os.path.basename(out_path), histname, 900, 680)
-    if logy:
-        canvas.SetLogy()
-    legend = ROOT.TLegend(0.58, 0.66, 0.88, 0.88)
-    legend.SetBorderSize(0)
-    legend.SetFillStyle(0)
-
-    keep, drawn = [], 0
+    prepared = []
     for i, (label, path) in enumerate(rung_files):
         f = ROOT.TFile.Open(path)
         if not f or f.IsZombie():
@@ -318,25 +374,32 @@ def overlay_ladder(rung_files, histname, xtitle, out_path, caption,
             continue
         h = h.Clone("%s_rung%d" % (histname, i))
         h.SetDirectory(0)
-        keep.append(h)
         f.Close()
         if normalize and h.Integral() > 0:
             h.Scale(1.0 / h.Integral())
-        col = root_color(LADDER_COLOURS[i % len(LADDER_COLOURS)], ROOT)
-        h.SetLineColor(col)
-        h.SetLineWidth(2)
-        h.GetXaxis().SetTitle(xtitle)
-        h.GetYaxis().SetTitle("normalized" if normalize else "counts")
-        h.SetTitle(histname + " across the mechanism ladder")
-        h.Draw("HIST" if drawn == 0 else "HIST SAME")
-        legend.AddEntry(h, label, "l")
-        drawn += 1
+        _style_marker(h, root_color(LADDER_COLOURS[i % len(LADDER_COLOURS)], ROOT))
+        prepared.append((h, label))
 
-    if drawn == 0:
+    if not prepared:
         print("  ! ladder: no rung produced histogram '%s'" % histname)
         return None
 
+    canvas = ROOT.TCanvas("cl_" + os.path.basename(out_path), histname, 900, 680)
+    if logy: canvas.SetLogy()
+    ymin, ymax = _yrange([p[0] for p in prepared], logy)
+    prepared[0][0].SetMinimum(ymin)
+    prepared[0][0].SetMaximum(ymax)
+    _style_axes(prepared[0][0], xtitle,
+                "normalized" if normalize else "counts",
+                histname + " across the mechanism ladder")
+
+    legend = ROOT.TLegend(0.62, 0.65, 0.88, 0.88)
+    _legend_style(legend, ROOT)
+    for i, (h, label) in enumerate(prepared):
+        h.Draw("PE" if i == 0 else "PE SAME")
+        legend.AddEntry(h, label, "pe")
     legend.Draw()
+
     canvas.SaveAs(out_path)
     print("  wrote %s" % out_path)
     return caption
