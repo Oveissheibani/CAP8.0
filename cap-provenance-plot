@@ -71,12 +71,13 @@ FIGURES = [
     ("parton_pt", "pt_",   PARTON_SERIES, "p_{T} [GeV]", True,
      "Pion transverse-momentum spectrum grouped by the flavour of the "
      "ancestor pre-hadronization parton."),
-    ("pair_dphi", "dphi_", PAIR_SERIES, "#Delta#phi [rad]", False,
+    ("pair_dphi", "dphi_", PAIR_SERIES, "#Delta#phi [rad]", True,
      "Two-particle azimuthal (Delta-phi) correlation decomposed by pair "
-     "ancestry. Ancestry-related pairs peak near zero; unrelated pairs are flat."),
-    ("pair_deta", "deta_", PAIR_SERIES, "#Delta#eta", False,
+     "ancestry (log y, since the classes span four orders of magnitude). "
+     "Ancestry-related pairs peak near zero; unrelated pairs are flat."),
+    ("pair_deta", "deta_", PAIR_SERIES, "#Delta#eta", True,
      "Two-particle pseudorapidity-gap (Delta-eta) correlation decomposed "
-     "by pair ancestry."),
+     "by pair ancestry (log y)."),
 ]
 
 # Ladder figures: (histogram name, x-title, logy, caption).
