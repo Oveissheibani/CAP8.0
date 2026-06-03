@@ -558,6 +558,24 @@ class RunCapGUI:
                 foreground="red"
             ).pack(padx=20, pady=20)
 
+        # ---- Tab 4: Provenance (parton-tracking feature) ----
+        # Embeds the standalone provenance GUI (gui/provenance_gui) as a tab.
+        # Wrapped so any import/build failure shows a message instead of
+        # preventing run-cap from launching.
+        tab_prov = ttk.Frame(nb, padding=0)
+        nb.add(tab_prov, text="Provenance  🧬")
+        try:
+            _gui_dir = str(REPO / "gui")
+            if _gui_dir not in sys.path:
+                sys.path.insert(0, _gui_dir)
+            from provenance_gui.app import embed as _embed_provenance
+            self._provenance_app = _embed_provenance(tab_prov, self.root)
+        except Exception as _prov_exc:               # never block run-cap
+            ttk.Label(tab_prov,
+                text=f"Provenance tab unavailable: {_prov_exc}",
+                foreground="red"
+            ).pack(padx=20, pady=20)
+
         # The legacy "Run existing .ini" tab has been retired — its
         # functionality (load + edit) now lives inside build-ini-gui.
         # We keep the StringVars alive as no-op stubs so any legacy

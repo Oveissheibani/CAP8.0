@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+"""cap-provenance-gui — launcher for the modular provenance GUI.
+
+Real code lives in gui/provenance_gui/.  This script is just an
+entrypoint that adds gui/ to sys.path and calls main().
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent
+sys.path.insert(0, str(REPO / "gui"))
+
+from provenance_gui.app import main      # noqa: E402
+
+if __name__ == "__main__":
+    raise SystemExit(main())

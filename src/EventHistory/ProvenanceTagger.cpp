@@ -8,16 +8,62 @@
 namespace CAP
 {
 
+namespace
+{
+// Cap on the parent-chain walk length — guards against malformed graphs.
+const int MAX_DECAY_DEPTH = 64;
+
+// |pdg| ranges for charmed and bottom hadrons.  Conservative ranges that
+// cover the standard PDG numbering scheme: meson 4xx / 5xx (3 digit) and
+// baryon 4xxx / 5xxx (4 digit), excluding pure-quark codes.
+bool isCharmHadron(int pdg)
+{
+  const int a = std::abs(pdg);
+  // Charm mesons: 411..445, charm baryons: 4112..4444.
+  return (a >= 411  && a <= 499) ||
+         (a >= 4112 && a <= 4999);
+}
+
+bool isBottomHadron(int pdg)
+{
+  const int a = std::abs(pdg);
+  // Bottom mesons: 511..555, bottom baryons: 5112..5554.
+  return (a >= 511  && a <= 599) ||
+         (a >= 5112 && a <= 5999);
+}
+} // namespace
+
+// ----------------------------------------------------------------------
+// Runtime resolver — installed by callers that have access to a live
+// particle database (Pythia, HepMC3-with-PDT, CAP ParticleDb).  When
+// non-null and it returns 0/1, that decision wins; -1 means "I don't
+// know, please fall back".
+// ----------------------------------------------------------------------
+static ProvenanceTagger::ResonanceResolver s_resolver = nullptr;
+
+void ProvenanceTagger::setResonanceResolver(
+    ProvenanceTagger::ResonanceResolver fn)
+{
+  s_resolver = fn;
+}
+
 // ----------------------------------------------------------------------
 //  Curated list of the common strong / EM-decaying resonances that
 //  contaminate same-event correlations.  Compared on |pdg|.
 //
-//  This is deliberately a hard-coded list at Phase 3a: it is explicit,
-//  reviewable, and needs no particle database.  A later phase can
-//  replace it with a width / lifetime lookup via the CAP ParticleDb.
+//  This is the FALLBACK list used when no runtime resolver is installed
+//  (e.g. tagging a HepMC3 file without a particle DB).  When Pythia is
+//  linked, provenance-study installs a resolver at startup that queries
+//  the Pythia particle database for the correct answer (cτ-based).
 // ----------------------------------------------------------------------
 bool ProvenanceTagger::isResonance(int pdg)
 {
+  if (s_resolver)
+    {
+    const int r = s_resolver(pdg);
+    if (r == 0 || r == 1) return r == 1;
+    // r == -1 falls through to the curated list below.
+    }
   switch (std::abs(pdg))
     {
     // light unflavoured mesons
@@ -89,6 +135,46 @@ ProvenanceTag ProvenanceTagger::tag(const EventHistory & h, int idx) const
     t.hardPartonIndex = hard.front();
     }
 
+  // Generator-AGNOSTIC initiating parton: the TOPMOST parton in the lineage,
+  // i.e. the first parton (walking up) whose own parents are NOT partons
+  // (they are beams / the hard vertex).  For the Pythia path this lands on
+  // the incoming hard-process parton; for the HepMC path (Herwig), which
+  // tags no HardProcess stage, it lands on the parton at the top of the
+  // shower.  Either way it CAN be a gluon — the quark-vs-gluon origin that
+  // the string-endpoint leadPartonPdg can never express.
+  {
+  const int nN = h.size();
+  std::vector<char> seen(static_cast<size_t>(nN), 0);
+  if (idx >= 0 && idx < nN) seen[static_cast<size_t>(idx)] = 1;
+  std::vector<int> frontier = node.parents;
+  bool found = false;
+  while (!frontier.empty() && !found)
+    {
+    std::vector<int> next;
+    for (int p : frontier)
+      {
+      if (p < 0 || p >= nN || seen[static_cast<size_t>(p)]) continue;
+      seen[static_cast<size_t>(p)] = 1;
+      const ParticleNode & pn = h.node(p);
+      if (pn.isParton())
+        {
+        bool hasPartonParent = false;
+        for (int gp : pn.parents)
+          if (gp >= 0 && gp < nN && h.node(gp).isParton())
+            { hasPartonParent = true; break; }
+        if (!hasPartonParent)            // topmost parton on this branch
+          {
+          t.initiatingPartonPdg = pn.pdg;
+          found = true;
+          break;
+          }
+        }
+      for (int gp : pn.parents) next.push_back(gp);
+      }
+    frontier.swap(next);
+    }
+  }
+
   // How far back the chain reaches.
   if (!hard.empty())
     t.deepestStage = Stage::HardProcess;
@@ -96,6 +182,84 @@ ProvenanceTag ProvenanceTagger::tag(const EventHistory & h, int idx) const
     t.deepestStage = Stage::PartonsPreHadronization;
   else
     t.deepestStage = node.stage;
+
+  // ---- MPI ancestry --------------------------------------------------
+  // Earliest MPI-stage ancestor: a parton emitted by a secondary
+  // multi-parton-interaction scatter.  Pair-level "did these two hadrons
+  // come from the same MPI?" reduces to comparing this index.
+  const std::vector<int> mpiAncestors = h.ancestorsAtStage(idx, Stage::MPI);
+  if (!mpiAncestors.empty())
+    t.mpiIndex = mpiAncestors.front();
+
+  // ---- ISR / FSR origin ---------------------------------------------
+  // Did this hadron's ancestry walk through any ISR / FSR parton?  These
+  // are not exclusive — a hadron from a hard-scatter recoil parton may
+  // descend through both ISR and FSR.
+  t.fromISR = !h.ancestorsAtStage(idx, Stage::ISR).empty();
+  t.fromFSR = !h.ancestorsAtStage(idx, Stage::FSR).empty();
+
+  // ---- Heavy-flavour chain + decay-chain depth ----------------------
+  // Two independent walks:
+  //
+  //   1. decayChainDepth  — counts hadronic decay steps along the LEAD
+  //      branch from this hadron to its first partonic ancestor.  A
+  //      single integer; the lead-branch convention is fine because
+  //      depth is a per-particle quantity.
+  //
+  //   2. fromCharmChain / fromBottomChain — must be a BREADTH-FIRST walk
+  //      across EVERY hadronic ancestor branch, otherwise a heavy hadron
+  //      hiding on a non-lead branch is missed (audit fix #5).  E.g. for
+  //      a pi+ in a D+- -> K-* pi+ pi+ chain, the lead branch may be the
+  //      pi-side while the charm hadron is the parent of the K-side.
+  {
+    // (1) lead-branch depth — kept identical to the prior implementation
+    // so the decay_chain_depth histogram doesn't change shape.
+    int cur   = idx;
+    int depth = 0;
+    while (depth < MAX_DECAY_DEPTH)
+      {
+      const ParticleNode & cn = h.node(cur);
+      int nextParent = -1;
+      for (int p : cn.parents)
+        {
+        if (p < 0 || p >= h.size()) continue;
+        const ParticleNode & parent = h.node(p);
+        if (parent.isParton()) continue;
+        nextParent = p;
+        break;
+        }
+      if (nextParent < 0) break;
+      cur = nextParent;
+      ++depth;
+      }
+    t.decayChainDepth = depth;
+
+    // (2) BFS across every hadronic ancestor branch for heavy-flavour
+    // detection.  Cycle-safe via a "seen" vector; bounded by the same
+    // MAX_DECAY_DEPTH so a malformed graph cannot hang the tagger.
+    std::vector<char> seen(static_cast<size_t>(h.size()), 0);
+    std::vector<int>  frontier = h.node(idx).parents;
+    int steps = 0;
+    while (!frontier.empty() && steps < MAX_DECAY_DEPTH)
+      {
+      std::vector<int> next;
+      for (int p : frontier)
+        {
+        if (p < 0 || p >= h.size())             continue;
+        if (seen[static_cast<size_t>(p)])       continue;
+        seen[static_cast<size_t>(p)] = 1;
+        const ParticleNode & parent = h.node(p);
+        if (parent.isParton()) continue;        // stop the walk at partons
+        if (isCharmHadron(parent.pdg))  t.fromCharmChain  = true;
+        if (isBottomHadron(parent.pdg)) t.fromBottomChain = true;
+        // Early-out if both flags are already set.
+        if (t.fromCharmChain && t.fromBottomChain) { frontier.clear(); break; }
+        for (int gp : parent.parents) next.push_back(gp);
+        }
+      frontier.swap(next);
+      ++steps;
+      }
+  }
 
   return t;
 }
@@ -130,6 +294,12 @@ bool sharesPartonAncestor(const ProvenanceTag & a, const ProvenanceTag & b)
 bool sharesHardProcessAncestor(const ProvenanceTag & a, const ProvenanceTag & b)
 {
   return a.hardPartonIndex >= 0 && a.hardPartonIndex == b.hardPartonIndex;
+}
+
+// ----------------------------------------------------------------------
+bool sharesMPIVertex(const ProvenanceTag & a, const ProvenanceTag & b)
+{
+  return a.mpiIndex >= 0 && a.mpiIndex == b.mpiIndex;
 }
 
 } // namespace CAP

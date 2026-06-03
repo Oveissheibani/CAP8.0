@@ -27,6 +27,7 @@
 #ifndef CAP__PairProvenanceObservables
 #define CAP__PairProvenanceObservables
 
+#include <limits>
 #include <map>
 #include <string>
 #include <vector>
@@ -64,7 +65,42 @@ class PairProvenanceObservables
 public:
 
   // speciesPdg : |pdg| of the species to pair up (0 = every final hadron).
-  explicit PairProvenanceObservables(int speciesPdg = 0);
+  // pt/eta cuts: per-pion acceptance window applied BEFORE pairing.
+  // multLow / multHigh: event-multiplicity thresholds defining the
+  //              Low / Mid / High bins.  Defaults (20, 80) are tuned for
+  //              pp at 13 TeV soft QCD; the user should override for any
+  //              other regime (e.g. heavy-ion).
+  // spheroLow / spheroHigh: transverse-spherocity (S0) thresholds for the
+  //              JetLike / Mid / Isotropic event-shape bins.  S0 in [0,1];
+  //              low S0 ≈ pencil-like jet event, high S0 ≈ isotropic event.
+  //              Defaults (0.3, 0.7) follow ALICE-style cuts.
+  explicit PairProvenanceObservables(
+      int    speciesPdg = 0,
+      double ptMin  =  0.0,
+      double ptMax  =  std::numeric_limits<double>::infinity(),
+      double etaMin = -std::numeric_limits<double>::infinity(),
+      double etaMax =  std::numeric_limits<double>::infinity(),
+      int    multLow  = 20,
+      int    multHigh = 80,
+      double spheroLow  = 0.3,
+      double spheroHigh = 0.7);
+
+  // Multi-species overload — same set of pair histograms emitted for
+  // each unordered species combination (sA, sB) drawn from the list,
+  // tagged with suffix `_S<a>x<b>`.  Single-species mode (size 1) keeps
+  // the legacy bare names.
+  explicit PairProvenanceObservables(
+      const std::vector<int> & speciesList,
+      double ptMin  =  0.0,
+      double ptMax  =  std::numeric_limits<double>::infinity(),
+      double etaMin = -std::numeric_limits<double>::infinity(),
+      double etaMax =  std::numeric_limits<double>::infinity(),
+      int    multLow  = 20,
+      int    multHigh = 80,
+      double spheroLow  = 0.3,
+      double spheroHigh = 0.7);
+
+  const std::vector<int> & speciesList() const { return _species; }
 
   // Feed one event.
   void accumulate(const EventHistory & history,
@@ -83,7 +119,14 @@ private:
 
   Hist1D & H(const std::string & name);   // fetch-or-create
 
-  int  _speciesPdg;
+  // Returns the suffix "_S<a>x<b>" (single-species mode: "").
+  std::string speciesPairSuffix(int a, int b) const;
+
+  std::vector<int> _species;                 // canonicalised species list
+  int    _speciesPdg;                        // legacy alias = _species[0]
+  double _ptMin, _ptMax, _etaMin, _etaMax;   // acceptance window
+  int    _multLow, _multHigh;                // multiplicity-bin cuts
+  double _spheroLow, _spheroHigh;            // event-shape (S0) bin cuts
   int  _events = 0;
   long _pairs  = 0;
   long _count[4] = { 0, 0, 0, 0 };         // indexed by PairClass

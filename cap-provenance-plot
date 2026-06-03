@@ -34,6 +34,7 @@ import argparse
 import csv
 import glob
 import os
+import re
 import sys
 
 REPO = os.path.dirname(os.path.abspath(__file__))
@@ -52,6 +53,16 @@ PARTON_SERIES = [
     ("parton_Charm",      "charm",             "kOrange+7"),
     ("parton_Bottom",     "bottom",            "kViolet+1"),
     ("parton_Gluon",      "gluon",             "kGreen+2"),
+]
+# INITIATING (hard-scatter) parton flavour — the gluon-capable view (string
+# endpoints above are never gluons; the initiating hard parton frequently is).
+INITPARTON_SERIES = [
+    ("initparton_LightQuark",  "light quark (u/d)", "kAzure+1"),
+    ("initparton_Strange",     "strange",           "kRed+1"),
+    ("initparton_Charm",       "charm",             "kOrange+7"),
+    ("initparton_Bottom",      "bottom",            "kViolet+1"),
+    ("initparton_Gluon",       "gluon",             "kGreen+2"),
+    ("initparton_NonPartonic", "no hard parton",    "kGray+1"),
 ]
 PAIR_SERIES = [
     ("pair_All",            "all pairs",        "kBlack"),
@@ -97,6 +108,133 @@ SHARED_PARTON_DEPTH_SERIES = [
      "shower/MPI-only shared",          "kAzure+1"),
 ]
 
+# MPI relationship at the pair level.
+MPI_SERIES = [
+    ("pair_MPI_SameMPI",    "same MPI scatter",   "kRed+1"),
+    ("pair_MPI_CrossMPI",   "cross-MPI",          "kOrange+7"),
+    ("pair_MPI_OneSideMPI", "one-side MPI",       "kAzure+1"),
+    ("pair_MPI_NoMPI",      "no MPI (hard only)", "kGreen+2"),
+]
+
+# Same as MPI_SERIES but restricted to SharedParton pairs — answers
+# whether the partonic correlation comes from one MPI or from accidental
+# cross-MPI overlap.
+SHARED_PARTON_MPI_SERIES = [
+    ("pair_SharedParton_SameMPI",    "same MPI scatter",   "kRed+1"),
+    ("pair_SharedParton_CrossMPI",   "cross-MPI",          "kOrange+7"),
+    ("pair_SharedParton_OneSideMPI", "one-side MPI",       "kAzure+1"),
+    ("pair_SharedParton_NoMPI",      "no MPI (hard only)", "kGreen+2"),
+]
+
+# ISR / FSR shower lineage at the pair level.
+SHOWER_SERIES = [
+    ("pair_Shower_BothFSR",     "both FSR",          "kRed+1"),
+    ("pair_Shower_BothISR",     "both ISR",          "kAzure+1"),
+    ("pair_Shower_MixedShower", "mixed shower",      "kOrange+7"),
+    ("pair_Shower_NoShower",    "no shower",         "kGray+1"),
+]
+
+# Heavy-flavour decay-chain relationship at the pair level.
+HF_SERIES = [
+    ("pair_HF_BothBottom",     "both bottom",       "kViolet+1"),
+    ("pair_HF_OneBottom",      "one bottom",        "kMagenta+1"),
+    ("pair_HF_BothCharm",      "both charm",        "kRed+1"),
+    ("pair_HF_OneCharm",       "one charm",         "kOrange+7"),
+    ("pair_HF_NoHeavyFlavour", "no heavy flavour",  "kAzure+1"),
+]
+
+# Multiplicity-binned PAIR_SERIES (one for each bin).
+PAIR_SERIES_LOWMULT = [
+    ("pair_All_LowMult",            "all (low mult)",            "kBlack"),
+    ("pair_SameResonance_LowMult",  "same resonance (low)",      "kRed+1"),
+    ("pair_SameWeakParent_LowMult", "same weak parent (low)",    "kOrange+7"),
+    ("pair_SharedParton_LowMult",   "shared parton (low)",       "kAzure+1"),
+    ("pair_Unrelated_LowMult",      "unrelated (low)",           "kGray+1"),
+]
+PAIR_SERIES_MIDMULT = [
+    ("pair_All_MidMult",            "all (mid mult)",            "kBlack"),
+    ("pair_SameResonance_MidMult",  "same resonance (mid)",      "kRed+1"),
+    ("pair_SameWeakParent_MidMult", "same weak parent (mid)",    "kOrange+7"),
+    ("pair_SharedParton_MidMult",   "shared parton (mid)",       "kAzure+1"),
+    ("pair_Unrelated_MidMult",      "unrelated (mid)",           "kGray+1"),
+]
+PAIR_SERIES_HIGHMULT = [
+    ("pair_All_HighMult",            "all (high mult)",          "kBlack"),
+    ("pair_SameResonance_HighMult",  "same resonance (high)",    "kRed+1"),
+    ("pair_SameWeakParent_HighMult", "same weak parent (high)",  "kOrange+7"),
+    ("pair_SharedParton_HighMult",   "shared parton (high)",     "kAzure+1"),
+    ("pair_Unrelated_HighMult",      "unrelated (high)",         "kGray+1"),
+]
+
+# Event-shape (transverse spherocity) binned PAIR_SERIES.
+PAIR_SERIES_JETLIKE = [
+    ("pair_All_JetLike",             "all (jet-like)",           "kBlack"),
+    ("pair_SameResonance_JetLike",   "same resonance (jet)",     "kRed+1"),
+    ("pair_SameWeakParent_JetLike",  "same weak parent (jet)",   "kOrange+7"),
+    ("pair_SharedParton_JetLike",    "shared parton (jet)",      "kAzure+1"),
+    ("pair_Unrelated_JetLike",       "unrelated (jet)",          "kGray+1"),
+]
+PAIR_SERIES_MIDSHAPE = [
+    ("pair_All_MidShape",            "all (mid-shape)",          "kBlack"),
+    ("pair_SameResonance_MidShape",  "same resonance (mid)",     "kRed+1"),
+    ("pair_SameWeakParent_MidShape", "same weak parent (mid)",   "kOrange+7"),
+    ("pair_SharedParton_MidShape",   "shared parton (mid)",      "kAzure+1"),
+    ("pair_Unrelated_MidShape",      "unrelated (mid)",          "kGray+1"),
+]
+PAIR_SERIES_ISOTROPIC = [
+    ("pair_All_Isotropic",           "all (isotropic)",          "kBlack"),
+    ("pair_SameResonance_Isotropic", "same resonance (iso)",     "kRed+1"),
+    ("pair_SameWeakParent_Isotropic","same weak parent (iso)",   "kOrange+7"),
+    ("pair_SharedParton_Isotropic",  "shared parton (iso)",      "kAzure+1"),
+    ("pair_Unrelated_Isotropic",     "unrelated (iso)",          "kGray+1"),
+]
+
+# Single-particle heavy-flavour / shower / MPI splits.
+SP_HF_SERIES = [
+    ("HF_NoHeavyFlavour", "no heavy flavour", "kAzure+1"),
+    ("HF_FromCharmChain", "from charm chain", "kOrange+7"),
+    ("HF_FromBottomChain","from bottom chain","kViolet+1"),
+]
+SP_SHOWER_SERIES = [
+    ("Shower_NoShower", "no shower",     "kGray+1"),
+    ("Shower_ISR",      "ISR ancestry",  "kAzure+1"),
+    ("Shower_FSR",      "FSR ancestry",  "kRed+1"),
+]
+SP_MPI_SERIES = [
+    ("MPI_NoMPI",   "no MPI (hard only)", "kAzure+1"),
+    ("MPI_FromMPI", "from MPI scatter",   "kRed+1"),
+]
+
+# Pair-class breakdown of the per-pair maximum decay-chain depth.
+DECAY_DEPTH_PAIR_SERIES = [
+    ("max",                 "all pairs",        "kBlack"),
+    ("max_SameResonance",   "same resonance",   "kRed+1"),
+    ("max_SameWeakParent",  "same weak parent", "kOrange+7"),
+    ("max_SharedParton",    "shared parton",    "kAzure+1"),
+    ("max_Unrelated",       "unrelated",        "kGray+1"),
+]
+
+# Flavor-mixing breakdown (joint hard-parton flavour pair) -----------------
+# Answers: how much of the pair correlation is same-flavour vertex vs
+# cross-flavour vs gluon-driven.
+FLAVMIX_SERIES = [
+    ("pair_FlavMix_SameQuark",  "same quark",        "kRed+1"),
+    ("pair_FlavMix_SameGen",    "same generation",   "kOrange+7"),
+    ("pair_FlavMix_CrossGen",   "cross generation",  "kAzure+1"),
+    ("pair_FlavMix_WithGluon",  "with gluon",        "kGreen+2"),
+    ("pair_FlavMix_Partonless", "no hard parton",    "kGray+1"),
+]
+
+# Restricted to SharedParton pairs — answers the same question only when
+# the correlation is GENUINELY partonic.
+SHARED_PARTON_FLAV_SERIES = [
+    ("pair_SharedParton_Flav_SameQuark",  "same quark",        "kRed+1"),
+    ("pair_SharedParton_Flav_SameGen",    "same generation",   "kOrange+7"),
+    ("pair_SharedParton_Flav_CrossGen",   "cross generation",  "kAzure+1"),
+    ("pair_SharedParton_Flav_WithGluon",  "with gluon",        "kGreen+2"),
+    ("pair_SharedParton_Flav_Partonless", "no hard parton",    "kGray+1"),
+]
+
 # Single-run overlay figures.
 #   tuple = (out-name, prefix, series, x-title, logy, normalize, caption)
 FIGURES = [
@@ -107,7 +245,13 @@ FIGURES = [
      "Pion pseudorapidity distribution, decomposed by production origin."),
     ("parton_pt", "pt_",   PARTON_SERIES, "p_{T} [GeV]", True, False,
      "Pion transverse-momentum spectrum grouped by the flavour of the "
-     "ancestor pre-hadronization parton."),
+     "string-ENDPOINT parton (Lund endpoints are quarks, so there is no "
+     "gluon curve here by construction)."),
+    ("initparton_pt", "pt_", INITPARTON_SERIES, "p_{T} [GeV]", True, False,
+     "Pion transverse-momentum spectrum grouped by the flavour of the "
+     "INITIATING hard-scatter parton (the quark- vs gluon-jet origin).  "
+     "Unlike the string-endpoint view this IS gluon-capable and at LHC soft "
+     "QCD is gluon-dominated; 'no hard parton' = beam-remnant / soft origin."),
     ("pair_dphi", "dphi_", PAIR_SERIES, "#Delta#phi [rad]", True, False,
      "Two-particle azimuthal (Delta-phi) correlation decomposed by pair "
      "ancestry (log y, since the classes span four orders of magnitude)."),
@@ -172,6 +316,136 @@ FIGURES = [
     ("pair_mass_sharedparton_depth", "mass_", SHARED_PARTON_DEPTH_SERIES,
      "pair invariant mass [GeV]", True, False,
      "Pair invariant mass of SharedParton pairs, split by sharing depth."),
+
+    # ---- MPI relationship at the pair level ------------------------------
+    ("pair_dphi_mpi", "dphi_", MPI_SERIES, "#Delta#phi [rad]", True, False,
+     "Delta-phi correlation split by MPI relationship: same MPI scatter, "
+     "cross-MPI, one-side MPI, no MPI (hard scatter only)."),
+    ("pair_deta_mpi", "deta_", MPI_SERIES, "#Delta#eta", True, False,
+     "Delta-eta correlation split by MPI relationship."),
+    ("pair_mass_mpi", "mass_", MPI_SERIES, "pair invariant mass [GeV]",
+     True, False,
+     "Pair invariant mass split by MPI relationship."),
+    ("pair_dphi_sharedparton_mpi", "dphi_", SHARED_PARTON_MPI_SERIES,
+     "#Delta#phi [rad]", True, False,
+     "SharedParton Delta-phi correlation split by MPI relationship: "
+     "shows whether the partonic correlation comes from ONE secondary "
+     "scatter (SameMPI) or accidental cross-MPI overlap."),
+    ("pair_deta_sharedparton_mpi", "deta_", SHARED_PARTON_MPI_SERIES,
+     "#Delta#eta", True, False,
+     "SharedParton Delta-eta correlation split by MPI relationship."),
+    ("pair_mass_sharedparton_mpi", "mass_", SHARED_PARTON_MPI_SERIES,
+     "pair invariant mass [GeV]", True, False,
+     "SharedParton pair invariant mass split by MPI relationship."),
+
+    # ---- ISR vs FSR shower lineage at the pair level ---------------------
+    ("pair_dphi_shower", "dphi_", SHOWER_SERIES, "#Delta#phi [rad]",
+     True, False,
+     "Delta-phi correlation split by pair shower lineage: both hadrons "
+     "trace through FSR, both through ISR, mixed, or neither."),
+    ("pair_deta_shower", "deta_", SHOWER_SERIES, "#Delta#eta", True, False,
+     "Delta-eta correlation split by pair shower lineage (ISR / FSR)."),
+    ("pair_mass_shower", "mass_", SHOWER_SERIES, "pair invariant mass [GeV]",
+     True, False,
+     "Pair invariant mass split by shower lineage."),
+
+    # ---- Heavy-flavour decay-chain relationship --------------------------
+    ("pair_dphi_hf", "dphi_", HF_SERIES, "#Delta#phi [rad]", True, False,
+     "Delta-phi correlation split by heavy-flavour decay-chain content: "
+     "bottom-chain pairs, charm-chain pairs, mixed, or pure light."),
+    ("pair_deta_hf", "deta_", HF_SERIES, "#Delta#eta", True, False,
+     "Delta-eta correlation split by heavy-flavour decay-chain content."),
+    ("pair_mass_hf", "mass_", HF_SERIES, "pair invariant mass [GeV]",
+     True, False,
+     "Pair invariant mass split by heavy-flavour decay-chain content."),
+
+    # ---- Multiplicity bins (low / mid / high) ----------------------------
+    ("pair_dphi_lowmult", "dphi_", PAIR_SERIES_LOWMULT, "#Delta#phi [rad]",
+     True, False,
+     "Delta-phi pair-class decomposition in low-multiplicity events "
+     "(N_studied < 20).  Shows how the ancestry mix changes with activity."),
+    ("pair_dphi_midmult", "dphi_", PAIR_SERIES_MIDMULT, "#Delta#phi [rad]",
+     True, False,
+     "Delta-phi pair-class decomposition in mid-multiplicity events "
+     "(20 <= N_studied < 80)."),
+    ("pair_dphi_highmult", "dphi_", PAIR_SERIES_HIGHMULT, "#Delta#phi [rad]",
+     True, False,
+     "Delta-phi pair-class decomposition in high-multiplicity events "
+     "(N_studied >= 80)."),
+    ("pair_deta_lowmult", "deta_", PAIR_SERIES_LOWMULT, "#Delta#eta",
+     True, False,
+     "Delta-eta pair-class decomposition in low-multiplicity events."),
+    ("pair_deta_midmult", "deta_", PAIR_SERIES_MIDMULT, "#Delta#eta",
+     True, False,
+     "Delta-eta pair-class decomposition in mid-multiplicity events."),
+    ("pair_deta_highmult", "deta_", PAIR_SERIES_HIGHMULT, "#Delta#eta",
+     True, False,
+     "Delta-eta pair-class decomposition in high-multiplicity events."),
+
+    # ---- Per-pair decay-chain depth (max of the two) ---------------------
+    ("pair_decay_depth_pairclass", "pair_decay_depth_",
+     DECAY_DEPTH_PAIR_SERIES,
+     "max decay-chain depth of the two pions", True, False,
+     "Per-pair maximum decay-chain depth (deeper of the two pions), "
+     "broken down by pair ancestry class.  Pairs from a single resonance "
+     "live at depth ~1; long cascades fill the right-hand tail."),
+
+    # ---- Single-particle heavy-flavour / shower / MPI splits -------------
+    ("sp_pt_hf", "pt_", SP_HF_SERIES, "p_{T} [GeV]", True, False,
+     "Pion p_T split by whether the hadronic decay chain passes through "
+     "any charm or bottom hadron in the ancestry."),
+    ("sp_pt_shower", "pt_", SP_SHOWER_SERIES, "p_{T} [GeV]", True, False,
+     "Pion p_T split by which parton shower (ISR / FSR) the ancestry "
+     "walks through.  FSR includes hadrons whose ancestry touches both."),
+    ("sp_pt_mpi", "pt_", SP_MPI_SERIES, "p_{T} [GeV]", True, False,
+     "Pion p_T split by whether the hadron descends from a secondary "
+     "multi-parton-interaction scatter."),
+
+    # ---- Flavor-mixing decompositions --------------------------------------
+    ("pair_dphi_flavmix", "dphi_", FLAVMIX_SERIES, "#Delta#phi [rad]",
+     True, False,
+     "Delta-phi correlation by joint hard-parton flavour: same quark vs "
+     "same generation vs cross generation vs with-gluon vs no-parton."),
+    ("pair_deta_flavmix", "deta_", FLAVMIX_SERIES, "#Delta#eta", True, False,
+     "Delta-eta correlation by joint hard-parton flavour."),
+    ("pair_mass_flavmix", "mass_", FLAVMIX_SERIES, "pair invariant mass [GeV]",
+     True, False,
+     "Pair invariant mass by joint hard-parton flavour."),
+
+    # ---- Same, restricted to SharedParton pairs ----------------------------
+    ("pair_dphi_sharedparton_flavmix", "dphi_", SHARED_PARTON_FLAV_SERIES,
+     "#Delta#phi [rad]", True, False,
+     "SharedParton Delta-phi by joint flavour — answers, within the "
+     "partonic correlation, what flavour content drives the near-side peak."),
+    ("pair_deta_sharedparton_flavmix", "deta_", SHARED_PARTON_FLAV_SERIES,
+     "#Delta#eta", True, False,
+     "SharedParton Delta-eta by joint flavour."),
+    ("pair_mass_sharedparton_flavmix", "mass_", SHARED_PARTON_FLAV_SERIES,
+     "pair invariant mass [GeV]", True, False,
+     "SharedParton pair invariant mass by joint flavour."),
+
+    # ---- Spherocity (event-shape) binned pair-class decompositions ---------
+    ("pair_dphi_jetlike",   "dphi_", PAIR_SERIES_JETLIKE,
+     "#Delta#phi [rad]", True, False,
+     "Pair-class Delta-phi correlation in jet-like events "
+     "(transverse spherocity S0 below the lower cut)."),
+    ("pair_dphi_midshape",  "dphi_", PAIR_SERIES_MIDSHAPE,
+     "#Delta#phi [rad]", True, False,
+     "Pair-class Delta-phi correlation in mid-shape events."),
+    ("pair_dphi_isotropic", "dphi_", PAIR_SERIES_ISOTROPIC,
+     "#Delta#phi [rad]", True, False,
+     "Pair-class Delta-phi correlation in isotropic events "
+     "(S0 above the upper cut)."),
+
+    ("pair_deta_jetlike",   "deta_", PAIR_SERIES_JETLIKE,
+     "#Delta#eta", True, False,
+     "Pair-class Delta-eta correlation in jet-like events."),
+    ("pair_deta_midshape",  "deta_", PAIR_SERIES_MIDSHAPE,
+     "#Delta#eta", True, False,
+     "Pair-class Delta-eta correlation in mid-shape events."),
+    ("pair_deta_isotropic", "deta_", PAIR_SERIES_ISOTROPIC,
+     "#Delta#eta", True, False,
+     "Pair-class Delta-eta correlation in isotropic events."),
 ]
 
 # Single-histogram figures.  (out-name, hist-name, x-title, logy, caption)
@@ -189,6 +463,22 @@ SINGLE_FIGURES = [
      "Higher bin = deeper sharing: 20 = same hard-process parton, "
      "70 = same pre-hadronization parton, 80 = same primary hadron parent. "
      "Single-plot summary of how genealogically close pion pairs are."),
+    ("event_multiplicity", "event_multiplicity",
+     "number of studied hadrons per event", True,
+     "Event multiplicity of the studied species.  Used to bin pair "
+     "observables into Low (<20), Mid (20-80), and High (>=80) classes."),
+    ("decay_chain_depth", "decay_chain_depth",
+     "decay-chain depth (number of hadronic steps from primary)", True,
+     "Single-particle decay-chain depth: 0 = primary hadron, 1 = direct "
+     "decay product of a primary, N = N-step cascade.  Long tails signal "
+     "deep feed-down (heavy-flavour cascades, K0S/Lambda chains)."),
+    ("event_spherocity", "event_spherocity",
+     "transverse spherocity S0  (0 = jet-like, 1 = isotropic)", False,
+     "Per-event transverse spherocity distribution.  Used to bin pair "
+     "observables into JetLike / MidShape / Isotropic classes.  Sanity-"
+     "check the cut thresholds against this shape — if it's monomodal "
+     "around S0 ~ 0.6 the cuts at 0.3 / 0.7 are sensible; for a heavy-"
+     "ion dataset the distribution shifts and the cuts should follow."),
 ]
 
 # Fraction (ratio-to-all) figures: f_class(x) = N_class(x) / N_all(x).
@@ -223,6 +513,104 @@ LADDER_HISTS = [
     ("pt_parton_Strange",       "p_{T} [GeV]", True,
      "Transverse momentum of strange-ancestor pions across the "
      "mechanism ladder."),
+    # ---- new ladder observables tracking MPI / HF / shower turn-on -----
+    ("dphi_pair_MPI_SameMPI",   "#Delta#phi [rad]", False,
+     "Delta-phi correlation of same-MPI pairs across the mechanism "
+     "ladder.  Should grow with the +MPI rung and beyond."),
+    ("dphi_pair_MPI_CrossMPI",  "#Delta#phi [rad]", False,
+     "Delta-phi correlation of cross-MPI pairs across the mechanism "
+     "ladder.  Tracks how much of the unrelated continuum is actually "
+     "cross-MPI accidental overlap."),
+    ("dphi_pair_SharedParton_SameMPI", "#Delta#phi [rad]", False,
+     "SharedParton pairs whose parton ancestry lives inside ONE MPI "
+     "scatter, across the mechanism ladder."),
+    ("pt_HF_FromBottomChain",   "p_{T} [GeV]", True,
+     "Bottom-chain pion p_T across the mechanism ladder."),
+    ("pt_HF_FromCharmChain",    "p_{T} [GeV]", True,
+     "Charm-chain pion p_T across the mechanism ladder."),
+    ("event_multiplicity",      "studied hadrons per event", True,
+     "Event multiplicity distribution across the mechanism ladder.  "
+     "MPI and Color Reconnection systematically push this up."),
+]
+
+# --- generator-comparison histogram set --------------------------------------
+# CURATED so EVERY figure overlays BOTH generators.  These are observables that
+# Pythia AND Herwig both populate through the provenance tagger regardless of
+# the history-builder (status-code vs HepMC graph inference).  We deliberately
+# EXCLUDE the MPI-relationship (pair_MPI_*) and ISR/FSR shower-lineage
+# (pair_Shower_*) and SharedParton-depth histograms: those need per-particle MPI
+# index / shower-origin tags that the Pythia status-code builder sets but the
+# Herwig->HepMC3 graph-inference path cannot, so they would render Pythia-only.
+# Those Pythia-only decompositions live in Pythia's INDIVIDUAL report, not here.
+#   tuple = (histogram name, x-title, logy, caption)
+COMPARE_HISTS = [
+    # -- where the particles come from: production origin --
+    ("pt_origin_Primary",       "p_{T} [GeV]", True,
+     "Transverse-momentum spectrum of PRIMARY (direct-hadronization) pions, "
+     "Pythia vs Herwig.  The primary fraction is the cleanest probe of the "
+     "hadronization model (Lund string vs cluster)."),
+    ("pt_origin_FromResonance", "p_{T} [GeV]", True,
+     "p_{T} of resonance-feed-down pions, Pythia vs Herwig."),
+    ("pt_origin_FromWeakDecay", "p_{T} [GeV]", True,
+     "p_{T} of weak-decay-feed-down pions, Pythia vs Herwig."),
+    # -- ancestor-parton flavour --
+    ("pt_parton_LightQuark",    "p_{T} [GeV]", True,
+     "p_{T} of light-quark-ancestry pions, Pythia vs Herwig."),
+    ("pt_parton_Strange",       "p_{T} [GeV]", True,
+     "p_{T} of strange-ancestry pions, Pythia vs Herwig.  Strangeness "
+     "production differs between the string and cluster models."),
+    ("pt_parton_Charm",         "p_{T} [GeV]", True,
+     "p_{T} of charm-ancestry pions, Pythia vs Herwig."),
+    ("pt_parton_Bottom",        "p_{T} [GeV]", True,
+     "p_{T} of bottom-ancestry pions, Pythia vs Herwig."),
+    ("pt_parton_Gluon",         "p_{T} [GeV]", True,
+     "p_{T} of gluon-ENDPOINT pions, Pythia vs Herwig.  Gluons are never "
+     "string endpoints, so this is ~0 in both by construction -- see the "
+     "initiating-parton figures for the real gluon-origin comparison."),
+    # -- INITIATING (hard-scatter) parton flavour: the gluon-capable view --
+    ("pt_initparton_Gluon",      "p_{T} [GeV]", True,
+     "p_{T} of GLUON-INITIATED pions (initiating hard parton = gluon), "
+     "Pythia vs Herwig.  This is the real \"came from a gluon\" fraction; "
+     "at LHC soft QCD it dominates."),
+    ("pt_initparton_LightQuark", "p_{T} [GeV]", True,
+     "p_{T} of light-quark-INITIATED pions, Pythia vs Herwig."),
+    ("pt_initparton_Strange",    "p_{T} [GeV]", True,
+     "p_{T} of strange-INITIATED pions, Pythia vs Herwig."),
+    # -- pair correlation by ancestry --
+    ("dphi_pair_All",           "#Delta#phi [rad]", False,
+     "All-pair Delta-phi correlation, Pythia vs Herwig."),
+    ("dphi_pair_SameResonance", "#Delta#phi [rad]", True,
+     "Same-resonance pair Delta-phi correlation, Pythia vs Herwig."),
+    ("dphi_pair_SharedParton",  "#Delta#phi [rad]", False,
+     "Shared-parton pair Delta-phi correlation, Pythia vs Herwig.  The "
+     "near-side partonic peak tests how each shower seeds pair correlations."),
+    ("dphi_pair_Unrelated",     "#Delta#phi [rad]", False,
+     "Unrelated (combinatorial) pair Delta-phi continuum, Pythia vs Herwig."),
+    ("deta_pair_SharedParton",  "#Delta#eta", False,
+     "Shared-parton pair Delta-eta correlation, Pythia vs Herwig."),
+    ("deta_pair_Unrelated",     "#Delta#eta", False,
+     "Unrelated pair Delta-eta continuum, Pythia vs Herwig."),
+    ("mass_pair_All",           "pair invariant mass [GeV]", True,
+     "All-pair invariant-mass spectrum, Pythia vs Herwig."),
+    ("mass_pair_SameResonance", "pair invariant mass [GeV]", True,
+     "Same-resonance pair invariant mass, Pythia vs Herwig.  The rho/K*/"
+     "omega/phi peaks should sit at the same masses in both generators — a "
+     "cross-generator validation of the resonance tagger."),
+    # -- single-plot genealogy summaries --
+    ("decay_chain_depth",       "decay-chain depth", True,
+     "Hadronic decay-chain depth per pion, Pythia vs Herwig.  0 = primary, "
+     "N = N-step cascade; the tail measures feed-down depth."),
+    ("n_parton_ancestors",      "number of parton ancestors", True,
+     "Number of pre-hadronization parton ancestors per pion, Pythia vs "
+     "Herwig.  String vs cluster topology shows up here."),
+    ("common_ancestor_depth",   "deepest common-ancestor stage", True,
+     "Per-pair stage of the deepest shared ancestor, Pythia vs Herwig.  "
+     "How genealogically close pion pairs are in each generator."),
+    ("event_multiplicity",      "studied hadrons per event", True,
+     "Event multiplicity of the studied species, Pythia vs Herwig.  The "
+     "string model typically yields more hadrons than the cluster model."),
+    ("event_spherocity",        "transverse spherocity S0", False,
+     "Per-event transverse-spherocity distribution, Pythia vs Herwig."),
 ]
 
 LADDER_COLOURS = ["kGray+2", "kAzure+1", "kOrange+7", "kRed+1",
@@ -442,14 +830,33 @@ def single_histogram(root_path, histname, xtitle, out_path, caption, logy=False)
 
 
 def overlay_ladder(rung_files, histname, xtitle, out_path, caption,
-                   logy=False, normalize=True):
-    """Overlay one histogram across the ladder rungs (one ROOT file each)
-    in the standardized plot style."""
+                   logy=False, normalize=True, colours=None,
+                   context_label="the mechanism ladder", require_all=False):
+    """Overlay one histogram across a set of ROOT files (one per rung /
+    generator) in the standardized plot style.
+
+    colours        — optional list of ROOT colour expressions, one per rung
+                     (used for generator comparison so each generator keeps a
+                     fixed colour); falls back to LADDER_COLOURS by index.
+    context_label  — what the overlay spans, for the plot title (e.g. 'the
+                     mechanism ladder' or 'generators').
+    require_all    — if True, the figure is emitted ONLY when EVERY input file
+                     has the histogram with entries; if any input lacks it or
+                     it is empty, the whole figure is skipped (returns None).
+                     Used by generator comparison so no figure is ever drawn
+                     with only one generator's curve — the quantitative zero
+                     lives in the tables instead.  When a structurally-empty
+                     observable later fills (e.g. Herwig primaries after the
+                     cluster-labelling fix), the figure reappears automatically."""
     import ROOT
     ROOT.gROOT.SetBatch(True)
     ROOT.gStyle.SetOptStat(0)
 
+    palette = colours if colours else LADDER_COLOURS
+
     prepared = []
+    n_inputs = len(rung_files)
+    n_usable = 0
     for i, (label, path) in enumerate(rung_files):
         f = ROOT.TFile.Open(path)
         if not f or f.IsZombie():
@@ -463,13 +870,29 @@ def overlay_ladder(rung_files, histname, xtitle, out_path, caption,
         h = h.Clone("%s_rung%d" % (histname, i))
         h.SetDirectory(0)
         f.Close()
-        if normalize and h.Integral() > 0:
-            h.Scale(1.0 / h.Integral())
-        _style_marker(h, root_color(LADDER_COLOURS[i % len(LADDER_COLOURS)], ROOT))
+        integral = h.Integral()
+        if integral > 0:
+            n_usable += 1
+        # Honestly flag an empty series so a comparison figure never looks
+        # single-generator by accident — an all-zero curve is invisible
+        # after normalization, so we say so in the legend.
+        if integral <= 0:
+            label = label + " (no entries)"
+        if normalize and integral > 0:
+            h.Scale(1.0 / integral)
+        _style_marker(h, root_color(palette[i % len(palette)], ROOT))
         prepared.append((h, label))
 
+    # Strict comparison: every input must contribute real entries, else skip
+    # so the figure is never single-generator.
+    if require_all and n_usable < n_inputs:
+        print("  · skip %s: only %d/%d inputs have entries (comparison "
+              "needs all)" % (histname, n_usable, n_inputs))
+        return None
+
     if not prepared:
-        print("  ! ladder: no rung produced histogram '%s'" % histname)
+        print("  ! %s: no input produced histogram '%s'"
+              % (context_label, histname))
         return None
 
     canvas = ROOT.TCanvas("cl_" + os.path.basename(out_path), histname, 900, 680)
@@ -479,7 +902,7 @@ def overlay_ladder(rung_files, histname, xtitle, out_path, caption,
     prepared[0][0].SetMaximum(ymax)
     _style_axes(prepared[0][0], xtitle,
                 "normalized" if normalize else "counts",
-                histname + " across the mechanism ladder")
+                histname + " across " + context_label)
 
     legend = ROOT.TLegend(0.62, 0.65, 0.88, 0.88)
     _legend_style(legend, ROOT)
@@ -516,6 +939,286 @@ def discover_rungs(ladder_dir):
     return rungs
 
 
+# --- generator comparison (Pythia vs Herwig vs ...) --------------------------
+# A comparison directory holds one <generator>.root per generator.  We give
+# each generator a pretty legend label and a FIXED colour so the same generator
+# is always the same colour across every figure.
+GENERATOR_LABELS = {
+    "pythia": "Pythia 8", "herwig": "Herwig 7",
+    "sherpa": "Sherpa", "epos": "EPOS",
+}
+GENERATOR_COLOURS = {
+    "pythia": "kAzure+1", "herwig": "kRed+1",
+    "sherpa": "kGreen+2", "epos": "kOrange+7",
+}
+GENERATOR_ORDER = ["pythia", "herwig", "sherpa", "epos"]
+
+
+def discover_generators(compare_dir):
+    """Return [(pretty-label, root-path, colour-expr), ...] for the .root files
+    in a comparison directory.
+
+    Two naming schemes are understood:
+      <generator>.root           → "Pythia 8"        (plain generator compare)
+      <generator>_<rung>.root    → "Pythia 8 · +MPI" (cross-generator mechanism
+                                    comparison; coloured by generator so the
+                                    same generator's rungs share a colour)
+    Ordered by GENERATOR_ORDER, then rung name.
+    """
+    items = []                                   # (gen, rung|None, path)
+    for path in glob.glob(os.path.join(compare_dir, "*.root")):
+        stem = os.path.splitext(os.path.basename(path))[0]
+        low = stem.lower()
+        gen, rung = low, None
+        if low not in GENERATOR_LABELS and "_" in stem:
+            pre, suf = stem.split("_", 1)
+            if pre.lower() in GENERATOR_LABELS:
+                gen, rung = pre.lower(), suf
+        items.append((gen, rung, path))
+
+    def _key(it):
+        gi = GENERATOR_ORDER.index(it[0]) if it[0] in GENERATOR_ORDER else 99
+        return (gi, it[1] or "")
+    items.sort(key=_key)
+
+    out = []
+    for i, (gen, rung, path) in enumerate(items):
+        glabel = GENERATOR_LABELS.get(gen, gen.capitalize())
+        label = glabel if rung is None else "%s · %s" % (glabel, rung)
+        colour = GENERATOR_COLOURS.get(gen, LADDER_COLOURS[i % len(LADDER_COLOURS)])
+        out.append((label, path, colour))
+    return out
+
+
+# --- multi-species support ---------------------------------------------------
+# provenance-study --species 211,321,2212 emits per-species single-particle
+# histograms suffixed _S<pdg> and per-species-pair pair histograms suffixed
+# _S<a>x<b>.  Single-species runs keep the legacy bare names untouched.
+
+# Classify the SINGLE_FIGURES entries by which suffix axis (if any) the engine
+# attaches to their underlying histogram:
+#   per-species  (_S<pdg>)   : ProvenanceObservables single-particle fills
+#   per-pair     (_S<a>x<b>)  : PairProvenanceObservables per-pair fill
+#   global       (no suffix)  : event-level histograms, filled once per event
+SINGLE_FIGURES_PER_SPECIES = {"n_parton_ancestors", "decay_chain_depth"}
+SINGLE_FIGURES_PER_PAIR    = {"common_ancestor_depth"}
+SINGLE_FIGURES_GLOBAL      = {"event_multiplicity", "event_spherocity"}
+
+# A few human-friendly species names; everything else falls back to the PDG.
+# Used only for ROOT canvas/axis titles (TLatex), never for the manifest text.
+SPECIES_NAMES = {
+    211:  "#pi^{#pm}",
+    321:  "K^{#pm}",
+    2212: "p",
+    2112: "n",
+    310:  "K^{0}_{S}",
+    3122: "#Lambda",
+}
+
+
+def species_tag(pdg):
+    """TLatex label for one species, for plot titles."""
+    return SPECIES_NAMES.get(pdg, "PDG %d" % pdg)
+
+
+def discover_species(root_path):
+    """Return the sorted list of |pdg| species present in this run.
+
+    A list of length <= 1 (or empty) means single-species / legacy mode, in
+    which case the caller should keep the historical bare-name behaviour.
+
+    Preferred source is the `species_list=` token in the <root>.txt summary
+    written by provenance-study; if that is absent we scan the ROOT keys for
+    `_S<digits>` / `_S<a>x<b>` suffixes.
+    """
+    # 1) summary file (preferred — cheap, no ROOT needed)
+    txt = root_path + ".txt"
+    if os.path.exists(txt):
+        try:
+            with open(txt) as fh:
+                for line in fh:
+                    m = re.search(r"species_list=([0-9,]+)", line)
+                    if m:
+                        vals = [int(x) for x in m.group(1).split(",") if x]
+                        return sorted(set(vals))
+        except OSError:
+            pass
+
+    # 2) fall back to scanning the ROOT keys for the suffix patterns
+    try:
+        import ROOT
+        ROOT.gROOT.SetBatch(True)
+        f = ROOT.TFile.Open(root_path)
+        if f and not f.IsZombie():
+            found = set()
+            for key in f.GetListOfKeys():
+                for mm in re.finditer(r"_S(\d+)(?:x(\d+))?", key.GetName()):
+                    found.add(int(mm.group(1)))
+                    if mm.group(2):
+                        found.add(int(mm.group(2)))
+            f.Close()
+            return sorted(found)
+    except Exception:
+        pass
+
+    return []
+
+
+def _suffixed_series(series, sfx):
+    """Append the species suffix to every series base-name so that the
+    histogram looked up becomes prefix + base + sfx (the engine appends the
+    suffix to the END of the full histogram name)."""
+    return [(base + sfx, label, col) for (base, label, col) in series]
+
+
+def emit_single_run(root_path, outdir, fmt, normalize, manifest,
+                    species_filter=None, pairs_filter=None):
+    """Emit all single-run decomposition figures for one ROOT file.
+
+    Detects the species axis: in single-species mode this reproduces the
+    legacy bare-name figures exactly; in multi-species mode it emits each
+    single-particle figure once per species (suffix _S<pdg>) and each pair
+    figure once per species-pair (suffix _S<a>x<b>, N(N+1)/2 of them).
+
+    Optional output filters (used by the GUI species/pair picker):
+      species_filter : iterable of |pdg| to restrict the single-particle
+                       figures to (subset of what's in the file).
+      pairs_filter   : iterable of (a, b) |pdg| tuples to restrict the pair
+                       figures to.  Each is canonicalised to a<=b.
+    Both are *output* filters only — the engine still computed everything in
+    the file.  When omitted, every species / pair present is emitted (the
+    historical behaviour).  The naming convention (suffixed vs bare) is keyed
+    on what the FILE actually contains, not on the filter, so filtering a
+    multi-species file down to one species still uses the _S<pdg> names."""
+    file_species = discover_species(root_path)
+    multi = len(file_species) > 1
+
+    if not multi:
+        # -------- legacy single-species path (unchanged behaviour) --------
+        for name, prefix, series, xtitle, logy, norm, caption in FIGURES:
+            out = os.path.join(outdir, name + "." + fmt)
+            cap = overlay(root_path, series, prefix, xtitle, out, caption,
+                          logy=logy, normalize=(normalize or norm))
+            if cap:
+                manifest.append((os.path.basename(out), cap))
+        for name, hist, xtitle, logy, caption in SINGLE_FIGURES:
+            out = os.path.join(outdir, name + "." + fmt)
+            cap = single_histogram(root_path, hist, xtitle, out, caption,
+                                   logy=logy)
+            if cap:
+                manifest.append((os.path.basename(out), cap))
+        for name, prefix, series, xtitle, divisor, caption in FRACTION_FIGURES:
+            out = os.path.join(outdir, name + "." + fmt)
+            cap = overlay_fractions(root_path, series, prefix, divisor,
+                                    xtitle, out, caption)
+            if cap:
+                manifest.append((os.path.basename(out), cap))
+        return
+
+    # ------------------------- multi-species path -------------------------
+    # Apply the optional output filters against what the file contains.
+    species = list(file_species)
+    if species_filter:
+        keep = set(int(s) for s in species_filter)
+        sel = [s for s in file_species if s in keep]
+        if sel:
+            species = sel
+
+    # Build the ordered list of (a<=b) species-pairs to emit.
+    if pairs_filter:
+        want = set()
+        for a, b in pairs_filter:
+            a, b = int(a), int(b)
+            want.add((min(a, b), max(a, b)))
+        pair_list = [(a, b) for (a, b) in sorted(want)
+                     if a in file_species and b in file_species]
+    else:
+        pair_list = []
+        for ai in range(len(species)):
+            for bi in range(ai, len(species)):
+                pair_list.append((min(species[ai], species[bi]),
+                                  max(species[ai], species[bi])))
+
+    print("  multi-species mode: %s" % ", ".join(str(s) for s in file_species))
+    if species_filter or pairs_filter:
+        print("  filtered to species %s, %d pair(s)"
+              % (",".join(str(s) for s in species), len(pair_list)))
+
+    # ---- per-species single-particle figures (suffix _S<pdg>) ----
+    for s in species:
+        sfx   = "_S%d" % s
+        note  = "  (species pdg = %d)" % s
+        title = species_tag(s)
+        for name, prefix, series, xtitle, logy, norm, caption in FIGURES:
+            if name.startswith("pair"):
+                continue
+            out = os.path.join(outdir, name + sfx + "." + fmt)
+            cap = overlay(root_path, _suffixed_series(series, sfx), prefix,
+                          xtitle, out, caption + note,
+                          logy=logy, normalize=(normalize or norm), title=title)
+            if cap:
+                manifest.append((os.path.basename(out), cap))
+        for name, hist, xtitle, logy, caption in SINGLE_FIGURES:
+            if name not in SINGLE_FIGURES_PER_SPECIES:
+                continue
+            out = os.path.join(outdir, name + sfx + "." + fmt)
+            cap = single_histogram(root_path, hist + sfx, xtitle, out,
+                                   caption + note, logy=logy)
+            if cap:
+                manifest.append((os.path.basename(out), cap))
+        for name, prefix, series, xtitle, divisor, caption in FRACTION_FIGURES:
+            if name.startswith("pair"):
+                continue
+            out = os.path.join(outdir, name + sfx + "." + fmt)
+            cap = overlay_fractions(root_path, _suffixed_series(series, sfx),
+                                    prefix, divisor + sfx, xtitle, out,
+                                    caption + note)
+            if cap:
+                manifest.append((os.path.basename(out), cap))
+
+    # ---- per-species-pair pair figures (suffix _S<a>x<b>, canonical a<=b) ----
+    for p1, p2 in pair_list:
+            sfx   = "_S%dx%d" % (p1, p2)
+            note  = "  (species pdg = %d x %d)" % (p1, p2)
+            title = "%s #times %s" % (species_tag(p1), species_tag(p2))
+            for name, prefix, series, xtitle, logy, norm, caption in FIGURES:
+                if not name.startswith("pair"):
+                    continue
+                out = os.path.join(outdir, name + sfx + "." + fmt)
+                cap = overlay(root_path, _suffixed_series(series, sfx), prefix,
+                              xtitle, out, caption + note,
+                              logy=logy, normalize=(normalize or norm),
+                              title=title)
+                if cap:
+                    manifest.append((os.path.basename(out), cap))
+            for name, hist, xtitle, logy, caption in SINGLE_FIGURES:
+                if name not in SINGLE_FIGURES_PER_PAIR:
+                    continue
+                out = os.path.join(outdir, name + sfx + "." + fmt)
+                cap = single_histogram(root_path, hist + sfx, xtitle, out,
+                                       caption + note, logy=logy)
+                if cap:
+                    manifest.append((os.path.basename(out), cap))
+            for name, prefix, series, xtitle, divisor, caption in FRACTION_FIGURES:
+                if not name.startswith("pair"):
+                    continue
+                out = os.path.join(outdir, name + sfx + "." + fmt)
+                cap = overlay_fractions(root_path, _suffixed_series(series, sfx),
+                                        prefix, divisor + sfx, xtitle, out,
+                                        caption + note)
+                if cap:
+                    manifest.append((os.path.basename(out), cap))
+
+    # ---- global single-histogram figures (no species axis) ----
+    for name, hist, xtitle, logy, caption in SINGLE_FIGURES:
+        if name not in SINGLE_FIGURES_GLOBAL:
+            continue
+        out = os.path.join(outdir, name + "." + fmt)
+        cap = single_histogram(root_path, hist, xtitle, out, caption, logy=logy)
+        if cap:
+            manifest.append((os.path.basename(out), cap))
+
+
 def main():
     ap = argparse.ArgumentParser(
         description="Overlay plots for provenance-study / mechanism-ladder "
@@ -524,6 +1227,9 @@ def main():
                     help="a single provenance-study .root file")
     ap.add_argument("--ladder", metavar="DIR",
                     help="a cap-mechanism-ladder output directory")
+    ap.add_argument("--compare", metavar="DIR",
+                    help="a generator-comparison directory holding one "
+                         "<generator>.root each (overlays Pythia vs Herwig ...)")
     ap.add_argument("--outdir",
                     default=os.path.join(REPO, "provenance", "plots"),
                     help="directory for the figures (default provenance/plots/)")
@@ -531,10 +1237,31 @@ def main():
                     help="figure file format (default pdf)")
     ap.add_argument("--normalize", action="store_true",
                     help="normalize every histogram to unit integral")
+    ap.add_argument("--species", metavar="LIST",
+                    help="comma-separated |pdg| to restrict single-particle "
+                         "figures to (multi-species files only; default all)")
+    ap.add_argument("--pairs", metavar="LIST",
+                    help="comma-separated species-pairs a x b to restrict pair "
+                         "figures to, e.g. 211x321,211x2212 (default all)")
     args = ap.parse_args()
 
-    if not args.root and not args.ladder:
-        ap.error("give --root FILE and/or --ladder DIR")
+    species_filter = None
+    if args.species:
+        species_filter = [int(t) for t in args.species.replace(" ", "").split(",")
+                          if t]
+    pairs_filter = None
+    if args.pairs:
+        pairs_filter = []
+        for tok in args.pairs.replace(" ", "").split(","):
+            if not tok:
+                continue
+            if "x" not in tok:
+                sys.exit("bad --pairs token '%s' (expected <a>x<b>)" % tok)
+            a, b = tok.split("x", 1)
+            pairs_filter.append((int(a), int(b)))
+
+    if not args.root and not args.ladder and not args.compare:
+        ap.error("give --root FILE and/or --ladder DIR and/or --compare DIR")
 
     os.makedirs(args.outdir, exist_ok=True)
     manifest = []   # (filename, caption)
@@ -546,28 +1273,10 @@ def main():
         if not os.path.exists(args.root):
             sys.exit("ROOT file not found: " + args.root)
         print("single run: %s" % args.root)
-        for name, prefix, series, xtitle, logy, norm, caption in FIGURES:
-            out = os.path.join(args.outdir, name + "." + args.format)
-            cap = overlay(args.root, series, prefix, xtitle, out, caption,
-                          logy=logy, normalize=(args.normalize or norm))
-            if cap:
-                manifest.append((os.path.basename(out), cap))
-
-        # ---- single-histogram figures (e.g. n_parton_ancestors) ----------
-        for name, hist, xtitle, logy, caption in SINGLE_FIGURES:
-            out = os.path.join(args.outdir, name + "." + args.format)
-            cap = single_histogram(args.root, hist, xtitle, out, caption,
-                                   logy=logy)
-            if cap:
-                manifest.append((os.path.basename(out), cap))
-
-        # ---- fraction-per-bin figures (local class composition) ----------
-        for name, prefix, series, xtitle, divisor, caption in FRACTION_FIGURES:
-            out = os.path.join(args.outdir, name + "." + args.format)
-            cap = overlay_fractions(args.root, series, prefix, divisor,
-                                    xtitle, out, caption)
-            if cap:
-                manifest.append((os.path.basename(out), cap))
+        emit_single_run(args.root, args.outdir, args.format,
+                        args.normalize, manifest,
+                        species_filter=species_filter,
+                        pairs_filter=pairs_filter)
 
     # ---- mechanism-ladder comparison figures ----------------------------
     if args.ladder:
@@ -583,6 +1292,30 @@ def main():
                                + args.format)
             cap = overlay_ladder(rungs, histname, xtitle, out, caption,
                                  logy=logy, normalize=True)
+            if cap:
+                manifest.append((os.path.basename(out), cap))
+
+    # ---- generator comparison (Pythia vs Herwig vs ...) -----------------
+    if args.compare:
+        if not os.path.isdir(args.compare):
+            sys.exit("comparison directory not found: " + args.compare)
+        gens = discover_generators(args.compare)
+        if not gens:
+            sys.exit("no <generator>.root files found in " + args.compare)
+        labels  = [g[0] for g in gens]
+        paths   = [(g[0], g[1]) for g in gens]
+        colours = [g[2] for g in gens]
+        print("generator comparison: %d generator(s) — %s"
+              % (len(gens), ", ".join(labels)))
+        # Use the CURATED COMPARE_HISTS set: every figure is an overlay of the
+        # same observable across the generators, restricted to observables BOTH
+        # populate (so no figure is silently single-generator).
+        for histname, xtitle, logy, caption in COMPARE_HISTS:
+            out = os.path.join(args.outdir, "compare_" + histname + "."
+                               + args.format)
+            cap = overlay_ladder(paths, histname, xtitle, out, caption,
+                                 logy=logy, normalize=True, colours=colours,
+                                 context_label="generators", require_all=True)
             if cap:
                 manifest.append((os.path.basename(out), cap))
 

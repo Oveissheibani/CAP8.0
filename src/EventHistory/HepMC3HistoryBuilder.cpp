@@ -39,6 +39,21 @@ bool pdgIsParton(int pdg)
   const int a = std::abs(pdg);
   return a < 10 || a == 21;
 }
+
+// The hadronization BOUNDARY pseudo-particles: a Herwig cluster (PDG 81), a
+// generic cluster (91) and a Lund string (92).  These are neither real
+// partons nor real hadrons — they are the object that fragments INTO the
+// primary hadrons.  A hadron whose parent is one of these is a PRIMARY hadron
+// (formed directly at hadronization), NOT a decay product.  Without this,
+// every Herwig primary hadron — which always descends from a cluster — is
+// mislabelled as feed-down, giving the spurious "Primary 0%" / inflated
+// FromWeakDecay seen in the HepMC (Herwig) path.  Verified on real Herwig
+// output: the dominant direct parent of primary pions is PDG 81.
+bool pdgIsHadronizationBoundary(int pdg)
+{
+  const int a = std::abs(pdg);
+  return a == 81 || a == 91 || a == 92;
+}
 } // anonymous namespace
 
 // ----------------------------------------------------------------------
@@ -93,8 +108,14 @@ void HepMC3HistoryBuilder::build(HepMC3::GenEvent & ev,
         if (!in) continue;
         std::map<int,int>::const_iterator pit = idToIndex.find(in->id());
         if (pit != idToIndex.end()) out.link(pit->second, idx);
-        if (pdgIsParton(in->pid())) fromPartons = true;
-        else                        fromHadrons = true;
+        // A cluster / string parent is the hadronization BOUNDARY, not a
+        // real hadron — treat it like a parton source so the hadron it
+        // produces is classified PrimaryHadrons (formed at hadronization),
+        // not DecayProducts.  This is the Herwig "Primary 0%" fix.
+        if (pdgIsParton(in->pid()) || pdgIsHadronizationBoundary(in->pid()))
+          fromPartons = true;
+        else
+          fromHadrons = true;
         }
       }
 

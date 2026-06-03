@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""cap-merge-summaries — combine N provenance-study .root.txt summaries into one.
+
+When a long run is split into resumable chunks, the histograms are merged with
+ROOT's `hadd`, but the text summary (.root.txt) that provenance-report reads is
+not.  This sums the headline counts and every class row across the chunks and
+recomputes percentages, writing a merged summary in the exact same format so
+the report parses it unchanged.
+
+Usage:
+  cap-merge-summaries OUT.root.txt chunk0.root.txt chunk1.root.txt ...
+"""
+import re
+import sys
+
+
+def parse(path):
+    """Return (config_line, sections) where sections maps a header-key to
+    {'headline': (events, count_label, count), 'rows': [(name, count, pct)]}."""
+    events = None
+    config_line = None
+    sections = {}            # key -> dict
+    cur = None
+    with open(path) as fh:
+        for line in fh:
+            if "events=" in line and "ecm=" in line:
+                config_line = line.rstrip("\n")
+                m = re.search(r"events=(\d+)", line)
+                if m:
+                    events = int(m.group(1))
+                continue
+            # section headline, e.g.
+            #   ProvenanceObservables — 2000 event(s), 179086 studied hadron(s)
+            m = re.match(r"^(\w+) — (\d+) event\(s\), (\d+) ([\w\- ]+\(s\))", line)
+            if m:
+                key = m.group(1)
+                cur = {"events": int(m.group(2)),
+                       "count_label": m.group(4),
+                       "count": int(m.group(3)),
+                       "groups": []}     # list of (group_header, [rows])
+                sections[key] = cur
+                cur["_curgroup"] = None
+                continue
+            # group header line, e.g. "  by origin:" or "  pair correlation ..."
+            if cur is not None and re.match(r"^\s+[\w].*:\s*$", line) \
+                    and ":" in line and not re.match(r"^\s+\S+\s+\d", line):
+                grp = (line.rstrip("\n"), [])
+                cur["groups"].append(grp)
+                cur["_curgroup"] = grp
+                continue
+            # class row: "    Name   COUNT   PCT %"
+            m = re.match(r"^(\s+)(\S+)\s+(\d+)\s+([\d.]+)\s*%", line)
+            if m and cur is not None and cur["_curgroup"] is not None:
+                cur["_curgroup"][1].append(
+                    (m.group(1), m.group(2), int(m.group(3))))
+    return config_line, events, sections
+
+
+def main():
+    if len(sys.argv) < 3:
+        sys.exit("usage: cap-merge-summaries OUT in0 in1 ...")
+    out, ins = sys.argv[1], sys.argv[2:]
+    base_cfg = None
+    base_events = 0
+    merged = {}              # key -> {'count': int, 'count_label', 'groups': {ghdr: {name:(indent,count)}}, 'order'}
+    for p in ins:
+        cfg, events, sections = parse(p)
+        if base_cfg is None:
+            base_cfg = cfg
+        base_events += (events or 0)
+        for key, sec in sections.items():
+            mk = merged.setdefault(key, {"count": 0,
+                                         "count_label": sec["count_label"],
+                                         "events": 0, "groups": {}, "gorder": []})
+            mk["count"] += sec["count"]
+            mk["events"] += sec["events"]
+            for ghdr, rows in sec["groups"]:
+                if ghdr not in mk["groups"]:
+                    mk["groups"][ghdr] = {}
+                    mk["gorder"].append(ghdr)
+                for indent, name, cnt in rows:
+                    cur = mk["groups"][ghdr].get(name, (indent, 0))
+                    mk["groups"][ghdr][name] = (indent, cur[1] + cnt)
+
+    lines = ["provenance-study summary (merged from %d chunks)" % len(ins)]
+    if base_cfg:
+        # rewrite the events= field to the merged total
+        lines.append(re.sub(r"events=\d+", "events=%d" % base_events, base_cfg))
+    lines.append("")
+    for key, mk in merged.items():
+        tot = mk["count"] if mk["count"] > 0 else 1
+        lines.append("%s — %d event(s), %d %s"
+                     % (key, mk["events"], mk["count"], mk["count_label"]))
+        for ghdr in mk["gorder"]:
+            lines.append(ghdr)
+            for name, (indent, cnt) in mk["groups"][ghdr].items():
+                lines.append("%s%-16s %10d   %6.2f %%"
+                             % (indent, name, cnt, 100.0 * cnt / tot))
+        lines.append("")
+    with open(out, "w") as fh:
+        fh.write("\n".join(lines) + "\n")
+    print("merged %d summaries -> %s (%d events)" % (len(ins), out, base_events))
+
+
+if __name__ == "__main__":
+    main()

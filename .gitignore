@@ -143,3 +143,37 @@ cap-private*
 
 # macOS .app icon-build intermediates (the finished .icns lives in the bundles)
 macos-apps/build/
+
+##################
+# Provenance feature — generated artifacts
+##################
+__pycache__/
+*.pyc
+*.tmp
+# provenance-b is a working dir: keep only the analysis tooling, ignore run output + presentation
+provenance-b/herwig/
+provenance-b/run200k/
+provenance-b/reports/
+provenance-b/plots/
+provenance-b/cmp-report/
+provenance-b/cmp-plots/
+provenance-b/pythia-plots/
+provenance-b/herwig-plots/
+provenance-b/runs/
+provenance-b/logs/
+provenance-b/compare/*.root
+provenance-b/compare/*.root.txt
+provenance-b/*.png
+provenance-b/*.pdf
+provenance-b/*.svg
+provenance-b/*.aux
+provenance-b/*.log
+provenance-b/*.toc
+provenance-b/*.nav
+provenance-b/*.out
+provenance-b/*.snm
+# presentation sources (personal deliverable, not code) — keep local
+provenance-b/provenance-talk.tex
+provenance-b/provenance-flowcharts.tex
+provenance-b/make_cartoon.py
+provenance-b/make_onion.py

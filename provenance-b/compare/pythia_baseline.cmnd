@@ -1,0 +1,5 @@
+! Pythia baseline matched to the Herwig baseline rung:
+!   MPI off, K0S stabilized (so the K0S->pipi feed-down is removed in both).
+! Used by the cross-generator comparison smoke test.
+PartonLevel:MPI = off
+310:mayDecay = off

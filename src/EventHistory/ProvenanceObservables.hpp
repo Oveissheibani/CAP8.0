@@ -23,6 +23,7 @@
 #ifndef CAP__ProvenanceObservables
 #define CAP__ProvenanceObservables
 
+#include <limits>
 #include <map>
 #include <string>
 #include <vector>
@@ -67,7 +68,12 @@ std::string originClassName(OriginClass c);
 std::string partonClassName(PartonClass c);
 
 OriginClass classifyOrigin(const ProvenanceTag & t);
+// String-ENDPOINT parton flavour (Lund endpoint; never a gluon).
 PartonClass classifyParton(const ProvenanceTag & t);
+// INITIATING hard-scatter parton flavour (gluon-capable: quark- vs gluon-jet
+// origin).  See ProvenanceObservables.cpp for the string-endpoint vs
+// initiating distinction.
+PartonClass classifyInitiatingParton(const ProvenanceTag & t);
 
 // ----------------------------------------------------------------------
 //  The accumulator.
@@ -78,7 +84,32 @@ public:
 
   // speciesPdg : |pdg| of the species to study (e.g. 211 for pi+/-).
   //              0 means "every final-state hadron".
-  explicit ProvenanceObservables(int speciesPdg = 0);
+  // ptMin/ptMax  : transverse-momentum acceptance window (defaults are
+  //                wide-open — i.e. no cut).  A hadron whose pT falls
+  //                outside [ptMin, ptMax] is dropped entirely.
+  // etaMin/etaMax: pseudorapidity acceptance window (defaults wide-open).
+  explicit ProvenanceObservables(
+      int    speciesPdg = 0,
+      double ptMin  =  0.0,
+      double ptMax  =  std::numeric_limits<double>::infinity(),
+      double etaMin = -std::numeric_limits<double>::infinity(),
+      double etaMax =  std::numeric_limits<double>::infinity());
+
+  // Multi-species overload — accepts a list of |pdg| values.  Each
+  // selected hadron is routed into species-tagged histograms, e.g.
+  // `pt_origin_Primary_S211` for pi+/-.  When the list has exactly one
+  // entry the histogram names match the legacy single-species format
+  // (no suffix) so existing downstream plots keep working.  A 0 anywhere
+  // in the list collapses to the legacy `all-hadrons` mode.
+  explicit ProvenanceObservables(
+      const std::vector<int> & speciesList,
+      double ptMin  =  0.0,
+      double ptMax  =  std::numeric_limits<double>::infinity(),
+      double etaMin = -std::numeric_limits<double>::infinity(),
+      double etaMax =  std::numeric_limits<double>::infinity());
+
+  // Effective species list after canonicalisation (0 collapses).
+  const std::vector<int> & speciesList() const { return _species; }
 
   // Feed one event: the history and the per-final-hadron tags.
   void accumulate(const EventHistory & history,
@@ -97,7 +128,13 @@ private:
 
   Hist1D & H(const std::string & name);   // fetch-or-create
 
-  int    _speciesPdg;
+  // Per-species suffix used in histogram names.  Empty in single-species
+  // mode for backward compatibility with existing plots.
+  std::string speciesSuffix(int s) const;
+
+  std::vector<int> _species;              // canonicalised species list
+  int    _speciesPdg;                     // legacy, == _species[0] when size==1
+  double _ptMin, _ptMax, _etaMin, _etaMax;   // acceptance window
   int    _events       = 0;
   double _totalStudied = 0.0;             // # studied hadrons, all events
   std::map<std::string,Hist1D> _hist;

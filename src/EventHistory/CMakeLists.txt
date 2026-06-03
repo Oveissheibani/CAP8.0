@@ -49,6 +49,13 @@ if(CAP_ENABLE_PYTHIA AND PYTHIA8_FOUND)
     add_executable(provenance-study provenance-study.cpp)
     target_link_libraries(provenance-study
         PRIVATE EventHistory Pythia8::Pythia8 ${ROOT_LIBRARIES})
+    # Optional HepMC3 input path (--hepmc3): consume Herwig/Sherpa/EPOS events.
+    # EventHistory already links HepMC3 PUBLIC when enabled, so the headers
+    # come transitively; we just need the compile flag + the lib.
+    if(CAP_ENABLE_HEPMC3 AND HEPMC3_FOUND)
+        target_compile_definitions(provenance-study PRIVATE CAP_ENABLE_HEPMC3)
+        target_link_libraries(provenance-study PRIVATE HepMC3::HepMC3)
+    endif()
     install(TARGETS provenance-study
             RUNTIME DESTINATION ${CAP_INSTALL_BINDIR})
 endif()
