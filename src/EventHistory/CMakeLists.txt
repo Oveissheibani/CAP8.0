@@ -16,7 +16,9 @@ set(_eventhistory_sources
     StageSelector.cpp
     ProvenanceTagger.cpp
     ProvenanceObservables.cpp
-    PairProvenanceObservables.cpp)
+    PairProvenanceObservables.cpp
+    EntropyObservables.cpp
+    FragmentationSystems.cpp)
 set(_eventhistory_libs)
 
 if(CAP_ENABLE_PYTHIA AND PYTHIA8_FOUND)

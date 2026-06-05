@@ -161,6 +161,13 @@ provenance-b/pythia-plots/
 provenance-b/herwig-plots/
 provenance-b/runs/
 provenance-b/logs/
+# any run-output dir (ent_smoke, smoke, ladder-work, run500k, …): keep only
+# tooling + the proposal/plan .md files, never the generated run artifacts
+provenance-b/*/.cap-run-state.json
+provenance-b/ent_smoke/
+provenance-b/smoke*/
+provenance-b/*ladder*/
+provenance-b/run*/
 provenance-b/compare/*.root
 provenance-b/compare/*.root.txt
 provenance-b/*.png

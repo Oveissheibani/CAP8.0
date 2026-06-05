@@ -58,6 +58,18 @@ def main() -> int:
     ap.add_argument("--outdir", default=str(REPO / "provenance-b" / "ladder"))
     ap.add_argument("--keep-hepmc", action="store_true")
     ap.add_argument("--no-pdf", action="store_true")
+    ap.add_argument("--entropy", action="store_true",
+                    help="ALSO accumulate the entropy / information block in "
+                         "every rung (the ladder report then gains the "
+                         "entropy-across-the-ladder table).  Note: rungs "
+                         "already finished WITHOUT --entropy are skipped by "
+                         "resume; delete their .root.txt to re-run them with "
+                         "entropy on.")
+    ap.add_argument("--systems", action="store_true",
+                    help="ALSO accumulate the fragmentation-system "
+                         "observables in every rung (lambda-vs-CR is the "
+                         "headline: CR exists to minimize the total string "
+                         "length, and this makes that action visible).")
     ap.add_argument("--print-only", action="store_true")
     a = ap.parse_args()
 
@@ -74,6 +86,10 @@ def main() -> int:
     ev     = str(int(a.events))
     common_args = ["--events", ev, "--species", a.species,
                    "--ecm", str(float(a.ecm)), "--seed", str(int(a.seed))]
+    if a.entropy:
+        common_args.append("--entropy")
+    if a.systems:
+        common_args.append("--systems")
 
     # Build the full plan: (description, list-of-commands, hepmc-to-delete|None)
     cmds: list[tuple[list[str], str | None]] = []

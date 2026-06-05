@@ -282,5 +282,178 @@
      "events live near 0, isotropic events near 1.  Use this to "
      "validate that the bin thresholds split the sample roughly evenly "
      "(or in the proportions you intended)."},
+    // ----- hadronization interface (string vs cluster) ------------------
+    {"had_npartons",
+     "The INPUT side of hadronization: how many partons reach the "
+     "string/cluster stage per event.  Mostly an MPI+shower statement -- "
+     "more scatters and more radiation mean more partons to hadronize."},
+    {"had_nprimary",
+     "The OUTPUT side of hadronization: primary hadrons per event, before "
+     "any decay.  Compare against had_npartons mentally: the gap between "
+     "the two IS the fragmentation multiplicity."},
+    {"had_ratio",
+     "Read the peak position: it is the average number of primary hadrons "
+     "each incoming parton turns into.  This is the single most direct "
+     "fingerprint of the fragmentation mechanism."},
+    {"compare_had_npartons",
+     "Expect a REAL difference here: Herwig's cluster model force-splits "
+     "every gluon into a quark-antiquark pair before hadronization, so it "
+     "feeds more, lighter objects into the hadronization step than "
+     "Pythia's string picture.  This plot makes that model difference "
+     "directly visible."},
+    {"compare_had_nprimary",
+     "Primary-hadron multiplicity head-to-head, decay-free.  The string "
+     "typically yields more primary hadrons per event; differences here "
+     "propagate into every multiplicity observable downstream."},
+    {"compare_had_ratio",
+     "THE string-vs-cluster plot: hadrons produced per parton entering "
+     "hadronization.  One long string fragments into many hadrons (high "
+     "ratio, broad); one cluster decays into about two (ratio clustered "
+     "low).  If you show one hadronization comparison, show this one."},
+    {"compare_mult_origin_Primary",
+     "Same comparison restricted to the studied species inside the "
+     "acceptance window -- the version of the primary-multiplicity "
+     "difference that feeds the visible final state."},
+    // ----- fragmentation systems (opt-in --systems runs) ----------------
+    {"frag_system_mass",
+     "THE model-assumption plot.  The cluster model is BUILT on low "
+     "cluster masses (peak at 1-3 GeV); the string picture allows heavy "
+     "systems.  Both axes are the same by construction (primary-hadron "
+     "sum), so any difference is the model, not the bookkeeping."},
+    {"frag_nhad_vs_mass",
+     "The SCALING test, stronger than any shape: Lund predicts a straight "
+     "ln(m^2) rise of hadrons-per-system; clusters stay near 2 at every "
+     "mass because heavy clusters fission first.  If the two curves "
+     "separate the way the models say, the system reconstruction is doing "
+     "its job."},
+    {"frag_charge_ordering",
+     "Compare the BLUE (OS same-system) curve against the others at small "
+     "Delta-y.  An OS excess that exists ONLY within systems is local "
+     "charge conservation in the breaks -- the microscopic origin of "
+     "balance functions.  Cross-system curves are the control: no "
+     "constraint, no excess."},
+    {"frag_lambda",
+     "Watch this one across the CR ladder rung: colour reconnection is "
+     "DEFINED as the mechanism that minimises total string length, so "
+     "lambda must drop when CR turns on.  If it does not, the CR "
+     "implementation is not doing what its name claims."},
+    {"compare_frag_system_mass",
+     "One axis, two hadronization philosophies.  Read the peak position "
+     "(cluster mass scale vs string masses) and the tail (how much heavy-"
+     "system phase space each model populates)."},
+    {"compare_frag_nhad_per_system",
+     "The cluster ~2-hadron peak against the string's broad fragmentation "
+     "multiplicity -- the single most direct picture of how differently "
+     "the two models convert partons into hadrons."},
+    {"compare_frag_y_span",
+     "Each model's long-range budget: how far one system's hadrons reach "
+     "in rapidity.  Long spans seed long-range correlations; if the "
+     "generators differ here they MUST differ in forward-backward "
+     "correlations too."},
+    // ----- event multiplicity / centrality (three concepts) -------------
+    {"nmult_hadrons",
+     "The TOTAL hadronic yield: charged and neutral, all species.  Compare "
+     "mentally against nmult_charged (about 2/3 of hadrons are charged) "
+     "and event_multiplicity (one species, windowed) to keep the three "
+     "concepts apart."},
+    {"nmult_charged",
+     "What experiments can actually count.  The ratio to nmult_hadrons is "
+     "set by isospin (roughly 2/3) and strange/neutral feed-down."},
+    {"nmult_charged_eta10",
+     "The standard quoted N_ch: central tracker window.  This is the axis "
+     "to compare against published dN_ch/deta numbers."},
+    {"nmult_charged_fwd",
+     "The CENTRALITY ESTIMATOR axis.  Slice this distribution into "
+     "percentiles to define centrality classes; it is measured FORWARD "
+     "precisely so the class definition does not auto-correlate with "
+     "central observables."},
+    {"nmult_nmpi",
+     "Model-truth activity: how many MPI scatters actually happened "
+     "(distinct MPI ancestors of the studied hadrons).  Experiments can "
+     "never see this directly -- only its estimator (forward N_ch).  "
+     "Pythia only; zero by construction for HepMC input."},
+    {"nmult_nch_vs_nmpi",
+     "Read the slope and the spread: a steep, tight, linear rise means "
+     "central N_ch is a faithful centrality estimator; flattening at "
+     "high N_MPI is saturation -- the multiplicity stops resolving the "
+     "underlying activity.  This is the model-level justification (or "
+     "indictment) of multiplicity-based centrality in pp."},
+    // ----- entropy / information figures (opt-in --entropy runs) --------
+    {"entropy_mult",
+     "Each curve is the charged-multiplicity distribution P(N) in one "
+     "pseudorapidity window.  WIDTH is the message: the Shannon entropy "
+     "quoted in the entropy table is large when the distribution is wide "
+     "and flat, small when it is narrow.  Watch the entropy grow as the "
+     "window opens — the analogue of the entanglement-entropy growth with "
+     "the size of the probed region in the Kharzeev-Levin picture."},
+    {"entropy_fb",
+     "Forward and backward hemisphere multiplicities.  By symmetry the two "
+     "curves should lie on top of each other; the physics is NOT in either "
+     "curve alone but in their joint distribution — the mutual information "
+     "I(NF;NB) in the information-recovery table.  I > 0 means knowing the "
+     "forward multiplicity tells you about the backward one (long-range "
+     "correlation; the classical proxy for rapidity-interval entanglement)."},
+    {"entropy_stage_S",
+     "One point per evolution stage, in time order.  The VALUE is how "
+     "spread out that stage's particles are over (eta, pT); the STEP from "
+     "one stage to the next is the phase-space entropy produced by that "
+     "step of the event evolution.  Expect the biggest steps at the shower "
+     "and at hadronization; decays mostly reshuffle."},
+    {"entropy_stage_meanN",
+     "Mean object count per stage — the 'how many' half of the entropy "
+     "budget (the profile plot is the 'where' half).  Hadronization is "
+     "the big multiplier: one string/cluster system becomes many hadrons."},
+    {"entropy_stage_total",
+     "Occupancy entropy plus ln(mean N) — a coarse total-entropy proxy "
+     "combining spread and count.  Read the jump between consecutive "
+     "stages as the entropy produced by that step; this is the single "
+     "plot to show for 'where is the entropy of the collision made'."},
+    {"compare_ent_mult_eta05",
+     "Same multiplicity distribution, both generators.  The wider "
+     "distribution carries the larger Shannon entropy (see the comparison "
+     "entropy table for the numbers).  Differences here are differences "
+     "in how the string and cluster models populate the central region."},
+    {"compare_ent_mult_full",
+     "Full-acceptance multiplicity distribution, both generators.  The "
+     "entropy difference between generators is dominated by the width "
+     "difference visible here."},
+    {"compare_ent_stage_S",
+     "Entropy-production profile, both generators, NOT normalized — these "
+     "are entropy values, not distributions.  Where the curves separate is "
+     "where the two models produce entropy differently: a string-vs-cluster "
+     "difference at PrimaryHadrons is a hadronization-model statement, a "
+     "difference at ISR/FSR is a shower statement."},
+    {"compare_ent_stage_meanN",
+     "Mean object count per stage for both generators.  The PrimaryHadrons "
+     "step shows directly which hadronization model fragments into more "
+     "pieces; FinalState shows the net multiplicity after decays."},
+    {"compare_ent_stage_total",
+     "Total-entropy proxy per stage (occupancy + ln mean count), both "
+     "generators.  The single most compact comparison of WHERE each "
+     "generator makes its entropy."},
+    {"entropy_kno",
+     "The KNO test: if the rescaled curves from the different eta windows "
+     "collapse onto one shape, multiplicity fluctuations are scale-"
+     "invariant and the entropy obeys S = ln<N> + const.  A collapse here "
+     "plus S/ln<N> near constant in the entropy table is the internal "
+     "consistency check of the Kharzeev-Levin reading."},
+    {"entropy_fb_mi_gap",
+     "Read the trend, not single points: I at gap 0 is ALL the shared "
+     "forward/backward information; as the gap removes the central region, "
+     "what survives is genuinely LONG-RANGE shared information.  A slow "
+     "decay means long-range correlation (string-like); a fast decay means "
+     "the information is short-range.  Always compare each point against "
+     "its bias estimate in the table before quoting it."},
+    {"entropy_nmpi",
+     "Sanity distribution for the MPI-activity recovery: how many distinct "
+     "MPI scatters contribute tagged hadrons per event.  In Herwig/HepMC "
+     "input this is identically zero (no MPI tags in the graph), so "
+     "I(N_MPI;N_ch) is meaningful for Pythia only."},
+    {"compare_ent_fb_mi_gap",
+     "The headline information-flow comparison: which hadronization model "
+     "carries more forward/backward shared information, and how fast each "
+     "loses it with rapidity separation.  Differences at LARGE gap are the "
+     "interesting ones -- they cannot come from short-range decay "
+     "kinematics."},
   };
   return M;

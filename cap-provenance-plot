@@ -450,6 +450,22 @@ FIGURES = [
 
 # Single-histogram figures.  (out-name, hist-name, x-title, logy, caption)
 SINGLE_FIGURES = [
+    # ---- hadronization interface (string vs cluster, generator-agnostic) ----
+    ("had_npartons", "had_npartons",
+     "partons entering hadronization per event", True,
+     "How many partons enter hadronization (the PartonsPreHadronization "
+     "stage) per event.  The INPUT side of the hadronization model: the "
+     "Lund string fragments long colour chains, the cluster model first "
+     "splits gluons and forms many small clusters."),
+    ("had_nprimary", "had_nprimary",
+     "primary hadrons per event", True,
+     "How many primary hadrons hadronization produces per event, BEFORE "
+     "any decays.  The OUTPUT side of the hadronization model."),
+    ("had_ratio", "had_ratio",
+     "primary hadrons per parton", False,
+     "The hadronization conversion ratio: primary hadrons produced per "
+     "parton entering hadronization.  A single-number-per-event "
+     "fingerprint of the fragmentation model (string vs cluster)."),
     ("n_parton_ancestors", "n_parton_ancestors",
      "number of pre-hadronization parton ancestors per pion", True,
      "How many pre-hadronization partons each final pion descends from. "
@@ -463,10 +479,41 @@ SINGLE_FIGURES = [
      "Higher bin = deeper sharing: 20 = same hard-process parton, "
      "70 = same pre-hadronization parton, 80 = same primary hadron parent. "
      "Single-plot summary of how genealogically close pion pairs are."),
+    # ---- event multiplicity / centrality: three DISTINCT concepts ----------
+    ("nmult_hadrons", "nmult_hadrons",
+     "final-state hadrons per event (charged + neutral)", True,
+     "HADRON multiplicity: every final-state hadron, charged AND neutral, "
+     "any species, full acceptance.  The total hadronic yield of the "
+     "collision -- larger than any charged or single-species count."),
+    ("nmult_charged", "nmult_charged",
+     "charged particles per event (full acceptance)", True,
+     "CHARGED multiplicity N_ch: electrically charged final-state "
+     "particles over full acceptance -- the experimentally accessible "
+     "multiplicity concept."),
+    ("nmult_charged_eta10", "nmult_charged_eta10",
+     "N_{ch} (|#eta| < 1)", True,
+     "Charged multiplicity in the central tracker window |eta| < 1 -- the "
+     "N_ch most pp measurements quote."),
+    ("nmult_charged_fwd", "nmult_charged_fwd",
+     "N_{ch} (V0M-like forward windows)", True,
+     "Charged multiplicity in ALICE-V0M-like forward windows "
+     "(-3.7 < eta < -1.7 or 2.8 < eta < 5.1).  This is the standard pp "
+     "CENTRALITY ESTIMATOR: percentiles of this distribution define the "
+     "centrality classes; using forward rapidity avoids auto-correlation "
+     "with central observables."),
+    ("nmult_nmpi", "nmult_nmpi",
+     "distinct MPI scatters per event", True,
+     "Model-truth CENTRALITY: the number of distinct MPI scatters feeding "
+     "the studied hadrons.  This is the generator-level activity the "
+     "forward N_ch estimator tries to measure.  Pythia MPI tags only; "
+     "identically 0 for HepMC (Herwig) input."),
     ("event_multiplicity", "event_multiplicity",
-     "number of studied hadrons per event", True,
-     "Event multiplicity of the studied species.  Used to bin pair "
-     "observables into Low (<20), Mid (20-80), and High (>=80) classes."),
+     "studied hadrons per event (acceptance window)", True,
+     "STUDIED-SPECIES multiplicity: the number of selected-species hadrons "
+     "(e.g. pions) inside the acceptance window.  NOT the hadron, charged, "
+     "or centrality multiplicity (see the nmult_ plots for those) -- this "
+     "count only defines the Low (<20) / Mid (20-80) / High (>=80) "
+     "pair-analysis activity bins."),
     ("decay_chain_depth", "decay_chain_depth",
      "decay-chain depth (number of hadronic steps from primary)", True,
      "Single-particle decay-chain depth: 0 = primary hadron, 1 = direct "
@@ -544,6 +591,25 @@ LADDER_HISTS = [
 # Those Pythia-only decompositions live in Pythia's INDIVIDUAL report, not here.
 #   tuple = (histogram name, x-title, logy, caption)
 COMPARE_HISTS = [
+    # -- the hadronization interface: string vs cluster head-to-head --
+    ("had_npartons",            "partons entering hadronization / event", True,
+     "How many partons enter hadronization per event, Pythia vs Herwig.  "
+     "The INPUT side of the two hadronization models: the cluster model "
+     "force-splits every gluon first, so Herwig feeds more (lighter) "
+     "objects into hadronization than the string picture."),
+    ("had_nprimary",            "primary hadrons / event", True,
+     "Primary hadrons produced per event BEFORE decays, Pythia vs Herwig.  "
+     "The OUTPUT side of the hadronization models -- the most direct "
+     "string-vs-cluster multiplicity comparison, free of decay effects."),
+    ("had_ratio",               "primary hadrons per parton", False,
+     "The hadronization conversion ratio (primary hadrons per incoming "
+     "parton), Pythia vs Herwig.  One string fragments into many hadrons; "
+     "one cluster typically decays into ~2.  This single shape is the "
+     "cleanest fingerprint of the two fragmentation mechanisms."),
+    ("mult_origin_Primary",     "primary studied hadrons / event", True,
+     "Per-event multiplicity of PRIMARY studied hadrons, Pythia vs "
+     "Herwig.  Same hadronization comparison restricted to the studied "
+     "species inside the acceptance window."),
     # -- where the particles come from: production origin --
     ("pt_origin_Primary",       "p_{T} [GeV]", True,
      "Transverse-momentum spectrum of PRIMARY (direct-hadronization) pions, "
@@ -607,14 +673,185 @@ COMPARE_HISTS = [
      "Per-pair stage of the deepest shared ancestor, Pythia vs Herwig.  "
      "How genealogically close pion pairs are in each generator."),
     ("event_multiplicity",      "studied hadrons per event", True,
-     "Event multiplicity of the studied species, Pythia vs Herwig.  The "
-     "string model typically yields more hadrons than the cluster model."),
+     "STUDIED-SPECIES multiplicity (acceptance window), Pythia vs Herwig.  "
+     "The string model typically yields more hadrons than the cluster "
+     "model.  See the nmult_ figures for the hadron / charged / centrality "
+     "multiplicity concepts."),
     ("event_spherocity",        "transverse spherocity S0", False,
      "Per-event transverse-spherocity distribution, Pythia vs Herwig."),
+    # -- event multiplicity, the three concepts (all generator-agnostic) --
+    ("nmult_hadrons",           "final-state hadrons / event", True,
+     "Total HADRON multiplicity (charged + neutral, all species), Pythia "
+     "vs Herwig.  The full hadronic yield difference between the string "
+     "and cluster pictures, before any charge or species selection."),
+    ("nmult_charged",           "charged particles / event", True,
+     "Total CHARGED multiplicity N_ch, Pythia vs Herwig -- the "
+     "experimentally accessible multiplicity."),
+    ("nmult_charged_eta10",     "N_ch (|#eta| < 1)", True,
+     "Central-tracker charged multiplicity (|eta| < 1), Pythia vs Herwig "
+     "-- the N_ch most pp measurements quote."),
+    ("nmult_charged_fwd",       "N_ch (V0M-like forward)", True,
+     "Forward (V0M-like) charged multiplicity, Pythia vs Herwig.  The "
+     "standard pp CENTRALITY-ESTIMATOR axis: if the two generators "
+     "disagree here, their centrality classes select different events."),
 ]
 
 LADDER_COLOURS = ["kGray+2", "kAzure+1", "kOrange+7", "kRed+1",
                   "kViolet+1", "kGreen+2"]
+
+# --- entropy / information observables (Phase 5, opt-in) ----------------------
+# Present only when provenance-study was run with --entropy.  Every emitter
+# below degrades silently (skip + console note) when the histograms are
+# absent, so old ROOT files and entropy-off runs are unaffected.
+ENT_MULT_SERIES = [
+    ("mult_eta05", "|#eta| < 0.5", "kAzure+1"),
+    ("mult_eta10", "|#eta| < 1.0", "kGreen+2"),
+    ("mult_eta20", "|#eta| < 2.0", "kOrange+7"),
+    ("mult_full",  "full",         "kRed+1"),
+]
+ENT_FB_SERIES = [
+    ("fb_NF", "forward (#eta > 0)",  "kAzure+1"),
+    ("fb_NB", "backward (#eta < 0)", "kRed+1"),
+]
+# Bin labels of ent_stage_S / ent_stage_meanN / ent_stage_total — MUST match
+# EntropyObservables::stageList() order in src/EventHistory.
+ENT_STAGE_LABELS = ["HardProcess", "MPI", "ISR", "FSR", "BeamRemnants",
+                    "PreHadronization", "PrimaryHadrons", "DecayProducts",
+                    "FinalState"]
+ENT_STAGE_HISTS = [
+    ("ent_stage_S", "occupancy entropy [nats]",
+     "Entropy production along the event evolution: ensemble occupancy "
+     "entropy of each stage's particles over a coarse (eta, pT) grid.  "
+     "Read left to right as time: where the phase-space spread is created."),
+    ("ent_stage_meanN", "mean objects / event",
+     "Mean object count per event at each evolution stage — the 'how many' "
+     "half of the stage entropy budget."),
+    ("ent_stage_total", "S_{occ} + ln#LT N#GT  [nats]",
+     "Coarse total-entropy proxy per stage: occupancy entropy plus the log "
+     "of the mean count (the where-in-phase-space term plus the how-many "
+     "term).  The jump between consecutive stages is the entropy produced "
+     "by that step of the event evolution."),
+]
+# --- fragmentation systems (Phase 6, opt-in --systems) -----------------------
+# Single-run figures: (out-name == hist-name, x-title, logy, caption).
+FRAG_FIGURES = [
+    ("frag_nsystems", "fragmentation systems / event", True,
+     "How many fragmentation systems (strings / clusters) one event "
+     "contains.  The cluster model fragments into many small systems, the "
+     "string picture into a few long ones."),
+    ("frag_nhad_per_system", "primary hadrons per system", True,
+     "Primary hadrons produced by ONE system.  Clusters decay to ~2 "
+     "hadrons by construction; one Lund string fragments into many.  The "
+     "sharpest single shape difference between the two models."),
+    ("frag_system_mass", "system invariant mass [GeV]", True,
+     "Invariant mass of each fragmentation system, computed from the SUM "
+     "of its primary hadrons (exactly conserved in both models, so the "
+     "axis is comparable across generators).  Cluster masses peak low -- "
+     "that is the cluster model's central assumption; string systems are "
+     "heavy and broad."),
+    ("frag_system_mass_zoom", "system invariant mass [GeV]", True,
+     "Zoom of the system-mass spectrum below 6 GeV, where the cluster "
+     "peak lives."),
+    ("frag_y_span", "rapidity span of one system", True,
+     "Rapidity distance between the first and last hadron of one system "
+     "(systems with >= 2 hadrons).  String hadrons spread along the "
+     "string axis -- the mechanistic origin of long-range correlations; "
+     "cluster decays are local."),
+    ("frag_lambda", "#lambda = #Sigma ln(m^{2}/m_{0}^{2}) per event", True,
+     "The lambda (string-length) measure per event.  Colour reconnection "
+     "exists to MINIMIZE this quantity: compare it across the +CR ladder "
+     "rung to see CR's action directly, not just its consequences."),
+    ("frag_neighbor_ptbal", "cos #Delta#phi of rapidity neighbours", False,
+     "Azimuthal opening of rapidity-NEIGHBOURING hadrons within one "
+     "system.  String break kicks anti-correlate neighbours (negative "
+     "mean); an isotropic model would be flat."),
+    ("frag_bbar_dy_same", "#Delta y (B, #bar{B}) same system", True,
+     "Baryon-antibaryon rapidity separation WITHIN one system.  Diquark "
+     "string breaks put B and Bbar close together; compare against the "
+     "cross-system distribution."),
+    ("frag_cluster_mass_top", "cluster mass [GeV]", True,
+     "Herwig only: mass of TOP clusters (formed directly from partons, "
+     "before any fission).  Empty on the Pythia path."),
+    ("frag_cluster_mass_decaying", "cluster mass [GeV]", True,
+     "Herwig only: mass of clusters that decay to hadrons (after "
+     "fission).  Compare with the top-cluster spectrum to see the "
+     "fission mechanism reshaping the masses."),
+]
+# Normalized same-vs-cross overlays: (out-name, series, x-title, caption).
+FRAG_OVERLAYS = [
+    ("frag_charge_ordering",
+     [("pair_dy_OS_same",  "opposite sign, same system",  "kAzure+1"),
+      ("pair_dy_SS_same",  "same sign, same system",      "kRed+1"),
+      ("pair_dy_OS_cross", "opposite sign, cross-system", "kGreen+2"),
+      ("pair_dy_SS_cross", "same sign, cross-system",     "kGray+2")],
+     "#Delta y",
+     "CHARGE ORDERING: rapidity separation of charged pairs by sign and "
+     "system relationship (unit-normalized).  The string prediction: "
+     "opposite-sign pairs cluster at small Delta-y WITHIN a system (each "
+     "break makes a q-qbar pair); cross-system pairs carry no such "
+     "constraint.  The OS-vs-SS gap at small Delta-y, present only in the "
+     "same-system curves, is the string signature."),
+    ("frag_neighbor_charge",
+     [("neighbor_dy_OS", "opposite-sign neighbours", "kAzure+1"),
+      ("neighbor_dy_SS", "same-sign neighbours",     "kRed+1")],
+     "#Delta y of rapidity neighbours",
+     "Nearest-neighbour charge ordering within one system: Delta-y of "
+     "adjacent-in-rapidity hadron pairs, split by charge sign "
+     "(unit-normalized).  Local charge conservation in string breaks "
+     "predicts OS to dominate at small separation."),
+    ("frag_bbar",
+     [("bbar_dy_same",  "B-#bar{B} same system",  "kAzure+1"),
+      ("bbar_dy_cross", "B-#bar{B} cross-system", "kGray+2")],
+     "#Delta y (B, #bar{B})",
+     "Baryon-antibaryon pairing (unit-normalized): same-system pairs "
+     "should sit at smaller Delta-y than cross-system pairs if baryon "
+     "number is created locally (diquark breaks / cluster decays)."),
+    ("frag_strange",
+     [("strange_dy_same",  "strange pair, same system",  "kAzure+1"),
+      ("strange_dy_cross", "strange pair, cross-system", "kGray+2")],
+     "#Delta y (strange, strange)",
+     "Strangeness locality (unit-normalized): rapidity separation of "
+     "pairs of strange hadrons, same vs cross system.  ssbar production "
+     "in one break / one cluster keeps strangeness local."),
+    ("frag_cluster_fission",
+     [("cluster_mass_top",      "top clusters (pre-fission)",  "kAzure+1"),
+      ("cluster_mass_decaying", "decaying clusters",           "kRed+1")],
+     "cluster mass [GeV]",
+     "Herwig only: cluster mass before vs after the fission chain "
+     "(unit-normalized).  Fission exists to remove the heavy tail -- the "
+     "decaying spectrum should be visibly truncated."),
+]
+# Cross-generator comparisons (require_all -> never silently one-generator).
+COMPARE_FRAG_HISTS = [
+    ("frag_nsystems",        "fragmentation systems / event", True,
+     "Systems per event, Pythia vs Herwig: few long strings vs many "
+     "small clusters, in one plot."),
+    ("frag_nhad_per_system", "primary hadrons per system", True,
+     "Hadrons per system head-to-head: the cluster ~2 peak against the "
+     "string's broad fragmentation multiplicity."),
+    ("frag_system_mass",     "system invariant mass [GeV]", True,
+     "THE model fingerprint: system mass spectra of the two hadronization "
+     "models on one axis (both computed from the primary-hadron sum)."),
+    ("frag_y_span",          "rapidity span of one system", True,
+     "How far in rapidity one system's hadrons reach, per generator -- "
+     "the long-range-correlation budget of each model."),
+    ("frag_lambda",          "#lambda per event", True,
+     "String-length measure per event, Pythia vs Herwig."),
+    ("frag_neighbor_ptbal",  "cos #Delta#phi of rapidity neighbours", False,
+     "Local pT compensation of rapidity neighbours, per generator."),
+]
+
+# Multiplicity-distribution comparisons across generators (normalized shapes).
+COMPARE_ENTROPY_HISTS = [
+    ("ent_mult_eta05", "N_{ch} (|#eta| < 0.5)", True,
+     "Charged multiplicity distribution in |eta| < 0.5, Pythia vs Herwig.  "
+     "The Shannon entropy of this distribution is the quantity the "
+     "Kharzeev-Levin duality equates with the entanglement entropy of the "
+     "probed partonic state."),
+    ("ent_mult_full", "N_{ch} (full)", True,
+     "Full-acceptance charged multiplicity distribution, Pythia vs Herwig.  "
+     "Distribution width drives the multiplicity entropy."),
+]
 
 
 def root_color(expr, ROOT):
@@ -829,6 +1066,285 @@ def single_histogram(root_path, histname, xtitle, out_path, caption, logy=False)
     return caption
 
 
+def overlay_stage_profile(files, histname, ytitle, out_path, caption,
+                          colours=None, require_all=False,
+                          bin_labels="stages", xtitle=""):
+    """Entropy value-profile: one VALUE per bin (entropy / mean count / MI),
+    NEVER normalized (normalizing a value profile would destroy its
+    meaning).  bin_labels="stages" labels the bins with the stage names;
+    bin_labels=None keeps a numeric axis (then xtitle is used).  `files` is
+    [(label, path), ...] — one entry plots a single run, several entries
+    overlay generators/rungs.  Skips silently when the histogram is absent
+    (entropy-off runs); with require_all=True the figure is dropped unless
+    EVERY file has it (no silently single-generator comparison figures)."""
+    import ROOT
+    ROOT.gROOT.SetBatch(True)
+    ROOT.gStyle.SetOptStat(0)
+
+    prepared = []
+    for i, (label, path) in enumerate(files):
+        f = ROOT.TFile.Open(path)
+        if not f or f.IsZombie():
+            print("  ! cannot open %s — skipping" % path)
+            continue
+        h = f.Get(histname)
+        if not h:
+            f.Close()
+            if require_all:
+                print("  ! %s missing in %s — dropping figure %s"
+                      % (histname, path, os.path.basename(out_path)))
+                return None
+            continue
+        h = h.Clone("%s_stage_%d" % (histname, i))
+        h.SetDirectory(0)
+        col = root_color((colours or LADDER_COLOURS)[i % len(colours or LADDER_COLOURS)], ROOT)
+        _style_marker(h, col)
+        h.SetLineWidth(2)
+        prepared.append((h, label))
+        f.Close()
+    if not prepared:
+        print("  ! %s: no input had '%s' (entropy off?) — skipped"
+              % (os.path.basename(out_path), histname))
+        return None
+
+    canvas = ROOT.TCanvas("ce_" + os.path.basename(out_path), "", 900, 680)
+    canvas.SetBottomMargin(0.18)
+    ymin, ymax = _yrange([p[0] for p in prepared], logy=False)
+    first = prepared[0][0]
+    first.SetMinimum(min(0.0, ymin))
+    first.SetMaximum(ymax)
+    _style_axes(first, xtitle, ytitle)
+    if bin_labels == "stages":
+        ax = first.GetXaxis()
+        for b in range(1, min(first.GetNbinsX(), len(ENT_STAGE_LABELS)) + 1):
+            ax.SetBinLabel(b, ENT_STAGE_LABELS[b - 1])
+        ax.LabelsOption("v")
+
+    legend = ROOT.TLegend(0.16, 0.72, 0.46, 0.88)
+    _legend_style(legend, ROOT)
+    for i, (h, label) in enumerate(prepared):
+        h.Draw("P HIST" if i == 0 else "P HIST SAME")
+        legend.AddEntry(h, label, "p")
+    if len(prepared) > 1:
+        legend.Draw()
+
+    canvas.SaveAs(out_path)
+    print("  wrote %s" % out_path)
+    return caption
+
+
+def emit_nch_vs_nmpi(root_path, outdir, fmt, manifest):
+    """Centrality-quality profile: mean N_ch(|eta|<1) per N_MPI, from the
+    sum/count histogram pair written by ProvenanceObservables.  Shows how
+    faithfully the multiplicity estimator tracks the model-truth activity.
+    Pythia only (HepMC input has no MPI tags) — skips silently otherwise."""
+    import ROOT
+    ROOT.gROOT.SetBatch(True)
+    ROOT.gStyle.SetOptStat(0)
+    f = ROOT.TFile.Open(root_path)
+    if not f or f.IsZombie():
+        return
+    hs = f.Get("nmult_nch_vs_nmpi_sum")
+    hn = f.Get("nmult_nch_vs_nmpi_n")
+    if not hs or not hn:
+        f.Close()
+        return
+    prof = hs.Clone("nmult_nch_vs_nmpi_mean")
+    prof.SetDirectory(0)
+    hn = hn.Clone("nmult_nch_vs_nmpi_n_c")     # detach BEFORE the file closes
+    hn.SetDirectory(0)
+    prof.Divide(hn)
+    f.Close()
+    # Degenerate (single occupied bin == Herwig/no-MPI input): not useful.
+    occupied = sum(1 for b in range(1, prof.GetNbinsX() + 1)
+                   if hn.GetBinContent(b) > 0)
+    if occupied < 2:
+        print("  ! nmult_nch_vs_nmpi: single N_MPI bin (no MPI tags) — skipped")
+        return
+    out = os.path.join(outdir, "nmult_nch_vs_nmpi." + fmt)
+    canvas = ROOT.TCanvas("c_nchnmpi", "", 900, 680)
+    _style_marker(prof, root_color("kAzure+1", ROOT))
+    _style_axes(prof, "N_{MPI} (distinct scatters)",
+                "#LT N_{ch} (|#eta|<1) #GT")
+    prof.SetMinimum(0.0)
+    prof.Draw("PE")
+    canvas.SaveAs(out)
+    print("  wrote %s" % out)
+    caption = ("Mean central charged multiplicity vs the model-truth MPI "
+               "count.  The closer to linear and the smaller the scatter, "
+               "the better N_ch works as a centrality estimator; flattening "
+               "at high N_MPI means saturation -- multiplicity stops "
+               "resolving the activity.")
+    manifest.append((os.path.basename(out), caption))
+    return
+
+
+def emit_frag_figures(root_path, outdir, fmt, manifest):
+    """Fragmentation-system figures (opt-in --systems runs).  Every emitter
+    skips silently when the histograms are absent."""
+    for name, xtitle, logy, caption in FRAG_FIGURES:
+        out = os.path.join(outdir, name + "." + fmt)
+        cap = single_histogram(root_path, name, xtitle, out, caption,
+                               logy=logy)
+        if cap:
+            manifest.append((os.path.basename(out), cap))
+    for name, series, xtitle, caption in FRAG_OVERLAYS:
+        out = os.path.join(outdir, name + "." + fmt)
+        cap = overlay(root_path, series, "frag_", xtitle, out, caption,
+                      logy=False, normalize=True)
+        if cap:
+            manifest.append((os.path.basename(out), cap))
+    # <n_hadrons> vs system mass: the Lund n ~ ln(m^2) scaling test.
+    import ROOT
+    ROOT.gROOT.SetBatch(True)
+    ROOT.gStyle.SetOptStat(0)
+    f = ROOT.TFile.Open(root_path)
+    if not f or f.IsZombie():
+        return
+    hs = f.Get("frag_nhad_vs_mass_sum")
+    hn = f.Get("frag_nhad_vs_mass_n")
+    if not hs or not hn:
+        f.Close()
+        return
+    prof = hs.Clone("frag_nhad_vs_mass_mean")
+    prof.SetDirectory(0)
+    hn = hn.Clone("frag_nhad_vs_mass_n_c")
+    hn.SetDirectory(0)
+    prof.Divide(hn)
+    f.Close()
+    out = os.path.join(outdir, "frag_nhad_vs_mass." + fmt)
+    canvas = ROOT.TCanvas("c_fragnm", "", 900, 680)
+    canvas.SetLogx()
+    _style_marker(prof, root_color("kAzure+1", ROOT))
+    _style_axes(prof, "system mass [GeV]", "#LT n_{hadrons} #GT per system")
+    prof.SetMinimum(0.0)
+    prof.GetXaxis().SetRangeUser(0.3, 60.0)
+    prof.Draw("PE")
+    canvas.SaveAs(out)
+    print("  wrote %s" % out)
+    manifest.append((os.path.basename(out),
+                     "Mean hadrons per system vs the system mass (log x).  "
+                     "Lund predicts n grows like ln(m^2) -- a straight rise "
+                     "on this axis; the cluster model stays near 2 because "
+                     "heavy clusters FISSION before decaying.  The scaling "
+                     "law, not just the shapes, separated in one plot."))
+
+
+def emit_kno_figure(root_path, outdir, fmt, manifest):
+    """KNO-scaling check: <N> P(N) vs N/<N> for every eta window, overlaid.
+    KNO scaling (curve collapse) is exactly what makes S - ln<N> a universal
+    constant, i.e. the structural reason behind the Kharzeev-Levin ratio."""
+    import ROOT
+    ROOT.gROOT.SetBatch(True)
+    ROOT.gStyle.SetOptStat(0)
+    f = ROOT.TFile.Open(root_path)
+    if not f or f.IsZombie():
+        return
+    graphs = []
+    for base, label, colexpr in ENT_MULT_SERIES:
+        h = f.Get("ent_" + base)
+        if not h:
+            continue
+        tot = h.Integral()
+        if tot <= 0:
+            continue
+        mean = h.GetMean()
+        if mean <= 0:
+            continue
+        g = ROOT.TGraph()
+        for b in range(1, h.GetNbinsX() + 1):
+            c = h.GetBinContent(b)
+            if c <= 0:
+                continue
+            n = h.GetBinCenter(b) - 0.5          # filled at N + 0.5
+            g.SetPoint(g.GetN(), n / mean, mean * (c / tot))
+        if g.GetN() < 3:
+            continue
+        col = root_color(colexpr, ROOT)
+        g.SetMarkerColor(col); g.SetLineColor(col)
+        g.SetMarkerStyle(MARKER_STYLE); g.SetMarkerSize(MARKER_SIZE)
+        graphs.append((g, label))
+    f.Close()
+    if not graphs:
+        print("  ! entropy_kno: no multiplicity histograms (entropy off?)")
+        return
+    out = os.path.join(outdir, "entropy_kno." + fmt)
+    canvas = ROOT.TCanvas("ck_kno", "", 900, 680)
+    canvas.SetLogy()
+    mg = ROOT.TMultiGraph()
+    for g, _ in graphs:
+        mg.Add(g, "P")
+    mg.SetTitle(";N / #LTN#GT;#LTN#GT P(N)")
+    mg.Draw("A")
+    legend = ROOT.TLegend(0.62, 0.65, 0.88, 0.88)
+    _legend_style(legend, ROOT)
+    for g, label in graphs:
+        legend.AddEntry(g, label, "p")
+    legend.Draw()
+    canvas.SaveAs(out)
+    print("  wrote %s" % out)
+    caption = ("KNO-scaling check: the multiplicity distributions of every "
+               "pseudorapidity window, rescaled to <N> P(N) vs N/<N>.  If "
+               "the curves collapse onto one shape (KNO scaling holds), the "
+               "entropy obeys S = ln<N> + const -- the structural origin of "
+               "the Kharzeev-Levin ratio reported in the entropy table.")
+    manifest.append((os.path.basename(out), caption))
+
+
+def emit_entropy_figures(root_path, outdir, fmt, manifest):
+    """Single-run entropy figures (global, no species axis).  All emitters
+    skip silently when the run was made without --entropy."""
+    figs = [
+        ("entropy_mult", ENT_MULT_SERIES, "ent_", "N_{ch}", True, True,
+         "Charged-particle multiplicity distributions in nested |eta| "
+         "windows (normalized).  The Shannon entropy of each distribution, "
+         "S = -sum P(N) ln P(N), is reported in the run summary; the "
+         "Kharzeev-Levin duality equates it with the entanglement entropy "
+         "of the probed partonic state."),
+        ("entropy_fb", ENT_FB_SERIES, "ent_", "N_{ch} per hemisphere",
+         True, True,
+         "Forward / backward hemisphere charged multiplicities.  Their "
+         "mutual information I(N_F;N_B), reported in the run summary, is "
+         "the classical proxy for entanglement between rapidity intervals."),
+    ]
+    for name, series, prefix, xtitle, logy, norm, caption in figs:
+        out = os.path.join(outdir, name + "." + fmt)
+        cap = overlay(root_path, series, prefix, xtitle, out, caption,
+                      logy=logy, normalize=norm)
+        if cap:
+            manifest.append((os.path.basename(out), cap))
+    for hist, ytitle, caption in ENT_STAGE_HISTS:
+        out = os.path.join(outdir, "entropy_" + hist[4:] + "." + fmt)
+        cap = overlay_stage_profile([("", root_path)], hist, ytitle, out,
+                                    caption)
+        if cap:
+            manifest.append((os.path.basename(out), cap))
+    # FB mutual information vs eta gap (value profile, numeric axis).
+    out = os.path.join(outdir, "entropy_fb_mi_gap." + fmt)
+    cap = overlay_stage_profile(
+        [("", root_path)], "ent_fb_mi_gap", "I(N_{F};N_{B}) [bits]", out,
+        "Forward-backward multiplicity mutual information vs the "
+        "pseudorapidity gap excluded between the hemispheres.  The decay "
+        "of shared information with separation distinguishes long-range "
+        "from short-range correlation.",
+        bin_labels=None, xtitle="#eta gap")
+    if cap:
+        manifest.append((os.path.basename(out), cap))
+    # N_MPI distribution (Pythia tags only; empty/degenerate for Herwig).
+    out = os.path.join(outdir, "entropy_nmpi." + fmt)
+    cap = single_histogram(root_path, "ent_nmpi",
+                           "distinct MPI scatters per event", out,
+                           "Number of distinct MPI scatters feeding the "
+                           "studied hadrons per event (from the per-hadron "
+                           "MPI-ancestry tags; Pythia status codes only).  "
+                           "Input to I(N_MPI;N_ch) in the information-"
+                           "recovery table.", logy=True)
+    if cap:
+        manifest.append((os.path.basename(out), cap))
+    # KNO scaling collapse across the eta windows.
+    emit_kno_figure(root_path, outdir, fmt, manifest)
+
+
 def overlay_ladder(rung_files, histname, xtitle, out_path, caption,
                    logy=False, normalize=True, colours=None,
                    context_label="the mechanism ladder", require_all=False):
@@ -1002,7 +1518,11 @@ def discover_generators(compare_dir):
 #   global       (no suffix)  : event-level histograms, filled once per event
 SINGLE_FIGURES_PER_SPECIES = {"n_parton_ancestors", "decay_chain_depth"}
 SINGLE_FIGURES_PER_PAIR    = {"common_ancestor_depth"}
-SINGLE_FIGURES_GLOBAL      = {"event_multiplicity", "event_spherocity"}
+SINGLE_FIGURES_GLOBAL      = {"event_multiplicity", "event_spherocity",
+                              "had_npartons", "had_nprimary", "had_ratio",
+                              "nmult_hadrons", "nmult_charged",
+                              "nmult_charged_eta10", "nmult_charged_fwd",
+                              "nmult_nmpi"}
 
 # A few human-friendly species names; everything else falls back to the PDG.
 # Used only for ROOT canvas/axis titles (TLatex), never for the manifest text.
@@ -1113,6 +1633,12 @@ def emit_single_run(root_path, outdir, fmt, normalize, manifest,
                                     xtitle, out, caption)
             if cap:
                 manifest.append((os.path.basename(out), cap))
+        # Centrality-quality profile (always-on hists; Pythia MPI tags only).
+        emit_nch_vs_nmpi(root_path, outdir, fmt, manifest)
+        # Fragmentation systems (no-op unless run with --systems).
+        emit_frag_figures(root_path, outdir, fmt, manifest)
+        # Entropy / information figures (no-op unless run with --entropy).
+        emit_entropy_figures(root_path, outdir, fmt, manifest)
         return
 
     # ------------------------- multi-species path -------------------------
@@ -1218,6 +1744,114 @@ def emit_single_run(root_path, outdir, fmt, normalize, manifest,
         if cap:
             manifest.append((os.path.basename(out), cap))
 
+    # ---- centrality-quality profile (always-on; Pythia MPI tags only) ----
+    emit_nch_vs_nmpi(root_path, outdir, fmt, manifest)
+
+    # ---- fragmentation systems (global; no-op without --systems) ---------
+    emit_frag_figures(root_path, outdir, fmt, manifest)
+
+    # ---- entropy / information figures (global; no-op without --entropy) ----
+    emit_entropy_figures(root_path, outdir, fmt, manifest)
+
+
+# --- canonical figure order (report coherence) --------------------------------
+# The report renders figures in manifest order, so this list IS the reading
+# order: topics cluster together and every raw distribution is immediately
+# followed by its normalized (shapes) and fraction variants.  Stems are the
+# figure file names without extension; species suffixes (_S211, _S211x321)
+# and the compare_/ladder_ prefixes are stripped before lookup, so the same
+# order applies to single-run, comparison and ladder output.  Stems not in
+# the list keep their relative order after the listed ones.
+REPORT_ORDER = [
+    # 1. production origin (raw, then local fraction) + feed-down depth
+    "origin_pt", "origin_eta", "origin_pt_fraction",
+    "pt_origin_Primary", "pt_origin_FromResonance", "pt_origin_FromWeakDecay",
+    "decay_chain_depth",
+    # 2. hadronization interface (string vs cluster)
+    "had_npartons", "had_nprimary", "had_ratio", "mult_origin_Primary",
+    "n_parton_ancestors",
+    # 3. parton ancestry (endpoint view, then initiating view, then splits)
+    "parton_pt", "parton_pt_fraction",
+    "pt_parton_LightQuark", "pt_parton_Strange", "pt_parton_Charm",
+    "pt_parton_Bottom", "pt_parton_Gluon",
+    "initparton_pt",
+    "pt_initparton_Gluon", "pt_initparton_LightQuark", "pt_initparton_Strange",
+    "sp_pt_mpi", "sp_pt_shower", "sp_pt_hf",
+    # 4. event-level context: multiplicity concepts (hadron -> charged ->
+    #    centrality estimator -> truth centrality -> estimator quality),
+    #    then the studied-species count and event shape
+    "nmult_hadrons", "nmult_charged", "nmult_charged_eta10",
+    "nmult_charged_fwd", "nmult_nmpi", "nmult_nch_vs_nmpi",
+    "event_multiplicity", "event_spherocity",
+    # 5. pair core: raw -> normalized shapes -> local fraction, per observable
+    "pair_dphi", "pair_dphi_shapes", "pair_dphi_fraction",
+    "pair_deta", "pair_deta_shapes", "pair_deta_fraction",
+    "pair_mass", "common_ancestor_depth",
+    "dphi_pair_All", "dphi_pair_SameResonance", "dphi_pair_SharedParton",
+    "dphi_pair_Unrelated", "deta_pair_SharedParton", "deta_pair_Unrelated",
+    "mass_pair_All", "mass_pair_SameResonance",
+    # 6. charge-sign split (SS vs OS, same observable adjacent)
+    "pair_dphi_SS", "pair_dphi_OS", "pair_deta_SS", "pair_deta_OS",
+    "pair_mass_SS", "pair_mass_OS",
+    # 7. resonance detail
+    "pair_dphi_resonance", "pair_deta_resonance", "pair_mass_resonance",
+    # 8. parton-sharing depth and flavour content
+    "pair_dphi_sharedparton_depth", "pair_deta_sharedparton_depth",
+    "pair_mass_sharedparton_depth",
+    "pair_dphi_flavmix", "pair_deta_flavmix", "pair_mass_flavmix",
+    "pair_dphi_sharedparton_flavmix", "pair_deta_sharedparton_flavmix",
+    "pair_mass_sharedparton_flavmix",
+    # 9. MPI relationship
+    "pair_dphi_mpi", "pair_deta_mpi", "pair_mass_mpi",
+    "pair_dphi_sharedparton_mpi", "pair_deta_sharedparton_mpi",
+    "pair_mass_sharedparton_mpi",
+    "dphi_pair_MPI_SameMPI", "dphi_pair_MPI_CrossMPI",
+    "dphi_pair_SharedParton_SameMPI",
+    # 10. shower lineage
+    "pair_dphi_shower", "pair_deta_shower", "pair_mass_shower",
+    # 11. heavy flavour
+    "pair_dphi_hf", "pair_deta_hf", "pair_mass_hf",
+    "pair_decay_depth_pairclass",
+    "pt_HF_FromBottomChain", "pt_HF_FromCharmChain",
+    # 12. event-activity bins (multiplicity, then shape)
+    "pair_dphi_lowmult", "pair_dphi_midmult", "pair_dphi_highmult",
+    "pair_deta_lowmult", "pair_deta_midmult", "pair_deta_highmult",
+    "pair_dphi_jetlike", "pair_dphi_midshape", "pair_dphi_isotropic",
+    "pair_deta_jetlike", "pair_deta_midshape", "pair_deta_isotropic",
+    # 13. fragmentation systems (string / cluster anatomy)
+    "frag_nsystems", "frag_nhad_per_system",
+    "frag_system_mass", "frag_system_mass_zoom", "frag_nhad_vs_mass",
+    "frag_y_span", "frag_lambda",
+    "frag_charge_ordering", "frag_neighbor_charge", "frag_neighbor_ptbal",
+    "frag_bbar", "frag_bbar_dy_same", "frag_strange",
+    "frag_cluster_mass_top", "frag_cluster_mass_decaying",
+    "frag_cluster_fission",
+    # 14. entropy / information block (own report section)
+    "entropy_mult", "entropy_kno", "entropy_fb", "entropy_fb_mi_gap",
+    "entropy_nmpi", "entropy_stage_S", "entropy_stage_meanN",
+    "entropy_stage_total",
+    "ent_mult_eta05", "ent_mult_full", "ent_fb_mi_gap",
+    "ent_stage_S", "ent_stage_meanN", "ent_stage_total",
+]
+_ORDER_INDEX = {s: i for i, s in enumerate(REPORT_ORDER)}
+_SUFFIX_RE = re.compile(r"_S\d+(?:x\d+)?$")
+
+
+def _order_key(stem):
+    """Canonical sort index of one figure stem (prefix/suffix-insensitive)."""
+    for pre in ("compare_", "ladder_"):
+        if stem.startswith(pre):
+            stem = stem[len(pre):]
+            break
+    stem = _SUFFIX_RE.sub("", stem)
+    return _ORDER_INDEX.get(stem, len(REPORT_ORDER))
+
+
+def sort_manifest(manifest):
+    """Stable-sort the (fname, caption) manifest into REPORT_ORDER."""
+    return sorted(manifest,
+                  key=lambda fc: _order_key(os.path.splitext(fc[0])[0]))
+
 
 def main():
     ap = argparse.ArgumentParser(
@@ -1318,8 +1952,54 @@ def main():
                                  context_label="generators", require_all=True)
             if cap:
                 manifest.append((os.path.basename(out), cap))
+        # Fragmentation-system comparison (only when EVERY generator ran
+        # with --systems).
+        for histname, xtitle, logy, caption in COMPARE_FRAG_HISTS:
+            out = os.path.join(args.outdir, "compare_" + histname + "."
+                               + args.format)
+            cap = overlay_ladder(paths, histname, xtitle, out, caption,
+                                 logy=logy, normalize=True, colours=colours,
+                                 context_label="generators", require_all=True)
+            if cap:
+                manifest.append((os.path.basename(out), cap))
+        # Entropy comparison (only when EVERY generator ran with --entropy,
+        # so no figure is silently single-generator).
+        for histname, xtitle, logy, caption in COMPARE_ENTROPY_HISTS:
+            out = os.path.join(args.outdir, "compare_" + histname + "."
+                               + args.format)
+            cap = overlay_ladder(paths, histname, xtitle, out, caption,
+                                 logy=logy, normalize=True, colours=colours,
+                                 context_label="generators", require_all=True)
+            if cap:
+                manifest.append((os.path.basename(out), cap))
+        for hist, ytitle, caption in ENT_STAGE_HISTS:
+            out = os.path.join(args.outdir, "compare_" + hist + "."
+                               + args.format)
+            cap = overlay_stage_profile(paths, hist, ytitle, out,
+                                        caption + "  Overlaid per generator; "
+                                        "NOT normalized (these are entropy / "
+                                        "count values, not distributions).",
+                                        colours=colours, require_all=True)
+            if cap:
+                manifest.append((os.path.basename(out), cap))
+        out = os.path.join(args.outdir, "compare_ent_fb_mi_gap."
+                           + args.format)
+        cap = overlay_stage_profile(
+            paths, "ent_fb_mi_gap", "I(N_{F};N_{B}) [bits]", out,
+            "Forward-backward mutual information vs eta gap, per generator "
+            "(NOT normalized).  How fast each hadronization model loses "
+            "shared information with rapidity separation -- a direct "
+            "string-vs-cluster discriminant.",
+            colours=colours, require_all=True,
+            bin_labels=None, xtitle="#eta gap")
+        if cap:
+            manifest.append((os.path.basename(out), cap))
 
     # ---- manifest for the report-builder --------------------------------
+    # Sorted into the canonical topical order (REPORT_ORDER) so the report
+    # reads coherently: related plots adjacent, each raw plot immediately
+    # followed by its normalized / fraction variant.
+    manifest = sort_manifest(manifest)
     man_path = os.path.join(args.outdir, "figures.manifest")
     with open(man_path, "w") as fh:
         for fname, caption in manifest:

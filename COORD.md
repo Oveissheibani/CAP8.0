@@ -395,3 +395,152 @@ run-ladder.py (NEW, B): drives 2 gens x 3 cumulative rungs (baseline/+MPI/
 +MPI+CR) via mechanisms.mech_lines + herwig deck recipe; resume per-rung;
 auto-delete Herwig .hepmc after each study; then compare-plot + ladder report.
 Rung mech lines verified. Needs provenance-report rebuilt for --summaries.
+
+## [B] 2026-06-04 — Entropy / information module (Phase 5, opt-in)
+NEW EntropyObservables.hpp/.cpp (src/EventHistory): self-contained accumulator
+— multiplicity Shannon entropy per |eta| window (Kharzeev-Levin observable),
+per-stage entropy-production profile over the EventHistory DAG, and mutual-
+information "information recovery" rows (I(initParton;species/pT), primary vs
+decay subsets, I(NF;NB)).  Miller-Madow corrected; pure C++14, no ROOT;
+unit-tested standalone (17 checks).
+WIRING (all guarded, default off => byte-identical behaviour):
+ - provenance-study: --entropy flag; appends "entropy:"-marked block to
+   .root.txt + writes ent_* histograms.  Flag off = unchanged output.
+ - provenance-report: parses entropy markers only when present; new gated
+   sections in paper / comparison / ladder modes (tables + figures).
+ - cap-provenance-plot: entropy_* single-run figures + compare_ent_* figures
+   (require_all so never silently single-generator); stage profiles are
+   never normalized.
+ - pipeline.py: acceptance["entropy"] -> --entropy on every study cmd
+   (single/compare/chunked/ladder); acceptance is already a fingerprint key
+   so resume correctly invalidates.  GUI checkbox in AcceptancePanel.
+ - run-cli.py / run-ladder.py: --entropy pass-through.
+[A] FYI: one new source file in src/EventHistory/CMakeLists.txt lib list;
+no existing class touched except additive edits listed above.  Rebuild
+EventHistory + provenance-study + provenance-report.
+
+## [B] 2026-06-04 — Entropy content upgrades (same guarded pattern)
+EntropyObservables: + Renyi-2 ("collision") entropy via UNBIASED power-sum
+estimator; + <N> and KL maximal-entanglement ratio S/ln<N> per window;
++ FB mutual information scanned over eta gaps 0..2 (ent_fb_mi_gap hist);
++ event-level I(N_MPI;N_ch) from mpiIndex tags (Pythia-only physics, 0 by
+construction on HepMC input); + per-event <S_event> per stage next to the
+ensemble S_occ (their difference = event-diversity information).
+Report: entmult rows now carry S2/meanN/S-lnN keyword pairs (parser reads
+old AND new format); KL-test 6-col table + 5-col KL compare table; stage
+tables gained the <S_event> column (4-col rows still render).
+Plotter: entropy_kno (KNO collapse, TMultiGraph), entropy_fb_mi_gap +
+compare_ent_fb_mi_gap (value profiles, never normalized), entropy_nmpi.
+NEW provenance-b/run-entropy-scan.py: multi-sqrt(s) driver (resumable,
+per-point skip on existing .root.txt) -> entropy-scan.csv + S vs ln sqrt(s)
+PDF.  All layers re-verified (C++ unit tests x2, parser round-trip, py
+syntax, scan-parser on real output).
+
+## [B] 2026-06-05 — Report coherence + hadronization-interface observables
+ProvenanceObservables: NEW event-level, generator-agnostic hadronization
+histograms — had_npartons (partons entering hadronization), had_nprimary
+(primary hadrons before decays), had_ratio (hadrons per parton: THE
+string-vs-cluster fingerprint).  Additive; legacy names untouched.
+cap-provenance-plot: REPORT_ORDER canonical stem list + sort_manifest()
+(applied before writing figures.manifest) — figures now read topically,
+each raw plot immediately followed by its normalized/fraction variant;
+applies to single, compare and ladder output (compare_/ladder_ prefixes
+and _S species suffixes stripped for ordering).  had_* added to
+SINGLE_FIGURES(+GLOBAL) and to COMPARE_HISTS (hadronization group first).
+provenance-report: renderFiguresGrouped() — figures render under
+\subsection* topic headers (origin -> hadronization interface -> parton
+ancestry -> event context -> pair core(raw/normalized/fraction) -> SS/OS
+-> resonance -> sharing/flavour -> MPI -> shower -> HF -> activity bins;
+leftovers under "Other decompositions" so nothing drops).  Used in paper,
+comparison and ladder modes.  normalizedFigStem() unit-tested (8 checks);
+had_* fills unit-tested; manifest sort verified.
+[A] FYI: all additive; rebuild EventHistory + provenance-study +
+provenance-report.
+
+## [B] 2026-06-05 — Multiplicity concepts disentangled (hadron / charged / centrality)
+ProvenanceObservables (always-on, additive): nmult_hadrons (ALL final
+hadrons, charged+neutral), nmult_charged (+ _eta10 tracker window, + _fwd
+ALICE-V0M-like windows = pp centrality ESTIMATOR), nmult_nmpi (model-truth
+centrality: distinct MPI scatters; Pythia tags only), and the
+nmult_nch_vs_nmpi_{sum,n} pair -> mean-Nch-vs-NMPI estimator-quality
+profile (divided at plot time, hadd-safe).  Legacy event_multiplicity
+UNCHANGED but every caption/glossary now states it is the STUDIED-SPECIES
+count (pair-bin axis), not N_ch.  Plotter: figures + compare entries
+(nmult_nmpi excluded from compare per no-silently-single-generator
+policy), emit_nch_vs_nmpi skips when only one N_MPI bin (HepMC input).
+Report: "Event multiplicity and centrality" topic + 4 glossary entries.
+Unit-tested: crafted event verifies hadron/charged/eta10/fwd/NMPI/profile
+counts (6 checks); figure-coverage audit zero strays; py syntax OK.
+[A] FYI: additive only; rebuild EventHistory + provenance-study +
+provenance-report.
+
+## [B] 2026-06-05 — Audit pass: 3 bugs fixed
+1. cap-provenance-plot emit_nch_vs_nmpi: histogram used AFTER TFile::Close
+   (dangling ROOT object) -> clone + SetDirectory(0) before close.
+2. provenance-report fillGlossaryTable: term cell was NOT texEscape'd ->
+   new "Charged multiplicity (N_ch)" term would break pdflatex; both cells
+   now escaped.
+3. cap-mechanism-ladder: no --entropy argument -> GUI ladder stage with the
+   entropy checkbox would crash on unknown flag; added parse + per-rung
+   forward (mirrors --validate-graph).
+Known accepted behaviour: 2 of 20 paired-figure groups span two topics
+(sharedparton depth|mpi, origin|parton fraction) and now render as
+correctly-captioned singletons in their own topics — deliberate, graceful.
+
+## [B] 2026-06-05 — FragmentationSystems module (Phase 6, opt-in --systems)
+NEW FragmentationSystems.hpp/.cpp: generator-agnostic "fragmentation
+system" = union-find component of primary hadrons sharing a hadronization
+source (string partons / Herwig cluster PDG 81); kinematics from the
+primary-hadron sum (conserved in both models -> comparable masses BY
+CONSTRUCTION).  Observables: nsystems/event, nhad/system, system mass
+(+zoom), <n> vs mass (Lund ln m^2 scaling vs cluster fission), rapidity
+span, lambda string-length measure (CR's minimization target -> ladder
+headline), charge ordering (OS/SS x same/cross-system + rapidity
+neighbours), local pT compensation, B-Bbar + strangeness pairing,
+Herwig-only explicit cluster fission chain (top vs decaying masses).
+Wiring (guarded, default off): provenance-study --systems; pipeline
+acceptance["systems"] (resume-fingerprint-safe); GUI checkbox;
+cap-mechanism-ladder --systems parse+forward; run-cli/run-ladder
+--systems.  Plotter: FRAG_FIGURES + FRAG_OVERLAYS + COMPARE_FRAG_HISTS
+(require_all) + <n>-vs-mass profile (clone-before-close).  Report:
+"fragmentation:" parser sections, paper/comparison/ladder tables (lambda
+across rungs), own figure section, comparison topic, 3 glossary entries.
+Verified: 22-check unit test (Pythia-like 2-string + Herwig-like cluster
+chain incl. fission counts), parser round-trip on real output, pipeline
+flag routing + fingerprint, figure-coverage zero strays, all py syntax.
+[A] FYI: one new source in CMakeLists lib list; everything else additive.
+
+## [B] 2026-06-05 — Smoke-test audit: table overflow fixed, reports consolidated
+Root cause of overflowing tables: plain `l` tabular columns never line-
+break, so prose cells ran past the page frame.  Fixed by p{..\textwidth}
+specs on every prose-bearing table in provenance-report.cpp: comparable-
+components (worst offender), repro env, frag + frag-compare, entropy +
+entropy-compare.  Glossary already used p{}; all numeric tables audited
+and left alone (short cells).  Requires provenance-report rebuild.
+Ladder lives in its own work dir BY DESIGN (its --compare plot stage
+writes compare_* figures + figures.manifest that would clobber the main
+run's plots if shared); consolidation = cp its provenance-ladder.pdf into
+the main reports/ — baked into the smoke/run recipes.
+
+## [B] 2026-06-05 — WSU "warrior" grid inventory filed (future deployment)
+Grid/WSU/warrior_grid_inventory.md + grid_audit_report_20260605.txt.
+Key facts for launching provenance on the cluster: SLURM (sbatch,
+partition mdtp); toolchain gnu7/7.3.0 (system cc is 4.8.5 — must export
+CC/CXX/FC); ROOT 6.28.10 module is C++14 — matches our codebase exactly.
+Pythia 8.317 built WITH HepMC3+LHAPDF (good for provenance-study);
+Herwig 7.1.0 is HepMC2-only via ThePEG 2.1.0 — BUT our --hepmc3 path uses
+HepMC3::deduce_reader, which auto-reads HepMC2 ascii, so warrior's
+existing Herwig output is already consumable without rebuilding Herwig.
+Chunked-resume design maps naturally onto SLURM array jobs (one chunk =
+one task).  Not started; filed for when we deploy.
+
+## [B] 2026-06-05 — WSU deployment plan written
+provenance-b/WSU_DEPLOYMENT_PLAN.md: 6 phases (build on warrior with
+CAP_PYTHIA8_PATH/CAP_HEPMC3_PATH -> sbatch smokes -> SLURM-array submitter
+(one task = gen x rung x subsample, resume via .root.txt) -> combine =
+hadd central values + CAP SubSampleStatCalculator for subsample errors ->
+reports -> production 120 tasks / 4.5M events).  HONEST FLAG for [A]:
+SubSampleStatCalculator::execute has the squareDifferenceLists combine +
+export COMMENTED OUT in 8.0 ("needs to be fixed"); underlying math exists
+in Helpers/HistogramGroup.  We need it re-enabled (or will ship a 100-line
+standalone fallback) before grid Phase D.  Risk register in the doc.

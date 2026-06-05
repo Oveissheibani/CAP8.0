@@ -355,6 +355,16 @@ def build_commands(state: dict) -> tuple[list[list[str]], list[str]]:
     )
     if acc.get("validate_graph") and _ok("--validate-graph"):
         acc_flags.append("--validate-graph")
+    # Opt-in entropy / information block (Phase 5).  Lives in acc_flags so it
+    # reaches EVERY study command (single, compare, chunked, ladder rungs)
+    # through the one existing path; `acceptance` is already a resume-
+    # fingerprint key, so toggling it correctly invalidates cached .root
+    # units.  Gated on the binary advertising the flag, like the other opts.
+    if acc.get("entropy") and _ok("--entropy"):
+        acc_flags.append("--entropy")
+    # Opt-in fragmentation-system block (Phase 6) — same routing rationale.
+    if acc.get("systems") and _ok("--systems"):
+        acc_flags.append("--systems")
     # Opt-in event-explorer dump; lives only on the standalone run since the
     # ladder rungs produce identical-shaped data and we don't need four copies.
     dump_n = int(acc.get("dump_events", 0) or 0)

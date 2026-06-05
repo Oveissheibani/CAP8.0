@@ -44,7 +44,9 @@ def build_state(a: argparse.Namespace) -> dict:
                           "report": True, "pdflatex": not a.no_pdf},
         "parallel":      {"caffeinate": not a.no_caffeinate, "nice": True},
         "_resolved_jobs": int(a.jobs),
-        "acceptance":    {},
+        "acceptance":    {k: True for k, on in
+                          (("entropy", a.entropy), ("systems", a.systems))
+                          if on},
         "ladder_rungs":  [],
         "report":        {"mode": "paper"},
         "compare_mechanisms": False,
@@ -73,6 +75,20 @@ def main() -> int:
                          "right after its .root is made, to save disk — the "
                          ".hepmc are huge, ~150 KB/event).  Resume is keyed on "
                          "the .root.txt so deleting the .hepmc is safe.")
+    ap.add_argument("--entropy", action="store_true",
+                    help="ALSO accumulate the entropy / information "
+                         "observables (multiplicity entropy, stage entropy "
+                         "profile, mutual-information recovery) and include "
+                         "the entropy section + figures in the report.  "
+                         "Changes the resume fingerprint, so cached "
+                         "non-entropy chunks are correctly re-run.")
+    ap.add_argument("--systems", action="store_true",
+                    help="ALSO accumulate the fragmentation-system "
+                         "observables (string/cluster masses, hadrons per "
+                         "system, rapidity span, lambda measure, charge "
+                         "ordering, B-Bbar and strangeness pairing, cluster "
+                         "fission) and include the section + figures in the "
+                         "report.  Changes the resume fingerprint.")
     ap.add_argument("--print-only", action="store_true",
                     help="print the one-liner + per-stage list and exit")
     a = ap.parse_args()

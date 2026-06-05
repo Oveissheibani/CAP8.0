@@ -5,7 +5,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>     // std::fabs — eta windows of the multiplicity counters
 #include <cstdlib>   // std::abs
+#include <set>       // distinct-MPI counting (truth centrality)
 #include <sstream>
 #include <iomanip>
 
@@ -187,6 +189,19 @@ Hist1D & ProvenanceObservables::H(const std::string & name)
     { nb = 11;  lo = -0.5; hi = 10.5; }   // integer-valued, bins per count
   else if (name.rfind("decay_chain_depth", 0) == 0)
     { nb = 21;  lo = -0.5; hi = 20.5; }   // integer-valued decay-chain depth
+  // ---- hadronization-interface observables (generator-agnostic) --------
+  else if (name.rfind("had_npartons", 0) == 0)
+    { nb = 120; lo = -0.5; hi = 119.5; }  // partons entering hadronization
+  else if (name.rfind("had_nprimary", 0) == 0)
+    { nb = 200; lo = -0.5; hi = 199.5; }  // primary hadrons per event
+  else if (name.rfind("had_ratio", 0) == 0)
+    { nb = 60;  lo = 0.0;  hi = 12.0; }   // primary hadrons per parton
+  // ---- event multiplicity / centrality observables ---------------------
+  else if (name.rfind("nmult_nmpi", 0) == 0 ||
+           name.rfind("nmult_nch_vs_nmpi", 0) == 0)
+    { nb = 41;  lo = -0.5; hi = 40.5; }   // N_MPI axis (integer)
+  else if (name.rfind("nmult_", 0) == 0)
+    { nb = 600; lo = 0.0;  hi = 600.0; }  // event multiplicities (integer)
   else  // mult_*
     { nb = MUL_NBINS; lo = MUL_LO; hi = MUL_HI; }
 
@@ -314,6 +329,78 @@ void ProvenanceObservables::accumulate(const EventHistory &               histor
     H("mult_origin_FromResonance" + suf).fill(m[2]);
     H("mult_origin_FromWeakDecay" + suf).fill(m[3]);
     }
+
+  // ---- hadronization interface (event-level, generator-agnostic) -------
+  // The string-vs-cluster question in three numbers per event: how many
+  // partons ENTER hadronization, how many primary hadrons COME OUT, and
+  // the conversion ratio.  Both history builders populate the
+  // PartonsPreHadronization and PrimaryHadrons stages (the HepMC path
+  // since the cluster-labelling fix), so these are fair cross-generator
+  // comparisons of the hadronization models themselves — independent of
+  // the studied species and of the acceptance window.
+  {
+  const double nPart = static_cast<double>(
+      history.collectStage(Stage::PartonsPreHadronization).size());
+  const double nPrim = static_cast<double>(
+      history.collectStage(Stage::PrimaryHadrons).size());
+  H("had_npartons").fill(nPart);
+  H("had_nprimary").fill(nPrim);
+  if (nPart > 0.0) H("had_ratio").fill(nPrim / nPart);
+  }
+
+  // ---- event multiplicity / centrality (three DISTINCT concepts) -------
+  // 1. HADRON multiplicity: every final-state hadron, charged AND neutral,
+  //    any species, full acceptance.            -> nmult_hadrons
+  // 2. CHARGED multiplicity N_ch: electrically charged final-state
+  //    particles (the experimental observable), full acceptance plus a
+  //    central tracker window |eta|<1 and an ALICE-V0M-like forward
+  //    window (-3.7<eta<-1.7 or 2.8<eta<5.1, the standard pp centrality
+  //    ESTIMATOR).                              -> nmult_charged[_eta10/_fwd]
+  // 3. CENTRALITY (model truth): the number of distinct MPI scatters
+  //    feeding the studied hadrons — the generator-level quantity the
+  //    forward N_ch tries to estimate.  Pythia tags only; identically 0
+  //    on HepMC input.                          -> nmult_nmpi
+  // The mean-N_ch(|eta|<1)-vs-N_MPI profile (sum + count pair, divided at
+  // plot time) shows how faithfully the estimator tracks the truth.
+  // NOTE: the legacy `event_multiplicity` histogram is NONE of these — it
+  // is the STUDIED-SPECIES count inside the acceptance window, used for
+  // the Low/Mid/High pair-analysis bins.
+  {
+  int nHad = 0, nCh = 0, nChEta10 = 0, nChFwd = 0;
+  for (int fi : history.finalState())
+    {
+    const ParticleNode & n = history.node(fi);
+    const int apdg = std::abs(n.pdg);
+    if (apdg >= 100) ++nHad;                       // hadrons (no leptons/gamma)
+    bool charged = false;
+    switch (apdg)
+      {
+      case 11: case 13: case 15:                   // e, mu, tau
+      case 211: case 321: case 2212:               // pi, K, p
+      case 3222: case 3112: case 3312: case 3334:  // Sigma+-, Xi-, Omega-
+        charged = true; break;
+      default: break;
+      }
+    if (!charged) continue;
+    ++nCh;
+    const double eta = n.eta();
+    if (std::fabs(eta) < 1.0) ++nChEta10;
+    if ((eta > -3.7 && eta < -1.7) || (eta > 2.8 && eta < 5.1)) ++nChFwd;
+    }
+  H("nmult_hadrons").fill(nHad + 0.5);
+  H("nmult_charged").fill(nCh + 0.5);
+  H("nmult_charged_eta10").fill(nChEta10 + 0.5);
+  H("nmult_charged_fwd").fill(nChFwd + 0.5);
+
+  // Truth centrality: distinct MPI scatters among the studied hadrons.
+  std::set<int> mpiVerts;
+  for (const ProvenanceTag & t : tags)
+    if (t.mpiIndex >= 0) mpiVerts.insert(t.mpiIndex);
+  const int nMpi = static_cast<int>(mpiVerts.size());
+  H("nmult_nmpi").fill(nMpi);
+  H("nmult_nch_vs_nmpi_sum").fill(nMpi, static_cast<double>(nChEta10));
+  H("nmult_nch_vs_nmpi_n").fill(nMpi);
+  }
 }
 
 std::string ProvenanceObservables::report() const

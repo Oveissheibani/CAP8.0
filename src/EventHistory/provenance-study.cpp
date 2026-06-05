@@ -23,6 +23,8 @@
 #include "ProvenanceTagger.hpp"
 #include "ProvenanceObservables.hpp"
 #include "PairProvenanceObservables.hpp"
+#include "EntropyObservables.hpp"
+#include "FragmentationSystems.hpp"
 
 #include "Pythia8/Pythia.h"
 
@@ -136,6 +138,16 @@ void usage(const char * prog)
     "      --mult-high N     HighMult cut (default 80)\n"
     "      --sphero-low X    JetLike/MidShape S0 cut (default 0.3)\n"
     "      --sphero-high X   MidShape/Isotropic S0 cut (default 0.7)\n"
+    "      --entropy         ALSO accumulate the entropy / information\n"
+    "                        observables (multiplicity entropy, stage\n"
+    "                        entropy profile, mutual-information recovery).\n"
+    "                        Opt-in: off by default, output unchanged.\n"
+    "      --systems         ALSO accumulate the fragmentation-system\n"
+    "                        observables (string/cluster anatomy: system\n"
+    "                        masses, hadrons per system, rapidity span,\n"
+    "                        lambda measure, charge ordering, B-Bbar and\n"
+    "                        strangeness pairing, cluster fission chain).\n"
+    "                        Opt-in: off by default, output unchanged.\n"
     "      --validate-graph  abort on the first malformed event-history DAG\n"
     "      --dump-events N   dump the first N events' full ancestry to a\n"
     "                        sibling .events.json file for the GUI explorer\n"
@@ -304,6 +316,8 @@ int main(int argc, char ** argv)
   double spheroLow  = 0.3;
   double spheroHigh = 0.7;
   bool   validateGraph = false;
+  bool   doEntropy     = false;  // --entropy: opt-in entropy/information block
+  bool   doSystems     = false;  // --systems: opt-in fragmentation systems
   long   dumpEvents    = 0;   // 0 = no JSON dump; N>0 = dump first N events
 
   for (int i = 1; i < argc; ++i)
@@ -340,6 +354,8 @@ int main(int argc, char ** argv)
     else if (a == "--sphero-low")           spheroLow  = std::atof(val("--sphero-low").c_str());
     else if (a == "--sphero-high")          spheroHigh = std::atof(val("--sphero-high").c_str());
     else if (a == "--validate-graph")       validateGraph = true;
+    else if (a == "--entropy")              doEntropy     = true;
+    else if (a == "--systems")              doSystems     = true;
     else if (a == "--dump-events")          dumpEvents    = std::atol(val("--dump-events").c_str());
     else if (a == "-o" || a == "--out")     outName = val("--out");
     else if (a == "-h" || a == "--help")    { usage(argv[0]); return 0; }
@@ -423,6 +439,17 @@ int main(int argc, char ** argv)
     }
   ProvenanceObservables &     obs     = *obsPtr;
   PairProvenanceObservables & pairObs = *pairPtr;
+  // Opt-in entropy / information accumulator (Phase 5).  Null when the
+  // --entropy flag is absent, in which case nothing below touches it and
+  // the output is byte-identical to a pre-Phase-5 build.
+  std::unique_ptr<EntropyObservables> entPtr;
+  if (doEntropy)
+    entPtr = std::unique_ptr<EntropyObservables>(new EntropyObservables());
+  // Opt-in fragmentation-system accumulator (Phase 6).  Same guarded
+  // pattern: null when --systems is absent, output byte-identical.
+  std::unique_ptr<FragmentationSystems> fragPtr;
+  if (doSystems)
+    fragPtr = std::unique_ptr<FragmentationSystems>(new FragmentationSystems());
   EventHistory              history;
 
   // ---- optional HepMC3 event source (Herwig etc.) ---------------------
@@ -500,6 +527,8 @@ int main(int argc, char ** argv)
     const std::vector<ProvenanceTag> tags = tagger.tagFinalState(history);
     obs.accumulate(history, tags);
     pairObs.accumulate(history, tags);
+    if (entPtr)  entPtr->accumulate(history, tags);
+    if (fragPtr) fragPtr->accumulate(history);
     ++succeeded;
 
     // --- per-event dump for the explorer (opt-in, capped) ---------------
@@ -600,7 +629,11 @@ int main(int argc, char ** argv)
   // ---- reports --------------------------------------------------------
   const std::string summarySingle = obs.report();
   const std::string summaryPair   = pairObs.report();
+  const std::string summaryEntropy = entPtr ? entPtr->report() : std::string();
+  const std::string summaryFrag = fragPtr ? fragPtr->report() : std::string();
   std::cout << summarySingle << "\n" << summaryPair << "\n";
+  if (!summaryEntropy.empty()) std::cout << summaryEntropy << "\n";
+  if (!summaryFrag.empty())    std::cout << summaryFrag << "\n";
 
   // ---- ROOT output ----------------------------------------------------
   // Ensure the parent directory of --out exists (mkdir -p), so a default
@@ -646,7 +679,11 @@ int main(int argc, char ** argv)
     };
   writeHistos(obs.histograms());
   writeHistos(pairObs.histograms());
-  const size_t nHist = obs.histograms().size() + pairObs.histograms().size();
+  if (entPtr)  writeHistos(entPtr->histograms());
+  if (fragPtr) writeHistos(fragPtr->histograms());
+  const size_t nHist = obs.histograms().size() + pairObs.histograms().size()
+                     + (entPtr  ? entPtr->histograms().size()  : 0)
+                     + (fragPtr ? fragPtr->histograms().size() : 0);
   fout.Close();
   std::cout << "wrote " << nHist << " histograms to " << outName << "\n";
 
@@ -677,6 +714,8 @@ int main(int argc, char ** argv)
        << "  sphero_high=" << spheroHigh
        << "  wall_seconds=" << wallSec << "\n\n"
        << summarySingle << "\n" << summaryPair;
+    if (!summaryEntropy.empty()) tf << "\n" << summaryEntropy;
+    if (!summaryFrag.empty())    tf << "\n" << summaryFrag;
     std::cout << "wrote summary to " << txtName << "\n";
     }
 

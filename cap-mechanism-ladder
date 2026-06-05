@@ -242,6 +242,12 @@ def main():
                     help="MidShape / Isotropic cut on transverse spherocity S0")
     ap.add_argument("--validate-graph", action="store_true",
                     help="forward --validate-graph to every rung")
+    ap.add_argument("--entropy", action="store_true",
+                    help="forward --entropy (entropy / information "
+                         "observables) to every rung")
+    ap.add_argument("--systems", action="store_true",
+                    help="forward --systems (fragmentation-system "
+                         "observables) to every rung")
     ap.add_argument("-j", "--jobs", type=int, default=1,
                     help="number of rungs to run in parallel (default 1 = "
                          "sequential, current behaviour).  Each rung is an "
@@ -321,6 +327,8 @@ def main():
         if args.sphero_high is not None:
             cmd += ["--sphero-high", str(args.sphero_high)]
         if args.validate_graph:   cmd += ["--validate-graph"]
+        if args.entropy:          cmd += ["--entropy"]
+        if args.systems:          cmd += ["--systems"]
         work.append((name, mechs, cmnd, root, cmd, rung_seed))
         print("  rung '%s'  enabled: %s" % (name, " ".join(mechs) or "(none)"))
         print("    config -> %s" % cmnd)

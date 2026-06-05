@@ -27,6 +27,8 @@ class AcceptancePanel(Panel):
             "mult_low":  20,   "mult_high": 80,
             "sphero_low":  0.3, "sphero_high": 0.7,
             "validate_graph": False,
+            "entropy":        False,  # --entropy: entropy/information block
+            "systems":        False,  # --systems: fragmentation systems
             "dump_events":   0,    # 0 = don't dump; N>0 = first N events
         })
 
@@ -39,6 +41,8 @@ class AcceptancePanel(Panel):
         self.slow        = tk.DoubleVar(value=float(s.get("sphero_low", 0.3)))
         self.shigh       = tk.DoubleVar(value=float(s.get("sphero_high", 0.7)))
         self.validate    = tk.BooleanVar(value=bool(s["validate_graph"]))
+        self.entropy     = tk.BooleanVar(value=bool(s.get("entropy", False)))
+        self.systems     = tk.BooleanVar(value=bool(s.get("systems", False)))
         self.dump_events = tk.IntVar   (value=int(s.get("dump_events", 0)))
         for var, key in [(self.pt_min,      "pt_min"),
                          (self.pt_max,      "pt_max"),
@@ -49,6 +53,8 @@ class AcceptancePanel(Panel):
                          (self.slow,        "sphero_low"),
                          (self.shigh,       "sphero_high"),
                          (self.validate,    "validate_graph"),
+                         (self.entropy,     "entropy"),
+                         (self.systems,     "systems"),
                          (self.dump_events, "dump_events")]:
             bind_to_state(var, s, key)
 
@@ -130,4 +136,16 @@ class AcceptancePanel(Panel):
                         "consistency failure)",
                         variable=self.validate
                         ).grid(row=8, column=0, columnspan=7,
+                               sticky="w", pady=(4, 0))
+
+        ttk.Checkbutton(f, text="--entropy (multiplicity entropy, stage "
+                        "entropy profile, information recovery)",
+                        variable=self.entropy
+                        ).grid(row=9, column=0, columnspan=7,
+                               sticky="w", pady=(4, 0))
+
+        ttk.Checkbutton(f, text="--systems (fragmentation systems: string/"
+                        "cluster masses, charge ordering, lambda measure)",
+                        variable=self.systems
+                        ).grid(row=10, column=0, columnspan=7,
                                sticky="w", pady=(4, 0))

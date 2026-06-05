@@ -161,6 +161,16 @@ struct ReportData
   std::string studiedHadrons, samePairs;   // headline counts (long strings)
   std::vector<ClassRow> origin, parton, pairs;
   std::vector<ClassRow> initparton;   // by INITIATING (hard-scatter) parton
+  // ---- entropy / information block (present only for --entropy runs) ----
+  // entMult : multiplicity entropy per window  {name, count=S nats, pct=err}
+  // entMultX: full rows {window, S, err, S2, <N>, S/ln<N>} (KL-test columns)
+  // entInfo : mutual-information rows          {name, count=bits,  pct=bias}
+  // entStage: stage rows {stage, S_occ, meanN, total[, S_event]}
+  std::vector<ClassRow> entMult, entInfo;
+  std::vector<std::vector<std::string>> entMultX;
+  std::vector<std::vector<std::string>> entStage;
+  // ---- fragmentation-system block (--systems runs): {name, count=value} --
+  std::vector<ClassRow> fragSys, fragOrd, fragClus;
   std::vector<std::string>              ladderRungs;   // column headers
   std::vector<std::vector<std::string>> ladderRows;    // group,obs,vals...
   std::vector<std::pair<std::string,std::string>> figures;  // (path, caption)
@@ -263,6 +273,80 @@ void parseSummary(const std::string & path, ReportData & d)
       { section = "parton"; continue; }
     if (line.find("pair correlation by ancestry:")!= std::string::npos)
       { section = "pair";   continue; }
+    // entropy block markers (all carry the unique "entropy:" prefix written
+    // by EntropyObservables::report(); absent unless the run used --entropy)
+    if (line.find("entropy: multiplicity entropy")  != std::string::npos)
+      { section = "entmult";  continue; }
+    if (line.find("entropy: stage profile")         != std::string::npos)
+      { section = "entstage"; continue; }
+    if (line.find("entropy: information recovery")  != std::string::npos)
+      { section = "entinfo";  continue; }
+    // fragmentation-system markers ("fragmentation:" prefix, --systems runs)
+    if (line.find("fragmentation: systems summary")  != std::string::npos)
+      { section = "fragsys";  continue; }
+    if (line.find("fragmentation: ordering summary") != std::string::npos)
+      { section = "fragord";  continue; }
+    if (line.find("fragmentation: cluster summary")  != std::string::npos)
+      { section = "fragclus"; continue; }
+    if (section == "fragsys" || section == "fragord" || section == "fragclus")
+      {
+      std::istringstream is(line);
+      std::string name, val;
+      if (is >> name >> val)
+        {
+        ClassRow r; r.name = name; r.count = val;
+        if      (section == "fragsys")  d.fragSys.push_back(r);
+        else if (section == "fragord")  d.fragOrd.push_back(r);
+        else                            d.fragClus.push_back(r);
+        }
+      continue;
+      }
+    // entropy rows have their own shapes (no trailing '%'):
+    //   entmult :  <name> <S> err <err> [S2 <s2> meanN <m> S/lnN <r>]
+    //   entinfo :  <name> <bits> bias <bias>
+    //   entstage:  <stage> <S_occ> <meanN> <total> [<S_event>]
+    if (section == "entmult" || section == "entinfo")
+      {
+      std::istringstream is(line);
+      std::string name, val, kw, second;
+      if (is >> name >> val)
+        {
+        ClassRow r; r.name = name; r.count = val;
+        if (is >> kw >> second) r.pct = second;
+        if (section == "entmult")
+          {
+          d.entMult.push_back(r);
+          // Optional KL-test columns (keyword-value pairs after "err").
+          std::string s2, meanN, ratio, k2, v2;
+          while (is >> k2 >> v2)
+            {
+            if      (k2 == "S2")    s2    = v2;
+            else if (k2 == "meanN") meanN = v2;
+            else if (k2 == "S/lnN") ratio = v2;
+            }
+          std::vector<std::string> row;
+          row.push_back(name);  row.push_back(val);  row.push_back(r.pct);
+          row.push_back(s2);    row.push_back(meanN); row.push_back(ratio);
+          d.entMultX.push_back(row);
+          }
+        else d.entInfo.push_back(r);
+        }
+      continue;
+      }
+    if (section == "entstage")
+      {
+      std::istringstream is(line);
+      std::string name, sOcc, meanN, total, sEvt;
+      if (is >> name >> sOcc >> meanN >> total)
+        {
+        std::vector<std::string> row;
+        row.push_back(name); row.push_back(sOcc);
+        row.push_back(meanN); row.push_back(total);
+        if (is >> sEvt) row.push_back(sEvt);
+        d.entStage.push_back(row);
+        }
+      continue;
+      }
     // class rows:  <name> <count> <pct> %
     if (!section.empty())
       {
@@ -340,9 +424,12 @@ bool figIs(const std::string & path, const std::string & prefix)
 bool isPairFigure(const std::string & p)   { return figIs(p, "pair");   }
 bool isLadderFigure(const std::string & p) { return figIs(p, "ladder"); }
 bool isCompareFigure(const std::string & p){ return figIs(p, "compare"); }
+bool isEntropyFigure(const std::string & p){ return figIs(p, "entropy"); }
+bool isFragFigure(const std::string & p)   { return figIs(p, "frag"); }
 bool isSingleFigure(const std::string & p)
 {
-  return !isPairFigure(p) && !isLadderFigure(p) && !isCompareFigure(p);
+  return !isPairFigure(p) && !isLadderFigure(p) && !isCompareFigure(p) &&
+         !isEntropyFigure(p) && !isFragFigure(p);
 }
 
 // True when `s` ends with `suf`.  Used to select the figures belonging to a
@@ -639,6 +726,157 @@ void renderFiguresPaired(
     }
 }
 
+// ---- topical figure grouping (report coherence) ----------------------------
+//
+// The figures used to render as one long undifferentiated stream.  Here they
+// are grouped into named topics, each introduced by a \subsection* header, in
+// a fixed physics-reading order: where particles come from -> the
+// hadronization interface -> parton ancestry -> event context -> the pair
+// correlations from core to specialised.  Stems are matched after stripping
+// the compare_/ladder_ prefix and any species suffix, so the same grouping
+// organises the single-run, comparison and ladder reports.
+
+// stem minus compare_/ladder_ prefix and minus a trailing _S<pdg>[x<pdg>].
+std::string normalizedFigStem(const std::string & path)
+{
+  std::string s = stem(path);
+  for (const char * pre : { "compare_", "ladder_" })
+    {
+    const std::string p(pre);
+    if (s.compare(0, p.size(), p) == 0) { s = s.substr(p.size()); break; }
+    }
+  // strip _S<digits>(x<digits>)? suffix
+  std::string::size_type us = s.rfind("_S");
+  if (us != std::string::npos)
+    {
+    bool ok = us + 2 < s.size();
+    bool seenX = false;
+    for (std::string::size_type i = us + 2; ok && i < s.size(); ++i)
+      {
+      if (std::isdigit(static_cast<unsigned char>(s[i]))) continue;
+      if (s[i] == 'x' && !seenX && i > us + 2) { seenX = true; continue; }
+      ok = false;
+      }
+    if (ok) s = s.substr(0, us);
+    }
+  return s;
+}
+
+struct FigureTopic { const char * title; std::vector<const char *> stems; };
+
+const std::vector<FigureTopic> & figureTopics()
+{
+  static const std::vector<FigureTopic> T = {
+    {"Production origin and feed-down",
+     {"origin_pt", "origin_eta", "origin_pt_fraction",
+      "pt_origin_Primary", "pt_origin_FromResonance",
+      "pt_origin_FromWeakDecay", "decay_chain_depth"}},
+    {"The hadronization interface (string vs cluster)",
+     {"had_npartons", "had_nprimary", "had_ratio", "mult_origin_Primary",
+      "n_parton_ancestors"}},
+    {"Parton ancestry",
+     {"parton_pt", "parton_pt_fraction",
+      "pt_parton_LightQuark", "pt_parton_Strange", "pt_parton_Charm",
+      "pt_parton_Bottom", "pt_parton_Gluon",
+      "initparton_pt", "pt_initparton_Gluon", "pt_initparton_LightQuark",
+      "pt_initparton_Strange", "sp_pt_mpi", "sp_pt_shower", "sp_pt_hf"}},
+    {"Event multiplicity and centrality (three distinct concepts)",
+     {"nmult_hadrons", "nmult_charged", "nmult_charged_eta10",
+      "nmult_charged_fwd", "nmult_nmpi", "nmult_nch_vs_nmpi"}},
+    {"Event-level context and genealogy summaries",
+     {"event_multiplicity", "event_spherocity", "common_ancestor_depth"}},
+    {"Core pair correlations (raw, normalized, local fraction)",
+     {"pair_dphi", "pair_dphi_shapes", "pair_dphi_fraction",
+      "pair_deta", "pair_deta_shapes", "pair_deta_fraction",
+      "pair_mass",
+      "dphi_pair_All", "dphi_pair_SameResonance", "dphi_pair_SharedParton",
+      "dphi_pair_Unrelated", "deta_pair_SharedParton", "deta_pair_Unrelated",
+      "mass_pair_All", "mass_pair_SameResonance"}},
+    {"Charge-sign decomposition (SS vs OS)",
+     {"pair_dphi_SS", "pair_dphi_OS", "pair_deta_SS", "pair_deta_OS",
+      "pair_mass_SS", "pair_mass_OS"}},
+    {"Resonance detail",
+     {"pair_dphi_resonance", "pair_deta_resonance", "pair_mass_resonance"}},
+    {"Parton-sharing depth and flavour content",
+     {"pair_dphi_sharedparton_depth", "pair_deta_sharedparton_depth",
+      "pair_mass_sharedparton_depth",
+      "pair_dphi_flavmix", "pair_deta_flavmix", "pair_mass_flavmix",
+      "pair_dphi_sharedparton_flavmix", "pair_deta_sharedparton_flavmix",
+      "pair_mass_sharedparton_flavmix"}},
+    {"MPI relationship",
+     {"pair_dphi_mpi", "pair_deta_mpi", "pair_mass_mpi",
+      "pair_dphi_sharedparton_mpi", "pair_deta_sharedparton_mpi",
+      "pair_mass_sharedparton_mpi",
+      "dphi_pair_MPI_SameMPI", "dphi_pair_MPI_CrossMPI",
+      "dphi_pair_SharedParton_SameMPI"}},
+    {"Shower lineage (ISR vs FSR)",
+     {"pair_dphi_shower", "pair_deta_shower", "pair_mass_shower"}},
+    {"Heavy-flavour content",
+     {"pair_dphi_hf", "pair_deta_hf", "pair_mass_hf",
+      "pair_decay_depth_pairclass",
+      "pt_HF_FromBottomChain", "pt_HF_FromCharmChain"}},
+    {"Event-activity bins (multiplicity, then shape)",
+     {"pair_dphi_lowmult", "pair_dphi_midmult", "pair_dphi_highmult",
+      "pair_deta_lowmult", "pair_deta_midmult", "pair_deta_highmult",
+      "pair_dphi_jetlike", "pair_dphi_midshape", "pair_dphi_isotropic",
+      "pair_deta_jetlike", "pair_deta_midshape", "pair_deta_isotropic"}},
+    // Fragmentation-system figures in COMPARISON/ladder mode
+    // (compare_frag_*).  In the single-run paper they have their own
+    // section via isFragFigure and never reach this grouping.
+    {"Fragmentation systems (string vs cluster anatomy)",
+     {"frag_nsystems", "frag_nhad_per_system", "frag_system_mass",
+      "frag_system_mass_zoom", "frag_nhad_vs_mass", "frag_y_span",
+      "frag_lambda", "frag_neighbor_ptbal", "frag_charge_ordering",
+      "frag_neighbor_charge", "frag_bbar", "frag_bbar_dy_same",
+      "frag_strange", "frag_cluster_mass_top",
+      "frag_cluster_mass_decaying", "frag_cluster_fission"}},
+    // Entropy figures in COMPARISON/ladder mode (compare_ent_*).  In the
+    // single-run paper they have their own section via isEntropyFigure and
+    // never reach this grouping.
+    {"Entropy and information",
+     {"ent_mult_eta05", "ent_mult_full", "ent_fb_mi_gap",
+      "ent_stage_S", "ent_stage_meanN", "ent_stage_total"}},
+  };
+  return T;
+}
+
+// Render the predicate's figures grouped into the topics above, each topic
+// introduced by a \subsection* header.  Figures matching no topic render at
+// the end under "Other decompositions" so nothing is ever silently dropped.
+void renderFiguresGrouped(
+    LatexDocument & doc,
+    const std::vector<std::pair<std::string,std::string>> & figs,
+    const std::function<bool(const std::string &)> & groupPredicate,
+    const std::string & suffix = "")
+{
+  std::set<std::string> allTopicStems;
+  for (const auto & t : figureTopics())
+    for (const char * s : t.stems) allTopicStems.insert(s);
+
+  for (const auto & topic : figureTopics())
+    {
+    std::set<std::string> want(topic.stems.begin(), topic.stems.end());
+    auto pred = [&](const std::string & p)
+      { return groupPredicate(p) && want.count(normalizedFigStem(p)) > 0; };
+    bool any = false;
+    for (const auto & f : figs) if (pred(f.first)) { any = true; break; }
+    if (!any) continue;
+    doc.addText(L("\\subsection*{" + std::string(topic.title) + "}"));
+    renderFiguresPaired(doc, figs, pred, suffix);
+    }
+
+  auto leftover = [&](const std::string & p)
+    { return groupPredicate(p) &&
+             allTopicStems.count(normalizedFigStem(p)) == 0; };
+  bool any = false;
+  for (const auto & f : figs) if (leftover(f.first)) { any = true; break; }
+  if (any)
+    {
+    doc.addText(L("\\subsection*{Other decompositions}"));
+    renderFiguresPaired(doc, figs, leftover, suffix);
+    }
+}
+
 // ---- glossary -------------------------------------------------------------
 struct GlossaryEntry { const char * term; const char * definition; };
 
@@ -696,6 +934,43 @@ const std::vector<GlossaryEntry> & glossary()
      "Event-multiplicity bins.  LowMult: fewer than 20 studied hadrons in "
      "the event.  MidMult: 20-79.  HighMult: 80 or more.  Cuts are "
      "deliberately generator-agnostic."},
+    {"Hadron multiplicity",
+     "Number of final-state hadrons per event, charged AND neutral, every "
+     "species, full acceptance (histogram nmult_hadrons).  The total "
+     "hadronic yield of the collision."},
+    {"Charged multiplicity (N_ch)",
+     "Number of electrically charged final-state particles per event "
+     "(nmult_charged), also in the central window |eta| < 1 "
+     "(nmult_charged_eta10).  The experimentally accessible multiplicity. "
+     "NOT the same as hadron multiplicity (neutrals removed) nor the "
+     "studied-species count."},
+    {"Centrality",
+     "How 'active' the collision is.  Model truth: the number of distinct "
+     "MPI scatters, nmult_nmpi (Pythia tags only).  Experimental "
+     "estimator: forward charged multiplicity in V0M-like windows, "
+     "nmult_charged_fwd; percentiles of that distribution define "
+     "centrality classes.  The nmult_nch_vs_nmpi profile shows how well "
+     "the estimator tracks the truth."},
+    {"Fragmentation system",
+     "The unit of hadronization, reconstructed from the event-history "
+     "graph: the group of primary hadrons sharing one hadronization "
+     "source -- one Lund string's partons (Pythia) or one cluster "
+     "(Herwig).  System kinematics come from the sum of its primary "
+     "hadrons, conserved exactly in both models."},
+    {"Lambda measure",
+     "The total 'string length' of an event: the sum over fragmentation "
+     "systems of ln(m^2/m0^2), m0 = 1 GeV.  Colour reconnection is "
+     "designed to minimise it."},
+    {"Charge ordering",
+     "The Lund-string prediction that rapidity-neighbouring hadrons of "
+     "ONE system carry opposite charges (each string break creates a "
+     "quark-antiquark pair).  Quantified as the opposite-sign fraction "
+     "of same-system pairs vs cross-system pairs."},
+    {"Studied multiplicity",
+     "The legacy event_multiplicity histogram: the number of SELECTED-"
+     "species hadrons (e.g. pions) inside the acceptance window.  Used "
+     "only to define the LowMult/MidMult/HighMult pair-analysis bins; do "
+     "not read it as N_ch or as the hadron multiplicity."},
   };
   return G;
 }
@@ -835,6 +1110,273 @@ void fillMultiTable(LatexTable & t, const std::string & col0,
     }
 }
 
+// ---- entropy tables (opt-in --entropy block) -------------------------------
+// The summary rows use compact single-token names ("|eta|<0.5",
+// "I(initParton;species)|Primary"); map them to proper LaTeX here.
+// Unknown names fall back to texEscape so the table never breaks the build.
+std::string entropyRowLabel(const std::string & name)
+{
+  static const std::map<std::string,std::string> M = {
+    { "|eta|<0.5", "$|\\eta|<0.5$" },
+    { "|eta|<1.0", "$|\\eta|<1.0$" },
+    { "|eta|<2.0", "$|\\eta|<2.0$" },
+    { "full",      "full acceptance" },
+    { "I(NF;NB)",
+      "$I(N_F;N_B)$ -- forward/backward hemispheres" },
+    { "I(initParton;species)",
+      "$I(\\mathrm{init.~parton};\\mathrm{species})$ -- all final hadrons" },
+    { "I(initParton;species)|Primary",
+      "$I(\\mathrm{init.~parton};\\mathrm{species})$ -- primary hadrons only" },
+    { "I(initParton;species)|Decay",
+      "$I(\\mathrm{init.~parton};\\mathrm{species})$ -- decay products only" },
+    { "I(initParton;pT)",
+      "$I(\\mathrm{init.~parton};p_{T}~\\mathrm{bin})$ -- all final hadrons" },
+    { "I(origin;species)",
+      "$I(\\mathrm{origin};\\mathrm{species})$" },
+  };
+  std::map<std::string,std::string>::const_iterator it = M.find(name);
+  if (it != M.end()) return it->second;
+  // FB mutual-information gap-scan rows are generated dynamically.
+  const std::string gapPrefix = "I(NF;NB)|gap=";
+  if (name.compare(0, gapPrefix.size(), gapPrefix) == 0)
+    return "$I(N_F;N_B)$, $|\\eta|$ gap $\\geq " +
+           name.substr(gapPrefix.size()) + "$";
+  if (name == "I(NMPI;Nch)")
+    return "$I(N_{\\mathrm{MPI}};N_{\\mathrm{ch}})$ -- MPI-activity recovery "
+           "(Pythia tags only)";
+  return texEscape(name);
+}
+
+// Pretty LaTeX labels for the fragmentation-system summary rows (the raw
+// names carry underscores; unknown names fall back to texEscape).
+std::string fragRowLabel(const std::string & name)
+{
+  static const std::map<std::string,std::string> M = {
+    { "systems_per_event",     "systems per event" },
+    { "hadrons_per_system",    "primary hadrons per system" },
+    { "mean_system_mass",      "mean system mass [GeV]" },
+    { "mean_y_span",           "mean rapidity span" },
+    { "lambda_per_event",
+      "$\\lambda=\\sum\\ln(m^{2}/m_{0}^{2})$ per event" },
+    { "OS_fraction_neighbors",
+      "opposite-sign fraction, rapidity neighbours (same system)" },
+    { "OS_fraction_same",      "opposite-sign fraction, same-system pairs" },
+    { "OS_fraction_cross",     "opposite-sign fraction, cross-system pairs" },
+    { "neighbor_ptbal_mean",
+      "$\\langle\\cos\\Delta\\phi\\rangle$ of rapidity neighbours" },
+    { "clusters_per_event",    "clusters per event (Herwig)" },
+    { "mean_cluster_mass",     "mean cluster mass [GeV] (Herwig)" },
+  };
+  std::map<std::string,std::string>::const_iterator it = M.find(name);
+  if (it != M.end()) return it->second;
+  return texEscape(name);
+}
+
+void fillFragTable(LatexTable & t, const std::vector<ClassRow> & rows)
+{
+  // p{} first column: the row labels are descriptive phrases.
+  t.setColumnSpec("p{0.70\\textwidth} r");
+  t.setHeaderRows(1);
+  t.addRow({ L("quantity"), L("value") });
+  for (std::size_t i = 0; i < rows.size(); ++i)
+    t.addRow({ L(fragRowLabel(rows[i].name)), L(rows[i].count) });
+}
+
+void fillFragCompareTable(LatexTable & t,
+                          const std::string & labelA,
+                          const std::string & labelB,
+                          const std::vector<ClassRow> & rowsA,
+                          const std::vector<ClassRow> & rowsB)
+{
+  t.setColumnSpec("p{0.58\\textwidth} r r");
+  t.setHeaderRows(1);
+  t.addRow({ L("quantity"), L(labelA), L(labelB) });
+  std::vector<std::string> order;
+  std::set<std::string> seen;
+  for (std::size_t i = 0; i < rowsA.size(); ++i)
+    if (seen.insert(rowsA[i].name).second) order.push_back(rowsA[i].name);
+  for (std::size_t i = 0; i < rowsB.size(); ++i)
+    if (seen.insert(rowsB[i].name).second) order.push_back(rowsB[i].name);
+  for (std::size_t i = 0; i < order.size(); ++i)
+    {
+    std::string a, b;
+    for (const auto & r : rowsA) if (r.name == order[i]) a = r.count;
+    for (const auto & r : rowsB) if (r.name == order[i]) b = r.count;
+    t.addRow({ L(fragRowLabel(order[i])),
+               L(a.empty() ? "--" : a), L(b.empty() ? "--" : b) });
+    }
+}
+
+// Value (not pct) of the row named `name`; "" when absent.
+std::string valOf(const std::vector<ClassRow> & rows, const std::string & name)
+{
+  for (std::size_t i = 0; i < rows.size(); ++i)
+    if (rows[i].name == name) return rows[i].count;
+  return "";
+}
+
+void fillEntropyTable(LatexTable & t, const std::string & col0,
+                      const std::string & valHead, const std::string & errHead,
+                      const std::vector<ClassRow> & rows)
+{
+  // p{} first column: MI row labels are full descriptive phrases.
+  t.setColumnSpec("p{0.58\\textwidth} r r");
+  t.setHeaderRows(1);
+  t.addRow({ L(col0), L(valHead), L(errHead) });
+  for (std::size_t i = 0; i < rows.size(); ++i)
+    t.addRow({ L(entropyRowLabel(rows[i].name)), L(rows[i].count),
+               L(rows[i].pct.empty() ? "--" : rows[i].pct) });
+}
+
+void fillEntropyStageTable(LatexTable & t,
+                           const std::vector<std::vector<std::string>> & rows)
+{
+  const bool hasEvt = !rows.empty() && rows[0].size() >= 5;
+  t.setColumnSpec(hasEvt ? "l r r r r" : "l r r r");
+  t.setHeaderRows(1);
+  std::vector<String> hdr = { L("stage"), L("$S_{\\mathrm{occ}}$ [nats]"),
+                              L("$\\langle N \\rangle$"),
+                              L("$S_{\\mathrm{occ}}+\\ln\\langle N \\rangle$") };
+  if (hasEvt) hdr.push_back(L("$\\langle S_{\\mathrm{event}} \\rangle$"));
+  t.addRow(hdr);
+  for (std::size_t i = 0; i < rows.size(); ++i)
+    {
+    if (rows[i].size() < 4) continue;
+    std::vector<String> r = { L(texEscape(rows[i][0])), L(rows[i][1]),
+                              L(rows[i][2]), L(rows[i][3]) };
+    if (hasEvt) r.push_back(L(rows[i].size() >= 5 ? rows[i][4]
+                                                  : std::string("--")));
+    t.addRow(r);
+    }
+}
+
+// KL-test table: window | S | err | S2 | <N> | S/ln<N>.
+void fillEntropyKLTable(LatexTable & t,
+                        const std::vector<std::vector<std::string>> & rows)
+{
+  t.setColumnSpec("l r r r r r");
+  t.setHeaderRows(1);
+  t.addRow({ L("multiplicity window"), L("$S$ [nats]"), L("stat.\\ err."),
+             L("$S_2$ [nats]"), L("$\\langle N \\rangle$"),
+             L("$S/\\ln\\langle N \\rangle$") });
+  for (std::size_t i = 0; i < rows.size(); ++i)
+    {
+    if (rows[i].size() < 6) continue;
+    auto cell = [](const std::string & v)
+      { return v.empty() ? std::string("--") : v; };
+    t.addRow({ L(entropyRowLabel(rows[i][0])), L(cell(rows[i][1])),
+               L(cell(rows[i][2])), L(cell(rows[i][3])),
+               L(cell(rows[i][4])), L(cell(rows[i][5])) });
+    }
+}
+
+// KL-ratio comparison: window | S A | S B | S/ln<N> A | S/ln<N> B.
+void fillEntropyKLCompareTable(
+    LatexTable & t, const std::string & labelA, const std::string & labelB,
+    const std::vector<std::vector<std::string>> & rowsA,
+    const std::vector<std::vector<std::string>> & rowsB)
+{
+  t.setColumnSpec("l r r r r");
+  t.setHeaderRows(1);
+  t.addRow({ L("multiplicity window"),
+             L("$S$ " + labelA), L("$S$ " + labelB),
+             L("$S/\\ln\\langle N \\rangle$ " + labelA),
+             L("$S/\\ln\\langle N \\rangle$ " + labelB) });
+  auto find = [](const std::vector<std::vector<std::string>> & rows,
+                 const std::string & name) -> const std::vector<std::string> *
+    {
+    for (std::size_t i = 0; i < rows.size(); ++i)
+      if (!rows[i].empty() && rows[i][0] == name) return &rows[i];
+    return nullptr;
+    };
+  std::vector<std::string> order;
+  std::set<std::string> seen;
+  for (std::size_t i = 0; i < rowsA.size(); ++i)
+    if (!rowsA[i].empty() && seen.insert(rowsA[i][0]).second)
+      order.push_back(rowsA[i][0]);
+  for (std::size_t i = 0; i < rowsB.size(); ++i)
+    if (!rowsB[i].empty() && seen.insert(rowsB[i][0]).second)
+      order.push_back(rowsB[i][0]);
+  auto cell = [](const std::vector<std::string> * r, std::size_t i)
+    { return (r && r->size() > i && !(*r)[i].empty()) ? (*r)[i]
+                                                      : std::string("--"); };
+  for (std::size_t i = 0; i < order.size(); ++i)
+    {
+    const std::vector<std::string> * a = find(rowsA, order[i]);
+    const std::vector<std::string> * b = find(rowsB, order[i]);
+    t.addRow({ L(entropyRowLabel(order[i])),
+               L(cell(a, 1)), L(cell(b, 1)),
+               L(cell(a, 5)), L(cell(b, 5)) });
+    }
+}
+
+// Side-by-side entropy / MI values for two generators (union of row names).
+void fillEntropyCompareTable(LatexTable & t, const std::string & col0,
+                             const std::string & labelA,
+                             const std::string & labelB,
+                             const std::vector<ClassRow> & rowsA,
+                             const std::vector<ClassRow> & rowsB)
+{
+  // p{} first column: MI row labels are full descriptive phrases.
+  t.setColumnSpec("p{0.55\\textwidth} r r");
+  t.setHeaderRows(1);
+  t.addRow({ L(col0), L(labelA), L(labelB) });
+  std::vector<std::string> order;
+  std::set<std::string> seen;
+  for (std::size_t i = 0; i < rowsA.size(); ++i)
+    if (seen.insert(rowsA[i].name).second) order.push_back(rowsA[i].name);
+  for (std::size_t i = 0; i < rowsB.size(); ++i)
+    if (seen.insert(rowsB[i].name).second) order.push_back(rowsB[i].name);
+  for (std::size_t i = 0; i < order.size(); ++i)
+    {
+    const std::string a = valOf(rowsA, order[i]);
+    const std::string b = valOf(rowsB, order[i]);
+    t.addRow({ L(entropyRowLabel(order[i])),
+               L(a.empty() ? "--" : a),
+               L(b.empty() ? "--" : b) });
+    }
+}
+
+// Stage-profile comparison: stage | S_occ A | S_occ B | <N> A | <N> B.
+void fillEntropyStageCompareTable(
+    LatexTable & t, const std::string & labelA, const std::string & labelB,
+    const std::vector<std::vector<std::string>> & rowsA,
+    const std::vector<std::vector<std::string>> & rowsB)
+{
+  t.setColumnSpec("l r r r r");
+  t.setHeaderRows(1);
+  t.addRow({ L("stage"),
+             L("$S_{\\mathrm{occ}}$ " + labelA),
+             L("$S_{\\mathrm{occ}}$ " + labelB),
+             L("$\\langle N \\rangle$ " + labelA),
+             L("$\\langle N \\rangle$ " + labelB) });
+  auto find = [](const std::vector<std::vector<std::string>> & rows,
+                 const std::string & name) -> const std::vector<std::string> *
+    {
+    for (std::size_t i = 0; i < rows.size(); ++i)
+      if (!rows[i].empty() && rows[i][0] == name) return &rows[i];
+    return nullptr;
+    };
+  std::vector<std::string> order;
+  std::set<std::string> seen;
+  for (std::size_t i = 0; i < rowsA.size(); ++i)
+    if (!rowsA[i].empty() && seen.insert(rowsA[i][0]).second)
+      order.push_back(rowsA[i][0]);
+  for (std::size_t i = 0; i < rowsB.size(); ++i)
+    if (!rowsB[i].empty() && seen.insert(rowsB[i][0]).second)
+      order.push_back(rowsB[i][0]);
+  for (std::size_t i = 0; i < order.size(); ++i)
+    {
+    const std::vector<std::string> * a = find(rowsA, order[i]);
+    const std::vector<std::string> * b = find(rowsB, order[i]);
+    t.addRow({ L(texEscape(order[i])),
+               L(a && a->size() > 1 ? (*a)[1] : std::string("--")),
+               L(b && b->size() > 1 ? (*b)[1] : std::string("--")),
+               L(a && a->size() > 2 ? (*a)[2] : std::string("--")),
+               L(b && b->size() > 2 ? (*b)[2] : std::string("--")) });
+    }
+}
+
 void fillConfigTable(LatexTable & t, const ReportData & d)
 {
   t.setColumnSpec("l l");
@@ -895,8 +1437,10 @@ void fillGlossaryTable(LatexTable & t)
   t.setColumnSpec("p{0.22\\textwidth} p{0.72\\textwidth}");
   t.setHeaderRows(1);
   t.addRow({ L("term"), L("meaning") });
+  // Both cells escaped: terms can carry LaTeX-special characters too
+  // (e.g. the underscore in "Charged multiplicity (N_ch)").
   for (const auto & g : glossary())
-    t.addRow({ L(g.term), L(texEscape(g.definition)) });
+    t.addRow({ L(texEscape(g.term)), L(texEscape(g.definition)) });
 }
 
 // ---- executive-summary bullets --------------------------------------------
@@ -1125,7 +1669,15 @@ void buildPaper(LatexDocument & doc, const ReportData & d)
     }
   else
     {
-    renderFiguresPaired(doc, d.figures, isSingleFigure);
+    doc.addText(L(
+      "The figures are grouped by topic, in reading order: production "
+      "origin first, then the HADRONIZATION INTERFACE -- how many partons "
+      "enter hadronization, how many primary hadrons come out, and the "
+      "conversion ratio, the most direct probe of the fragmentation model "
+      "itself -- then parton ancestry, then event-level context.  Within "
+      "each topic a raw distribution is immediately followed by its "
+      "normalized and fraction variants."));
+    renderFiguresGrouped(doc, d.figures, isSingleFigure);
     }
   doc.endSection();
 
@@ -1174,7 +1726,7 @@ void buildPaper(LatexDocument & doc, const ReportData & d)
     }
   else
     {
-    renderFiguresPaired(doc, d.figures, isPairFigure);
+    renderFiguresGrouped(doc, d.figures, isPairFigure);
     }
   doc.endSection();
 
@@ -1199,6 +1751,140 @@ void buildPaper(LatexDocument & doc, const ReportData & d)
                                    "mechanism ladder (percentages)."),
                                  L("tab:ladder")), d);
     renderFiguresPaired(doc, d.figures, isLadderFigure);
+    doc.endSection();
+    }
+
+  // ---------------- fragmentation systems (opt-in --systems) ------------
+  if (!d.fragSys.empty() || !d.fragOrd.empty())
+    {
+    doc.addSection(L("Fragmentation systems: string / cluster anatomy"),
+                   L("sec:frag"));
+    doc.addText(L(
+      "A FRAGMENTATION SYSTEM is the unit of hadronization, reconstructed "
+      "generator-agnostically from the event-history DAG: primary hadrons "
+      "(before any decay) are grouped when they share a hadronization "
+      "source -- in Pythia the partons of one Lund string, in Herwig one "
+      "cluster.  System kinematics are computed from the sum of the "
+      "system's primary hadrons, which both models conserve exactly, so "
+      "masses are comparable across generators BY CONSTRUCTION.  "
+      "Tab.~\\ref{tab:fragsys} summarises the anatomy: how many systems "
+      "per event, how many hadrons each produces, how heavy they are, how "
+      "far they stretch in rapidity, and the $\\lambda$ (string-length) "
+      "measure -- the quantity colour reconnection exists to minimise, so "
+      "its movement across the +CR ladder rung shows CR's ACTION rather "
+      "than its consequences.  Tab.~\\ref{tab:fragord} tests the Lund "
+      "microphysics: each string break creates a $q\\bar q$ pair, so "
+      "rapidity-NEIGHBOURING hadrons of one system should carry opposite "
+      "charges (compare the same-system against the cross-system "
+      "fraction, which has no such constraint), break transverse kicks "
+      "anti-correlate neighbouring azimuths, and diquark breaks place "
+      "baryon and antibaryon close in rapidity within one system."));
+    if (!d.fragSys.empty())
+      fillFragTable(doc.addTable(L("Fragmentation-system anatomy."),
+                                 L("tab:fragsys")), d.fragSys);
+    if (!d.fragOrd.empty())
+      fillFragTable(doc.addTable(L("Within-system ordering: charge, "
+                                   "transverse-momentum and baryon "
+                                   "correlations."),
+                                 L("tab:fragord")), d.fragOrd);
+    if (!d.fragClus.empty())
+      {
+      doc.addText(L(
+        "This source carries EXPLICIT cluster objects (Herwig), so the "
+        "cluster fission chain is directly visible: top-cluster vs "
+        "decaying-cluster mass spectra in the figures."));
+      fillFragTable(doc.addTable(L("Explicit cluster summary (Herwig)."),
+                                 L("tab:fragclus")), d.fragClus);
+      }
+    renderFiguresPaired(doc, d.figures, isFragFigure);
+    doc.endSection();
+    }
+
+  // ---------------- entropy and information content (opt-in) ------------
+  // Present only when provenance-study ran with --entropy; reports without
+  // the block render exactly as before.
+  if (!d.entMult.empty() || !d.entStage.empty() || !d.entInfo.empty())
+    {
+    doc.addSection(L("Entropy and information content"), L("sec:entropy"));
+    doc.addText(L(
+      "This section treats the event as an information source.  Three "
+      "complementary measures are reported.  FIRST, the Shannon entropy of "
+      "the charged-particle multiplicity distribution, $S=-\\sum_N P(N)\\ln "
+      "P(N)$, in nested pseudorapidity windows (Tab.~\\ref{tab:entmult}).  "
+      "This is the observable the Kharzeev--Levin duality conjecture equates "
+      "with the entanglement entropy of the partonic state probed in the "
+      "collision, $S\\simeq\\ln(xG(x))$.  SECOND, an entropy-production "
+      "profile along the event evolution (Tab.~\\ref{tab:entstage}): for "
+      "each stage of the event-history DAG, the occupancy entropy of that "
+      "stage's particles over a coarse $(\\eta,p_{T})$ grid together with "
+      "the mean object count -- read top-to-bottom as time, the increase "
+      "from one stage to the next is the entropy produced by that step "
+      "(shower, hadronization, decays).  THIRD, information recovery "
+      "(Tab.~\\ref{tab:entinfo}): hadronization is treated as a noisy "
+      "channel whose input is the initial-state tag the provenance tagger "
+      "computes (the initiating parton) and whose output is the observable "
+      "final state; the mutual information between them, in bits, measures "
+      "how much initial-state information SURVIVES into the final state.  "
+      "Comparing the primary-only and decay-only rows isolates how much the "
+      "decay layer erases on top of hadronization, and $I(N_F;N_B)$ is the "
+      "classical forward/backward proxy for entanglement between rapidity "
+      "intervals."));
+    doc.addText(L(
+      "An important caveat: the generator is a classical Monte Carlo, so "
+      "every number here is an exact SHANNON entropy of generator output -- "
+      "not a von Neumann entropy of a quantum state.  What the multiplicity "
+      "entropy enables is a TEST of the conjectured duality, not a "
+      "simulation of entanglement.  Estimator details: entropies use the "
+      "plug-in estimator with the Miller--Madow bias correction "
+      "$S_{\\mathrm{MM}}=S+(K-1)/2N$; the mutual-information rows quote a "
+      "residual-bias scale $(K_X-1)(K_Y-1)/(2N\\ln 2)$ -- an $I$ value is "
+      "only meaningful when it clearly exceeds its bias column."));
+    doc.addText(L(
+      "The multiplicity-entropy table carries the KHARZEEV--LEVIN TEST "
+      "columns: a maximally entangled partonic state predicts "
+      "$S=\\ln\\langle N \\rangle$, so the last column should approach 1 "
+      "where the duality holds.  $S_2$ is the R\\'enyi-2 (\"collision\") "
+      "entropy, computed with an UNBIASED power-sum estimator -- it is the "
+      "quantity swap-operator entanglement protocols actually measure, and "
+      "$S_2 \\leq S$ always (an internal consistency check).  The "
+      "$I(N_F;N_B)$ rows scan the pseudorapidity GAP between the "
+      "hemispheres: how fast the shared information decays with separation "
+      "distinguishes long-range from short-range correlation, and the "
+      "string and cluster models are expected to differ here.  "
+      "$I(N_{\\mathrm{MPI}};N_{\\mathrm{ch}})$ asks how many bits of the "
+      "MPI activity the final multiplicity retains -- the information-"
+      "theoretic quality of a small-system centrality estimator (Pythia "
+      "only: the HepMC path carries no MPI tags, so the Herwig value is "
+      "zero by construction, not physics)."));
+    if (!d.entMultX.empty())
+      fillEntropyKLTable(doc.addTable(L("Charged-multiplicity entropy per "
+                                        "pseudorapidity window, with the "
+                                        "Kharzeev--Levin maximal-"
+                                        "entanglement test "
+                                        "$S/\\ln\\langle N \\rangle$ and "
+                                        "the R\\'enyi-2 entropy."),
+                                      L("tab:entmult")), d.entMultX);
+    else if (!d.entMult.empty())
+      fillEntropyTable(doc.addTable(L("Charged-multiplicity Shannon entropy "
+                                      "(Miller--Madow corrected) per "
+                                      "pseudorapidity window."),
+                                    L("tab:entmult")),
+                       "multiplicity window", "$S$ [nats]", "stat.\\ err.",
+                       d.entMult);
+    if (!d.entStage.empty())
+      fillEntropyStageTable(doc.addTable(L("Entropy production along the "
+                                           "event evolution: occupancy "
+                                           "entropy and mean object count "
+                                           "per event-history stage."),
+                                         L("tab:entstage")), d.entStage);
+    if (!d.entInfo.empty())
+      fillEntropyTable(doc.addTable(L("Information recovery: mutual "
+                                      "information between provenance tags "
+                                      "and final-state observables."),
+                                    L("tab:entinfo")),
+                       "mutual information", "$I$ [bits]", "bias scale",
+                       d.entInfo);
+    renderFiguresPaired(doc, d.figures, isEntropyFigure);
     doc.endSection();
     }
 
@@ -1232,7 +1918,8 @@ void buildPaper(LatexDocument & doc, const ReportData & d)
   // Repro metadata table.
   LatexTable & t = doc.addTable(L("Analysis environment."),
                                 L("tab:repro"));
-  t.setColumnSpec("l l");
+  // p{} for the value column: file paths / hostnames can be long.
+  t.setColumnSpec("l p{0.70\\textwidth}");
   t.setHeaderRows(1);
   t.addRow({ L("metadata"), L("value") });
   if (!d.gitSha.empty())
@@ -1330,7 +2017,9 @@ void buildComparison(LatexDocument & doc, const ReportData & dA,
   {
   LatexTable & t = doc.addTable(L("Generator components: what is comparable."),
                                 L("tab:comparable"));
-  t.setColumnSpec("l l");
+  // p{} columns: these cells hold full sentences, which a plain `l`
+  // column would push past the page frame (no line breaking in `l`).
+  t.setColumnSpec("p{0.30\\textwidth} p{0.62\\textwidth}");
   t.setHeaderRows(1);
   t.addRow({ L("component"), L("comparability") });
   t.addRow({ L("Multiparton interactions (MPI)"),
@@ -1436,15 +2125,99 @@ void buildComparison(LatexDocument & doc, const ReportData & dA,
                      "pair class", labelA, labelB, dA.pairs, dB.pairs);
   doc.endSection();
 
+  // ---- fragmentation-system comparison (opt-in --systems) ---------------
+  if (!dA.fragSys.empty() && !dB.fragSys.empty())
+    {
+    doc.addSection(L("Fragmentation systems: the models head-to-head"),
+                   L("sec:cmpfrag"));
+    doc.addText(L(
+      "The fragmentation system is where the two hadronization models "
+      "differ BY DESIGN, and the comparison makes their central "
+      "assumptions visible on one axis: " + labelA + " fragments a few "
+      "heavy strings into many hadrons each; " + labelB + " decays many "
+      "light clusters into about two hadrons each.  Read "
+      "Tab.~\\ref{tab:cmp-fragsys} row by row: systems per event, hadrons "
+      "per system, system mass, rapidity span (the long-range-correlation "
+      "budget of each model), and the $\\lambda$ string-length measure.  "
+      "Tab.~\\ref{tab:cmp-fragord} compares the within-system ordering -- "
+      "whether each model's hadronization conserves charge, momentum and "
+      "baryon number LOCALLY along the system."));
+    fillFragCompareTable(
+      doc.addTable(L("Fragmentation-system anatomy, " + labelA + " vs "
+                     + labelB + "."), L("tab:cmp-fragsys")),
+      labelA, labelB, dA.fragSys, dB.fragSys);
+    if (!dA.fragOrd.empty() || !dB.fragOrd.empty())
+      fillFragCompareTable(
+        doc.addTable(L("Within-system ordering, " + labelA + " vs "
+                       + labelB + "."), L("tab:cmp-fragord")),
+        labelA, labelB, dA.fragOrd, dB.fragOrd);
+    doc.endSection();
+    }
+
+  // ---- entropy / information comparison (opt-in) ------------------------
+  // Rendered only when BOTH generators ran with --entropy, mirroring the
+  // no-silently-single-generator policy of the figures.
+  if ((!dA.entMult.empty() && !dB.entMult.empty()) ||
+      (!dA.entInfo.empty() && !dB.entInfo.empty()))
+    {
+    doc.addSection(L("Entropy and information comparison"),
+                   L("sec:cmpentropy"));
+    doc.addText(L(
+      "The same event record can be read as an information source, and the "
+      "two hadronization models compared as two different INFORMATION "
+      "PROCESSORS.  Tab.~\\ref{tab:cmp-entmult} compares the Shannon "
+      "entropy of the charged-multiplicity distribution (the quantity the "
+      "Kharzeev--Levin duality relates to the entanglement entropy of the "
+      "probed partonic state) -- a wider multiplicity distribution means "
+      "larger entropy.  Tab.~\\ref{tab:cmp-entstage} compares WHERE in the "
+      "event evolution each generator produces its entropy (shower vs "
+      "hadronization vs decays).  Tab.~\\ref{tab:cmp-entinfo} asks the "
+      "channel question -- how many bits of the initiating-parton identity "
+      "survive to the final state in each model -- i.e.\\ whether the Lund "
+      "string or the cluster model destroys more initial-state information.  "
+      "All numbers are Miller--Madow-corrected Shannon estimates on "
+      "generator output; see the individual reports for estimator caveats."));
+    if (!dA.entMultX.empty() && !dB.entMultX.empty())
+      fillEntropyKLCompareTable(
+        doc.addTable(L("Charged-multiplicity entropy [nats] and the "
+                       "Kharzeev--Levin ratio $S/\\ln\\langle N \\rangle$, "
+                       + labelA + " vs " + labelB + "."),
+                     L("tab:cmp-entmult")),
+        labelA, labelB, dA.entMultX, dB.entMultX);
+    else if (!dA.entMult.empty() && !dB.entMult.empty())
+      fillEntropyCompareTable(
+        doc.addTable(L("Charged-multiplicity Shannon entropy [nats], "
+                       + labelA + " vs " + labelB + "."),
+                     L("tab:cmp-entmult")),
+        "multiplicity window", labelA, labelB, dA.entMult, dB.entMult);
+    if (!dA.entStage.empty() && !dB.entStage.empty())
+      fillEntropyStageCompareTable(
+        doc.addTable(L("Stage entropy profile, " + labelA + " vs " + labelB +
+                       ": occupancy entropy [nats] and mean object count "
+                       "per stage."),
+                     L("tab:cmp-entstage")),
+        labelA, labelB, dA.entStage, dB.entStage);
+    if (!dA.entInfo.empty() && !dB.entInfo.empty())
+      fillEntropyCompareTable(
+        doc.addTable(L("Information recovery [bits], " + labelA + " vs "
+                       + labelB + "."),
+                     L("tab:cmp-entinfo")),
+        "mutual information", labelA, labelB, dA.entInfo, dB.entInfo);
+    doc.endSection();
+    }
+
   // ---- comparison figures (each overlays both generators) --------------
   doc.addSection(L("Comparison figures"), L("sec:cmpfigs"));
   doc.addText(L(
     "Each figure overlays the same observable for both generators, "
-    "normalised so shape differences are visible at a glance.  Origin and "
-    "parton-flavour spectra come first, then the pair correlations, then "
-    "the single-plot genealogy summaries (decay-chain depth, parton-ancestor "
-    "count, common-ancestor stage, multiplicity, spherocity)."));
-  renderFiguresPaired(doc, dA.figures, isCompareFigure);
+    "normalised so shape differences are visible at a glance (entropy / "
+    "count profiles are the exception and are never normalised).  The "
+    "figures are grouped by topic in reading order: production origin, "
+    "then the HADRONIZATION INTERFACE -- partons entering hadronization, "
+    "primary hadrons coming out, and the conversion ratio, which is the "
+    "head-to-head string-vs-cluster comparison -- then parton ancestry, "
+    "event context, and the pair correlations from core to specialised."));
+  renderFiguresGrouped(doc, dA.figures, isCompareFigure);
   doc.endSection();
 
   // ---- configuration ----------------------------------------------------
@@ -1540,13 +2313,111 @@ void buildLadderComparison(
                  "pair class", labels, pairs);
   doc.endSection();
 
+  // ---- fragmentation systems across the ladder (opt-in --systems) -------
+  {
+  bool allHaveFrag = !cols.empty();
+  for (const auto & c : cols)
+    if (c.second.fragSys.empty()) { allHaveFrag = false; break; }
+  if (allHaveFrag)
+    {
+    doc.addSection(L("Fragmentation systems across the mechanism ladder"),
+                   L("sec:ladfrag"));
+    doc.addText(L(
+      "The $\\lambda$ row is the headline: colour reconnection exists to "
+      "MINIMISE the total string length, so $\\lambda$ should drop "
+      "visibly between the +MPI and +MPI+CR columns -- CR's action made "
+      "directly visible.  MPI instead ADDS systems, so the systems-per-"
+      "event row rises at the +MPI column."));
+    LatexTable & t = doc.addTable(L("Fragmentation-system summary across "
+                                    "the mechanism ladder."),
+                                  L("tab:lad-frag"));
+    std::string spec = "l";
+    for (std::size_t i = 0; i < cols.size(); ++i) spec += " r";
+    t.setColumnSpec(spec);
+    t.setHeaderRows(1);
+    std::vector<String> header;
+    header.push_back(L("quantity"));
+    for (const auto & c : cols) header.push_back(L(c.first));
+    t.addRow(header);
+    std::vector<std::string> order;
+    std::set<std::string> seen;
+    for (const auto & c : cols)
+      {
+      for (const auto & r : c.second.fragSys)
+        if (seen.insert(r.name).second) order.push_back(r.name);
+      for (const auto & r : c.second.fragOrd)
+        if (seen.insert(r.name).second) order.push_back(r.name);
+      }
+    for (const auto & name : order)
+      {
+      std::vector<String> row;
+      row.push_back(L(fragRowLabel(name)));
+      for (const auto & c : cols)
+        {
+        std::string v = valOf(c.second.fragSys, name);
+        if (v.empty()) v = valOf(c.second.fragOrd, name);
+        row.push_back(L(v.empty() ? "--" : v));
+        }
+      t.addRow(row);
+      }
+    doc.endSection();
+    }
+  }
+
+  // ---- entropy across the ladder (opt-in; shown when every column has it)
+  {
+  bool allHaveEntropy = !cols.empty();
+  for (const auto & c : cols)
+    if (c.second.entMult.empty()) { allHaveEntropy = false; break; }
+  if (allHaveEntropy)
+    {
+    doc.addSection(L("Entropy across the mechanism ladder"),
+                   L("sec:ladentropy"));
+    doc.addText(L(
+      "Charged-multiplicity Shannon entropy [nats] per configuration.  "
+      "MPI widens the multiplicity distribution, so its entropy jump should "
+      "be the largest single step; colour reconnection REARRANGES colour "
+      "flow and typically narrows the distribution -- a direct test of "
+      "whether CR reduces the event's entropy in each generator."));
+    LatexTable & t = doc.addTable(L("Multiplicity entropy [nats] across the "
+                                    "mechanism ladder."),
+                                  L("tab:lad-entropy"));
+    std::string spec = "l";
+    for (std::size_t i = 0; i < cols.size(); ++i) spec += " r";
+    t.setColumnSpec(spec);
+    t.setHeaderRows(1);
+    std::vector<String> header;
+    header.push_back(L("multiplicity window"));
+    for (const auto & c : cols) header.push_back(L(c.first));
+    t.addRow(header);
+    std::vector<std::string> order;
+    std::set<std::string> seen;
+    for (const auto & c : cols)
+      for (const auto & r : c.second.entMult)
+        if (seen.insert(r.name).second) order.push_back(r.name);
+    for (const auto & name : order)
+      {
+      std::vector<String> row;
+      row.push_back(L(entropyRowLabel(name)));
+      for (const auto & c : cols)
+        {
+        const std::string v = valOf(c.second.entMult, name);
+        row.push_back(L(v.empty() ? "--" : v));
+        }
+      t.addRow(row);
+      }
+    doc.endSection();
+    }
+  }
+
   doc.addSection(L("Ladder overlay figures"), L("sec:ladfigs"));
   doc.addText(L(
     "Each figure overlays every (generator, rung) configuration for one "
     "observable, normalised so shape changes are visible.  Curves are "
     "coloured by generator; rungs of the same generator share a colour "
-    "family."));
-  renderFiguresPaired(doc, figs.figures, isCompareFigure);
+    "family.  Figures are grouped by topic, same reading order as the "
+    "genealogy reports."));
+  renderFiguresGrouped(doc, figs.figures, isCompareFigure);
   doc.endSection();
 }
 
