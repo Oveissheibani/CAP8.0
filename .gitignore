@@ -105,7 +105,40 @@ pythia8[0-9]*/
 .idea/
 .vscode/
 
-# Internal correspondence + agent operations — not for public fork
+# ============================================================================
+# PRIVATE — never upload to the fork.  Only generalized CODE belongs on git;
+# personal write-ups, internal coordination, and anything carrying a username
+# or HOME path stays local.  Organized by category.
+# ============================================================================
+
+# -- personal knowledge base / books / reports --
+BOOKLET-CAP.md
+*-BOOKLET.md
+*_REPORT.md
+*_REPORT.txt
+*_REPORT.pdf
+
+# -- internal agent coordination + handoffs --
+COORD.md
+COORD-*.md
+AGENTS.md
+CLAUDE.md
+.claude/
+.anthropic/
+
+# -- proposals / plans / design notes (keep the CODE, not the write-ups) --
+provenance-b/*.md
+*_PROPOSAL.md
+*_PLAN.md
+*_DESIGN.md
+
+# -- grid audits + inventories: contain cluster username + HOME paths --
+Grid/**/*audit*
+Grid/**/*inventory*
+Grid/WSU/*.txt
+Grid/WSU/*.md
+
+# -- correspondence / install reports (legacy patterns) --
 LETTER_TO_*.md
 LETTER_TO_*.txt
 REPLY_TO_*.md
@@ -117,10 +150,6 @@ INSTALL_REPORT_*.txt
 BF_PER_STAGE_PLAN.md
 herwig7_install_prompt*.txt
 herwig7_install_prompt*.md
-AGENTS.md
-CLAUDE.md
-.claude/
-.anthropic/
 MISSING_CLASSES.md
 JETS_KNOWN_ISSUES.md
 CODEBASE_MAP.md
