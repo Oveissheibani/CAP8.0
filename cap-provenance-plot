@@ -630,9 +630,11 @@ COMPARE_HISTS = [
     ("pt_parton_Bottom",        "p_{T} [GeV]", True,
      "p_{T} of bottom-ancestry pions, Pythia vs Herwig."),
     ("pt_parton_Gluon",         "p_{T} [GeV]", True,
-     "p_{T} of gluon-ENDPOINT pions, Pythia vs Herwig.  Gluons are never "
-     "string endpoints, so this is ~0 in both by construction -- see the "
-     "initiating-parton figures for the real gluon-origin comparison."),
+     "p_{T} of pions whose NEAREST pre-hadronization parton is a gluon.  "
+     "In Pythia this is the string-KINK population (~5%); in Herwig it is "
+     "EXACTLY zero because clusters are built from quark pairs after "
+     "forced gluon splitting -- see the initiating-parton figures for the "
+     "true gluon-origin comparison."),
     # -- INITIATING (hard-scatter) parton flavour: the gluon-capable view --
     ("pt_initparton_Gluon",      "p_{T} [GeV]", True,
      "p_{T} of GLUON-INITIATED pions (initiating hard parton = gluon), "
@@ -821,8 +823,47 @@ FRAG_OVERLAYS = [
      "(unit-normalized).  Fission exists to remove the heavy tail -- the "
      "decaying spectrum should be visibly truncated."),
 ]
+# Per-stage kinematics: the "anatomy of one collision" overlays.  Stage
+# rings as series on one canvas (unit-normalized).  CR/ropes make no
+# particles, so their action shows up as the CHANGE of these curves
+# between mechanism-ladder rungs.
+FRAG_STAGE_Y_SERIES = [
+    ("stagekin_y_HardProcess",             "HardProcess",       "kGray+2"),
+    ("stagekin_y_MPI",                     "MPI",               "kViolet+1"),
+    ("stagekin_y_FSR",                     "FSR (shower)",      "kGreen+2"),
+    ("stagekin_y_PartonsPreHadronization", "PreHadronization",  "kOrange+7"),
+    ("stagekin_y_PrimaryHadrons",          "PrimaryHadrons",    "kAzure+1"),
+    ("stagekin_y_FinalState",              "FinalState",        "kRed+1"),
+]
+FRAG_STAGE_DPHI_SERIES = [
+    (s.replace("stagekin_y_", "stagekin_dphi_"), lab, col)
+    for (s, lab, col) in FRAG_STAGE_Y_SERIES
+]
+
 # Cross-generator comparisons (require_all -> never silently one-generator).
 COMPARE_FRAG_HISTS = [
+    # -- per-stage kinematics on the stages BOTH generators populate --
+    ("stagekin_y_FSR",          "y (FSR shower partons)", False,
+     "Rapidity distribution of the shower partons, per configuration."),
+    ("stagekin_y_PartonsPreHadronization", "y (partons entering hadronization)",
+     False,
+     "Rapidity of the partons entering hadronization, per configuration."),
+    ("stagekin_y_PrimaryHadrons", "y (primary hadrons)", False,
+     "Rapidity of the primary hadrons (pre-decay), per configuration.  In "
+     "the mechanism ladder, the +MPI vs +MPI+CR overlay of this curve IS "
+     "the colour-reconnection plot."),
+    ("stagekin_y_FinalState",   "y (final state)", False,
+     "Rapidity of the final state, per configuration."),
+    ("stagekin_dphi_PartonsPreHadronization",
+     "#Delta#phi (partons entering hadronization)", False,
+     "Pairwise azimuthal opening among the partons entering hadronization, "
+     "per configuration."),
+    ("stagekin_dphi_PrimaryHadrons", "#Delta#phi (primary hadrons)", False,
+     "Pairwise Delta-phi among primary hadrons, per configuration.  CR "
+     "rewires colour flow, so its action appears as the +MPI to +MPI+CR "
+     "change of this shape."),
+    ("stagekin_dphi_FinalState", "#Delta#phi (final state)", False,
+     "Pairwise Delta-phi of the final state, per configuration."),
     ("frag_nsystems",        "fragmentation systems / event", True,
      "Systems per event, Pythia vs Herwig: few long strings vs many "
      "small clusters, in one plot."),
@@ -1133,6 +1174,115 @@ def overlay_stage_profile(files, histname, ytitle, out_path, caption,
     return caption
 
 
+def _parse_summary_sections(txt_path):
+    """Class-fraction sections from a provenance-study .root.txt summary:
+    {"origin": [(name, pct), ...], "parton": ..., "initparton": ...,
+     "pair": ...}.  Mirrors the C++ report parser's markers."""
+    sections = {"origin": [], "parton": [], "initparton": [], "pair": []}
+    current = None
+    try:
+        lines = open(txt_path, errors="replace").read().splitlines()
+    except OSError:
+        return sections
+    for line in lines:
+        if "by origin:" in line:
+            current = "origin"; continue
+        if "by initiating parton flavour" in line:
+            current = "initparton"; continue
+        if "by parton flavour" in line:
+            current = "parton"; continue
+        if "pair correlation by ancestry:" in line:
+            current = "pair"; continue
+        if line.strip().startswith(("entropy:", "fragmentation:")):
+            current = None; continue
+        if current:
+            toks = line.split()
+            if len(toks) == 4 and toks[3] == "%":
+                try:
+                    sections[current].append((toks[0], float(toks[2])))
+                except ValueError:
+                    pass
+    return sections
+
+
+def emit_fraction_bars(gens, outdir, fmt, manifest):
+    """COLUMN-GRAPH versions of the fraction tables: grouped bar charts of
+    the origin / initiating-parton / pair-class percentages, one bar group
+    per class, one bar per (generator[, rung]) column.  Built from the
+    .root.txt summaries sitting next to the .root files."""
+    import ROOT
+    ROOT.gROOT.SetBatch(True)
+    ROOT.gStyle.SetOptStat(0)
+
+    data = []                                   # (label, colour, sections)
+    for label, path, colour in gens:
+        sec = _parse_summary_sections(path + ".txt")
+        if any(sec.values()):
+            data.append((label, colour, sec))
+    if len(data) < 2:
+        return
+
+    charts = [
+        ("compare_bars_origin", "origin",
+         "Production-origin fractions (%) as a column graph -- the "
+         "origin table, drawn."),
+        ("compare_bars_initparton", "initparton",
+         "Initiating-parton (gluon-vs-quark origin) fractions (%) as a "
+         "column graph."),
+        ("compare_bars_pair", "pair",
+         "Same-event pair-ancestry fractions (%) as a column graph (log "
+         "scale: the classes span orders of magnitude)."),
+    ]
+    for outname, key, caption in charts:
+        # union of class names, first-seen order
+        classes = []
+        for _, _, sec in data:
+            for name, _ in sec[key]:
+                if name not in classes:
+                    classes.append(name)
+        if not classes:
+            continue
+        k = len(data)
+        width = 0.8 / k
+        canvas = ROOT.TCanvas("cb_" + outname, "", 950, 680)
+        logy = (key == "pair")
+        if logy:
+            canvas.SetLogy()
+        hists = []
+        ymax = 0.0
+        for i, (label, colour, sec) in enumerate(data):
+            h = ROOT.TH1F("%s_%d" % (outname, i), "", len(classes),
+                          0, len(classes))
+            h.SetDirectory(0)
+            vals = dict(sec[key])
+            for b, cname in enumerate(classes):
+                v = vals.get(cname, 0.0)
+                h.SetBinContent(b + 1, v)
+                ymax = max(ymax, v)
+            col = root_color(colour, ROOT)
+            h.SetFillColor(col); h.SetLineColor(col)
+            h.SetBarWidth(width); h.SetBarOffset(0.1 + i * width)
+            hists.append((h, label))
+        first = hists[0][0]
+        for b, cname in enumerate(classes):
+            first.GetXaxis().SetBinLabel(b + 1, cname)
+        first.GetXaxis().LabelsOption("v")
+        first.GetYaxis().SetTitle("fraction [%]")
+        first.SetMinimum(0.005 if logy else 0.0)
+        first.SetMaximum(ymax * (3.0 if logy else 1.25))
+        canvas.SetBottomMargin(0.22)
+        legend = ROOT.TLegend(0.62, 0.70, 0.88, 0.88)
+        _legend_style(legend, ROOT)
+        for i, (h, label) in enumerate(hists):
+            h.Draw("bar" if i == 0 else "bar same")
+            legend.AddEntry(h, label, "f")
+        legend.Draw()
+        out = os.path.join(outdir, outname + "." + fmt)
+        canvas.SaveAs(out)
+        print("  wrote %s" % out)
+        manifest.append((os.path.basename(out), caption))
+
+
 def emit_nch_vs_nmpi(root_path, outdir, fmt, manifest):
     """Centrality-quality profile: mean N_ch(|eta|<1) per N_MPI, from the
     sum/count histogram pair written by ProvenanceObservables.  Shows how
@@ -1191,6 +1341,24 @@ def emit_frag_figures(root_path, outdir, fmt, manifest):
     for name, series, xtitle, caption in FRAG_OVERLAYS:
         out = os.path.join(outdir, name + "." + fmt)
         cap = overlay(root_path, series, "frag_", xtitle, out, caption,
+                      logy=False, normalize=True)
+        if cap:
+            manifest.append((os.path.basename(out), cap))
+    # Per-stage kinematics: one canvas, all stage rings overlaid.
+    for name, series, xtitle, caption in [
+        ("frag_stage_y", FRAG_STAGE_Y_SERIES, "rapidity y",
+         "Rapidity distribution of every evolution-stage ring "
+         "(unit-normalized): the anatomy of one collision from the hard "
+         "scatter to the final state.  Stages absent in this source "
+         "(e.g. HardProcess/MPI on HepMC input) simply have no curve."),
+        ("frag_stage_dphi", FRAG_STAGE_DPHI_SERIES, "#Delta#phi [rad]",
+         "Pairwise azimuthal opening WITHIN each evolution-stage ring "
+         "(unit-normalized).  Rings with more than 150 objects are "
+         "stride-thinned before pairing, which is approximately unbiased "
+         "in azimuth."),
+    ]:
+        out = os.path.join(outdir, name + "." + fmt)
+        cap = overlay(root_path, series, "", xtitle, out, caption,
                       logy=False, normalize=True)
         if cap:
             manifest.append((os.path.basename(out), cap))
@@ -1467,6 +1635,17 @@ GENERATOR_COLOURS = {
     "pythia": "kAzure+1", "herwig": "kRed+1",
     "sherpa": "kGreen+2", "epos": "kOrange+7",
 }
+# Mechanism-ladder rungs of one generator share a colour FAMILY but get a
+# light -> dark gradient (baseline lightest, +MPI mid, +MPI+CR darkest) so
+# the rungs are tellable apart at a glance.
+GENERATOR_SHADES = {
+    "pythia": ["kAzure-9", "kAzure+1", "kBlue+2"],
+    "herwig": ["kRed-9",   "kRed+1",   "kRed+3"],
+    "sherpa": ["kGreen-9", "kGreen+2", "kGreen+4"],
+    "epos":   ["kOrange-9", "kOrange+7", "kOrange+9"],
+}
+# Canonical rung ordering: baseline first, then cumulative mechanisms.
+RUNG_ORDER = {"baseline": 0, "MPI": 1, "MPICR": 2}
 GENERATOR_ORDER = ["pythia", "herwig", "sherpa", "epos"]
 
 
@@ -1494,14 +1673,30 @@ def discover_generators(compare_dir):
 
     def _key(it):
         gi = GENERATOR_ORDER.index(it[0]) if it[0] in GENERATOR_ORDER else 99
-        return (gi, it[1] or "")
+        # canonical rung order (baseline -> +MPI -> +MPI+CR), unknowns after
+        ri = RUNG_ORDER.get(it[1], 50) if it[1] is not None else -1
+        return (gi, ri, it[1] or "")
     items.sort(key=_key)
 
     out = []
+    rung_idx = {}                      # per-generator rung counter (gradient)
     for i, (gen, rung, path) in enumerate(items):
         glabel = GENERATOR_LABELS.get(gen, gen.capitalize())
-        label = glabel if rung is None else "%s · %s" % (glabel, rung)
-        colour = GENERATOR_COLOURS.get(gen, LADDER_COLOURS[i % len(LADDER_COLOURS)])
+        if rung is None:
+            label = glabel
+            colour = GENERATOR_COLOURS.get(
+                gen, LADDER_COLOURS[i % len(LADDER_COLOURS)])
+        else:
+            # ASCII separator: ROOT's TLegend mangles UTF-8 (the old middle
+            # dot rendered as 'A-circumflex dot').
+            label = "%s - %s" % (glabel, rung)
+            shades = GENERATOR_SHADES.get(gen)
+            k = rung_idx.get(gen, 0)
+            rung_idx[gen] = k + 1
+            if shades:
+                colour = shades[k % len(shades)]
+            else:
+                colour = LADDER_COLOURS[i % len(LADDER_COLOURS)]
         out.append((label, path, colour))
     return out
 
@@ -1764,7 +1959,7 @@ def emit_single_run(root_path, outdir, fmt, normalize, manifest,
 # the list keep their relative order after the listed ones.
 REPORT_ORDER = [
     # 1. production origin (raw, then local fraction) + feed-down depth
-    "origin_pt", "origin_eta", "origin_pt_fraction",
+    "origin_pt", "origin_eta", "origin_pt_fraction", "bars_origin",
     "pt_origin_Primary", "pt_origin_FromResonance", "pt_origin_FromWeakDecay",
     "decay_chain_depth",
     # 2. hadronization interface (string vs cluster)
@@ -1774,7 +1969,7 @@ REPORT_ORDER = [
     "parton_pt", "parton_pt_fraction",
     "pt_parton_LightQuark", "pt_parton_Strange", "pt_parton_Charm",
     "pt_parton_Bottom", "pt_parton_Gluon",
-    "initparton_pt",
+    "initparton_pt", "bars_initparton",
     "pt_initparton_Gluon", "pt_initparton_LightQuark", "pt_initparton_Strange",
     "sp_pt_mpi", "sp_pt_shower", "sp_pt_hf",
     # 4. event-level context: multiplicity concepts (hadron -> charged ->
@@ -1786,7 +1981,7 @@ REPORT_ORDER = [
     # 5. pair core: raw -> normalized shapes -> local fraction, per observable
     "pair_dphi", "pair_dphi_shapes", "pair_dphi_fraction",
     "pair_deta", "pair_deta_shapes", "pair_deta_fraction",
-    "pair_mass", "common_ancestor_depth",
+    "pair_mass", "common_ancestor_depth", "bars_pair",
     "dphi_pair_All", "dphi_pair_SameResonance", "dphi_pair_SharedParton",
     "dphi_pair_Unrelated", "deta_pair_SharedParton", "deta_pair_Unrelated",
     "mass_pair_All", "mass_pair_SameResonance",
@@ -1826,6 +2021,11 @@ REPORT_ORDER = [
     "frag_bbar", "frag_bbar_dy_same", "frag_strange",
     "frag_cluster_mass_top", "frag_cluster_mass_decaying",
     "frag_cluster_fission",
+    "frag_stage_y", "frag_stage_dphi",
+    "stagekin_y_FSR", "stagekin_y_PartonsPreHadronization",
+    "stagekin_y_PrimaryHadrons", "stagekin_y_FinalState",
+    "stagekin_dphi_PartonsPreHadronization", "stagekin_dphi_PrimaryHadrons",
+    "stagekin_dphi_FinalState",
     # 14. entropy / information block (own report section)
     "entropy_mult", "entropy_kno", "entropy_fb", "entropy_fb_mi_gap",
     "entropy_nmpi", "entropy_stage_S", "entropy_stage_meanN",
@@ -1952,6 +2152,8 @@ def main():
                                  context_label="generators", require_all=True)
             if cap:
                 manifest.append((os.path.basename(out), cap))
+        # Column-graph (bar chart) versions of the fraction tables.
+        emit_fraction_bars(gens, args.outdir, args.format, manifest)
         # Fragmentation-system comparison (only when EVERY generator ran
         # with --systems).
         for histname, xtitle, logy, caption in COMPARE_FRAG_HISTS:

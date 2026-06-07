@@ -149,6 +149,9 @@ Hist1D & FragmentationSystems::H(const std::string & name)
                                               { nb = 40;  lo = 0.0;  hi = 8.0;  }
   else if (name.rfind("frag_cluster_mass", 0) == 0)
                                               { nb = 60;  lo = 0.0;  hi = 12.0; }
+  else if (name.rfind("stagekin_y_", 0) == 0) { nb = 80;  lo = -10.0; hi = 10.0; }
+  else if (name.rfind("stagekin_dphi_", 0) == 0)
+                                              { nb = 64;  lo = 0.0;  hi = 3.14159265; }
   else                                        { nb = 100; lo = 0.0;  hi = 100.0;}
 
   _hist[name] = Hist1D(name, name, nb, lo, hi);
@@ -270,6 +273,60 @@ void FragmentationSystems::accumulate(const EventHistory & history)
       if (hasStrangeQuark(a.pdg) && hasStrangeQuark(b.pdg))
         H(same ? "frag_strange_dy_same" : "frag_strange_dy_cross").fill(dy);
       }
+
+  // ---- per-stage kinematics: the "anatomy of one collision" plots --------
+  // Rapidity distribution of every evolution-stage ring, plus the pairwise
+  // Delta-phi WITHIN each ring.  Colour reconnection and ropes create no
+  // particles, so they have no ring of their own — their action is the
+  // CHANGE in these distributions between mechanism-ladder rungs
+  // (+MPI vs +MPI+CR overlays of these histograms ARE the CR plots).
+  {
+  static const struct { Stage s; const char * n; bool dphi; } RINGS[] = {
+    { Stage::HardProcess,             "HardProcess",             true  },
+    { Stage::MPI,                     "MPI",                     true  },
+    { Stage::ISR,                     "ISR",                     false },
+    { Stage::FSR,                     "FSR",                     true  },
+    { Stage::BeamRemnants,            "BeamRemnants",            false },
+    { Stage::PartonsPreHadronization, "PartonsPreHadronization", true  },
+    { Stage::PrimaryHadrons,          "PrimaryHadrons",          true  },
+    { Stage::FinalState,              "FinalState",              true  },
+  };
+  for (const auto & ring : RINGS)
+    {
+    std::vector<double> phis;
+    Hist1D & hy = H(std::string("stagekin_y_") + ring.n);
+    for (int i = 0; i < history.size(); ++i)
+      {
+      const ParticleNode & n = history.node(i);
+      const bool in = (ring.s == Stage::FinalState) ? n.isFinal
+                                                    : (n.stage == ring.s);
+      if (!in) continue;
+      hy.fill(rapidity(n));
+      if (ring.dphi) phis.push_back(n.phi());
+      }
+    if (!ring.dphi || phis.size() < 2) continue;
+    // Pairwise Delta-phi within the ring.  For very populous rings the
+    // list is stride-thinned to <= 150 objects so the per-event cost stays
+    // bounded; the thinning is record-order based and approximately
+    // unbiased for azimuth (documented in the figure caption).
+    if (phis.size() > 150)
+      {
+      const std::size_t stride = (phis.size() + 149) / 150;
+      std::vector<double> thin;
+      for (std::size_t k = 0; k < phis.size(); k += stride)
+        thin.push_back(phis[k]);
+      phis.swap(thin);
+      }
+    Hist1D & hd = H(std::string("stagekin_dphi_") + ring.n);
+    for (std::size_t a = 0; a < phis.size(); ++a)
+      for (std::size_t b = a + 1; b < phis.size(); ++b)
+        {
+        double dphi = std::fabs(phis[a] - phis[b]);
+        if (dphi > 3.14159265) dphi = 2.0 * 3.14159265 - dphi;
+        hd.fill(dphi);
+        }
+    }
+  }
 
   // ---- Herwig-only: explicit cluster (PDG 81) fission chain --------------
   for (int i = 0; i < history.size(); ++i)

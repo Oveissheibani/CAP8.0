@@ -350,6 +350,36 @@
      "in rapidity.  Long spans seed long-range correlations; if the "
      "generators differ here they MUST differ in forward-backward "
      "correlations too."},
+    // ----- per-stage kinematics + column graphs --------------------------
+    {"frag_stage_y",
+     "The anatomy of one collision in a single plot: how each evolution "
+     "stage populates rapidity.  Watch the spread grow from the hard "
+     "scatter outward; the gap between PreHadronization and "
+     "PrimaryHadrons is what hadronization does to the rapidity "
+     "structure."},
+    {"frag_stage_dphi",
+     "Azimuthal correlations stage by stage.  Partonic rings carry the "
+     "back-to-back memory of the scatters; watch it dilute through the "
+     "shower and survive (or not) into the primary hadrons."},
+    {"compare_stagekin_y_PrimaryHadrons",
+     "In the mechanism ladder this overlay is THE colour-reconnection "
+     "plot: CR creates no particles, so its entire action is the change "
+     "of this curve between the +MPI and +MPI+CR shades of one colour "
+     "family."},
+    {"compare_stagekin_dphi_PrimaryHadrons",
+     "Same CR logic in azimuth: compare the +MPI and +MPI+CR shades "
+     "within one colour family -- any reshaping is colour reconnection "
+     "rearranging the strings/clusters before they decay."},
+    {"compare_bars_origin",
+     "The origin table as columns: each class is a group, each bar one "
+     "configuration.  Faster to read than the table for spotting which "
+     "configuration moves which class."},
+    {"compare_bars_initparton",
+     "The gluon-vs-quark origin table as columns.  The gluon group is "
+     "the one to watch across configurations."},
+    {"compare_bars_pair",
+     "Pair-ancestry fractions as columns (log scale -- the classes span "
+     "orders of magnitude).  SharedParton is the physics-rich group."},
     // ----- event multiplicity / centrality (three concepts) -------------
     {"nmult_hadrons",
      "The TOTAL hadronic yield: charged and neutral, all species.  Compare "

@@ -768,7 +768,7 @@ const std::vector<FigureTopic> & figureTopics()
 {
   static const std::vector<FigureTopic> T = {
     {"Production origin and feed-down",
-     {"origin_pt", "origin_eta", "origin_pt_fraction",
+     {"origin_pt", "origin_eta", "origin_pt_fraction", "bars_origin",
       "pt_origin_Primary", "pt_origin_FromResonance",
       "pt_origin_FromWeakDecay", "decay_chain_depth"}},
     {"The hadronization interface (string vs cluster)",
@@ -778,7 +778,8 @@ const std::vector<FigureTopic> & figureTopics()
      {"parton_pt", "parton_pt_fraction",
       "pt_parton_LightQuark", "pt_parton_Strange", "pt_parton_Charm",
       "pt_parton_Bottom", "pt_parton_Gluon",
-      "initparton_pt", "pt_initparton_Gluon", "pt_initparton_LightQuark",
+      "initparton_pt", "bars_initparton",
+      "pt_initparton_Gluon", "pt_initparton_LightQuark",
       "pt_initparton_Strange", "sp_pt_mpi", "sp_pt_shower", "sp_pt_hf"}},
     {"Event multiplicity and centrality (three distinct concepts)",
      {"nmult_hadrons", "nmult_charged", "nmult_charged_eta10",
@@ -788,7 +789,7 @@ const std::vector<FigureTopic> & figureTopics()
     {"Core pair correlations (raw, normalized, local fraction)",
      {"pair_dphi", "pair_dphi_shapes", "pair_dphi_fraction",
       "pair_deta", "pair_deta_shapes", "pair_deta_fraction",
-      "pair_mass",
+      "pair_mass", "bars_pair",
       "dphi_pair_All", "dphi_pair_SameResonance", "dphi_pair_SharedParton",
       "dphi_pair_Unrelated", "deta_pair_SharedParton", "deta_pair_Unrelated",
       "mass_pair_All", "mass_pair_SameResonance"}},
@@ -829,7 +830,12 @@ const std::vector<FigureTopic> & figureTopics()
       "frag_lambda", "frag_neighbor_ptbal", "frag_charge_ordering",
       "frag_neighbor_charge", "frag_bbar", "frag_bbar_dy_same",
       "frag_strange", "frag_cluster_mass_top",
-      "frag_cluster_mass_decaying", "frag_cluster_fission"}},
+      "frag_cluster_mass_decaying", "frag_cluster_fission",
+      "frag_stage_y", "frag_stage_dphi",
+      "stagekin_y_FSR", "stagekin_y_PartonsPreHadronization",
+      "stagekin_y_PrimaryHadrons", "stagekin_y_FinalState",
+      "stagekin_dphi_PartonsPreHadronization", "stagekin_dphi_PrimaryHadrons",
+      "stagekin_dphi_FinalState"}},
     // Entropy figures in COMPARISON/ladder mode (compare_ent_*).  In the
     // single-run paper they have their own section via isEntropyFigure and
     // never reach this grouping.
@@ -1072,24 +1078,56 @@ void fillCompareTable(LatexTable & t, const std::string & col0,
     }
 }
 
+// ---- wide tables (mechanism ladder: 1 label + N numeric columns) ----------
+//
+// Plain `tabular` cannot shrink, so 6-7 column ladder tables ran past the
+// page frame.  These tables are emitted RAW through doc.addText, wrapped in
+// \resizebox{\textwidth}{!}{...} so they always fit the page exactly.
+// Cells are passed as final LaTeX (escape before calling where needed).
+void emitWideTable(LatexDocument & doc,
+                   const std::string & caption, const std::string & label,
+                   const std::vector<std::string> & header,
+                   const std::vector<std::vector<std::string>> & rows,
+                   std::size_t leftCols = 1)
+{
+  std::ostringstream os;
+  os << "\\begin{table}[H]\\centering\n"
+     << "\\resizebox{\\textwidth}{!}{%\n"
+     << "\\begin{tabular}{";
+  for (std::size_t i = 0; i < header.size(); ++i)
+    os << (i ? " " : "") << (i < leftCols ? "l" : "r");
+  os << "}\n\\hline\n";
+  for (std::size_t i = 0; i < header.size(); ++i)
+    os << (i ? " & " : "") << header[i];
+  os << " \\\\\n\\hline\\hline\n";
+  for (const auto & row : rows)
+    {
+    for (std::size_t i = 0; i < row.size(); ++i)
+      os << (i ? " & " : "") << row[i];
+    os << " \\\\\n";
+    }
+  os << "\\hline\n\\end{tabular}}\n"
+     << "\\caption{" << caption << "}\n";
+  if (!label.empty()) os << "\\label{" << label << "}\n";
+  os << "\\end{table}\n";
+  doc.addText(L(os.str()));
+}
+
 // N-column fraction table: one column per (generator, mechanism-rung).  Rows
 // are the UNION of class names across every column, in first-seen order; a
 // cell is "--" where that column lacks the class.  Used by the mechanism-
 // ladder comparison so you can read a class's fraction left-to-right as
-// mechanisms (MPI, CR) are switched on, in both generators.
-void fillMultiTable(LatexTable & t, const std::string & col0,
-                    const std::vector<std::string> & labels,
-                    const std::vector<std::vector<ClassRow>> & cols)
+// mechanisms (MPI, CR) are switched on, in both generators.  Rendered as a
+// WIDE (resizebox) table so 6+ columns always fit the page.
+void fillMultiTableWide(LatexDocument & doc,
+                        const std::string & caption, const std::string & label,
+                        const std::string & col0,
+                        const std::vector<std::string> & labels,
+                        const std::vector<std::vector<ClassRow>> & cols)
 {
-  std::string spec = "l";
-  for (std::size_t i = 0; i < labels.size(); ++i) spec += " r";
-  t.setColumnSpec(spec);
-  t.setHeaderRows(1);
-
-  std::vector<String> header;
-  header.push_back(L(col0));
-  for (const auto & lab : labels) header.push_back(L(lab));
-  t.addRow(header);
+  std::vector<std::string> header;
+  header.push_back(texEscape(col0));
+  for (const auto & lab : labels) header.push_back(texEscape(lab));
 
   std::vector<std::string> order;
   std::set<std::string> seen;
@@ -1097,17 +1135,19 @@ void fillMultiTable(LatexTable & t, const std::string & col0,
     for (const auto & r : col)
       if (seen.insert(r.name).second) order.push_back(r.name);
 
+  std::vector<std::vector<std::string>> rows;
   for (const auto & name : order)
     {
-    std::vector<String> row;
-    row.push_back(L(name));
+    std::vector<std::string> row;
+    row.push_back(texEscape(name));
     for (const auto & col : cols)
       {
       const std::string v = pctOf(col, name);
-      row.push_back(L(v.empty() ? "--" : v));
+      row.push_back(v.empty() ? "--" : v);
       }
-    t.addRow(row);
+    rows.push_back(row);
     }
+  emitWideTable(doc, caption, label, header, rows);
 }
 
 // ---- entropy tables (opt-in --entropy block) -------------------------------
@@ -1410,25 +1450,23 @@ void fillBinningTable(LatexTable & t)
   t.addRow({ L("$\\Delta\\phi$"),L("72"),  L("$-\\pi$ -- $\\pi$") });
 }
 
-void fillLadderTable(LatexTable & t, const ReportData & d)
+void fillLadderTableWide(LatexDocument & doc, const ReportData & d)
 {
-  std::string spec = "l l";
-  for (std::size_t i = 0; i < d.ladderRungs.size(); ++i) spec += " r";
-  t.setColumnSpec(L(spec));
-  t.setHeaderRows(1);
-  std::vector<String> head;
-  head.push_back(L("group"));
-  head.push_back(L("observable"));
+  std::vector<std::string> head;
+  head.push_back("group");
+  head.push_back("observable");
   for (std::size_t i = 0; i < d.ladderRungs.size(); ++i)
-    head.push_back(L(d.ladderRungs[i]));
-  t.addRow(head);
+    head.push_back(texEscape(d.ladderRungs[i]));
+  std::vector<std::vector<std::string>> rows;
   for (std::size_t r = 0; r < d.ladderRows.size(); ++r)
     {
-    std::vector<String> row;
+    std::vector<std::string> row;
     for (std::size_t c = 0; c < d.ladderRows[r].size(); ++c)
-      row.push_back(L(d.ladderRows[r][c]));
-    t.addRow(row);
+      row.push_back(texEscape(d.ladderRows[r][c]));
+    rows.push_back(row);
     }
+  emitWideTable(doc, "Provenance breakdown across the mechanism ladder "
+                     "(percentages).", "tab:ladder", head, rows, 2);
 }
 
 // ---- glossary rendering ---------------------------------------------------
@@ -1747,9 +1785,7 @@ void buildPaper(LatexDocument & doc, const ReportData & d)
       "subtle, harder-to-read shifts.  The figures repeat one observable "
       "per plot with all four rungs overlaid, normalised so shape changes "
       "are visible at a glance."));
-    fillLadderTable(doc.addTable(L("Provenance breakdown across the "
-                                   "mechanism ladder (percentages)."),
-                                 L("tab:ladder")), d);
+    fillLadderTableWide(doc, d);
     renderFiguresPaired(doc, d.figures, isLadderFigure);
     doc.endSection();
     }
@@ -2064,16 +2100,25 @@ void buildComparison(LatexDocument & doc, const ReportData & dA,
                                   L("tab:cmp-origin")),
                      "origin class", labelA, labelB, dA.origin, dB.origin);
   if (!dA.parton.empty() || !dB.parton.empty())
-    fillCompareTable(doc.addTable(L("Yield by string-endpoint parton flavour, "
-                                    + labelA + " vs " + labelB + "."),
+    fillCompareTable(doc.addTable(L("Yield by nearest pre-hadronization "
+                                    "quark: string ENDPOINT in " + labelA +
+                                    ", cluster CONSTITUENT in " + labelB +
+                                    "."),
                                   L("tab:cmp-parton")),
-                     "endpoint parton", labelA, labelB, dA.parton, dB.parton);
+                     "endpoint/constituent", labelA, labelB,
+                     dA.parton, dB.parton);
   doc.addText(L(
     "Two senses of \"parton flavour\" are reported and they answer different "
-    "questions.  Tab.~\\ref{tab:cmp-parton} is the STRING-ENDPOINT flavour: "
-    "the quark the hadron's fragmenting string terminated on.  Gluons are "
-    "never string endpoints, so this column is gluon-free BY CONSTRUCTION in "
-    "both generators -- that 0\\% is correct, not a bug.  "
+    "questions.  Tab.~\\ref{tab:cmp-parton} classifies the NEAREST "
+    "pre-hadronization quark ancestor, and that object means something "
+    "slightly different in each model: in " + labelA + " it is the Lund "
+    "STRING ENDPOINT the hadron's string terminated on (a small gluon "
+    "fraction appears when the walk lands on a gluon KINK of the string "
+    "first); in " + labelB + " it is the CLUSTER CONSTITUENT quark -- and "
+    "because the cluster model force-splits every gluon into a quark pair "
+    "before clustering, the " + labelB + " gluon row is EXACTLY zero by "
+    "construction.  The shared physics question -- which quark flavour did "
+    "this hadron form from -- is answered comparably by both.  "
     "Tab.~\\ref{tab:cmp-initparton} instead gives the INITIATING hard-scatter "
     "parton -- the quark- vs gluon-jet origin -- which at LHC soft QCD is "
     "gluon-dominated.  This is the number to read for \"what fraction of "
@@ -2284,33 +2329,34 @@ void buildLadderComparison(
     "Production-origin fractions across every configuration.  Watch the "
     "Primary row (direct hadronization) and the feed-down rows shift as MPI "
     "adds soft production and CR rearranges the colour flow."));
-  fillMultiTable(doc.addTable(L("Production origin (\\%) across the mechanism "
-                                "ladder."), L("tab:lad-origin")),
-                 "origin class", labels, origin);
+  fillMultiTableWide(doc, "Production origin (\\%) across the mechanism "
+                          "ladder.", "tab:lad-origin",
+                     "origin class", labels, origin);
 
   doc.addText(L(
     "Initiating-parton flavour -- the gluon-vs-quark origin.  The gluon "
     "fraction is expected to grow sharply once MPI is on (MPI is a gluon-rich "
     "phenomenon)."));
-  fillMultiTable(doc.addTable(L("Initiating (hard-scatter) parton flavour "
-                                "(\\%) across the ladder."),
-                              L("tab:lad-initparton")),
-                 "initiating parton", labels, initp);
+  fillMultiTableWide(doc, "Initiating (hard-scatter) parton flavour "
+                          "(\\%) across the ladder.", "tab:lad-initparton",
+                     "initiating parton", labels, initp);
 
   doc.addText(L(
-    "String-endpoint parton flavour (gluon-free by construction in both "
-    "generators -- see the genealogy report for the distinction)."));
-  fillMultiTable(doc.addTable(L("String-endpoint parton flavour (\\%) across "
-                                "the ladder."), L("tab:lad-parton")),
-                 "endpoint parton", labels, parton);
+    "Nearest pre-hadronization quark flavour: the string ENDPOINT in "
+    "Pythia (with a small gluon-kink fraction), the cluster CONSTITUENT "
+    "in Herwig (gluon exactly zero -- clusters are built from quark pairs "
+    "after forced gluon splitting)."));
+  fillMultiTableWide(doc, "Endpoint/constituent parton flavour (\\%) across "
+                          "the ladder.", "tab:lad-parton",
+                     "endpoint/constituent", labels, parton);
 
   doc.addText(L(
     "Two-particle ancestry.  The SharedParton fraction typically HALVES when "
     "MPI turns on (the partonic correlation is diluted across multiple "
     "scatters); CR then redistributes it further."));
-  fillMultiTable(doc.addTable(L("Same-event pair ancestry (\\%) across the "
-                                "ladder."), L("tab:lad-pair")),
-                 "pair class", labels, pairs);
+  fillMultiTableWide(doc, "Same-event pair ancestry (\\%) across the "
+                          "ladder.", "tab:lad-pair",
+                     "pair class", labels, pairs);
   doc.endSection();
 
   // ---- fragmentation systems across the ladder (opt-in --systems) -------
@@ -2328,17 +2374,9 @@ void buildLadderComparison(
       "visibly between the +MPI and +MPI+CR columns -- CR's action made "
       "directly visible.  MPI instead ADDS systems, so the systems-per-"
       "event row rises at the +MPI column."));
-    LatexTable & t = doc.addTable(L("Fragmentation-system summary across "
-                                    "the mechanism ladder."),
-                                  L("tab:lad-frag"));
-    std::string spec = "l";
-    for (std::size_t i = 0; i < cols.size(); ++i) spec += " r";
-    t.setColumnSpec(spec);
-    t.setHeaderRows(1);
-    std::vector<String> header;
-    header.push_back(L("quantity"));
-    for (const auto & c : cols) header.push_back(L(c.first));
-    t.addRow(header);
+    std::vector<std::string> header;
+    header.push_back("quantity");
+    for (const auto & c : cols) header.push_back(texEscape(c.first));
     std::vector<std::string> order;
     std::set<std::string> seen;
     for (const auto & c : cols)
@@ -2348,18 +2386,21 @@ void buildLadderComparison(
       for (const auto & r : c.second.fragOrd)
         if (seen.insert(r.name).second) order.push_back(r.name);
       }
+    std::vector<std::vector<std::string>> rows;
     for (const auto & name : order)
       {
-      std::vector<String> row;
-      row.push_back(L(fragRowLabel(name)));
+      std::vector<std::string> row;
+      row.push_back(fragRowLabel(name));
       for (const auto & c : cols)
         {
         std::string v = valOf(c.second.fragSys, name);
         if (v.empty()) v = valOf(c.second.fragOrd, name);
-        row.push_back(L(v.empty() ? "--" : v));
+        row.push_back(v.empty() ? "--" : v);
         }
-      t.addRow(row);
+      rows.push_back(row);
       }
+    emitWideTable(doc, "Fragmentation-system summary across the mechanism "
+                       "ladder.", "tab:lad-frag", header, rows);
     doc.endSection();
     }
   }
@@ -2379,33 +2420,28 @@ void buildLadderComparison(
       "be the largest single step; colour reconnection REARRANGES colour "
       "flow and typically narrows the distribution -- a direct test of "
       "whether CR reduces the event's entropy in each generator."));
-    LatexTable & t = doc.addTable(L("Multiplicity entropy [nats] across the "
-                                    "mechanism ladder."),
-                                  L("tab:lad-entropy"));
-    std::string spec = "l";
-    for (std::size_t i = 0; i < cols.size(); ++i) spec += " r";
-    t.setColumnSpec(spec);
-    t.setHeaderRows(1);
-    std::vector<String> header;
-    header.push_back(L("multiplicity window"));
-    for (const auto & c : cols) header.push_back(L(c.first));
-    t.addRow(header);
+    std::vector<std::string> header;
+    header.push_back("multiplicity window");
+    for (const auto & c : cols) header.push_back(texEscape(c.first));
     std::vector<std::string> order;
     std::set<std::string> seen;
     for (const auto & c : cols)
       for (const auto & r : c.second.entMult)
         if (seen.insert(r.name).second) order.push_back(r.name);
+    std::vector<std::vector<std::string>> rows;
     for (const auto & name : order)
       {
-      std::vector<String> row;
-      row.push_back(L(entropyRowLabel(name)));
+      std::vector<std::string> row;
+      row.push_back(entropyRowLabel(name));
       for (const auto & c : cols)
         {
         const std::string v = valOf(c.second.entMult, name);
-        row.push_back(L(v.empty() ? "--" : v));
+        row.push_back(v.empty() ? "--" : v);
         }
-      t.addRow(row);
+      rows.push_back(row);
       }
+    emitWideTable(doc, "Multiplicity entropy [nats] across the mechanism "
+                       "ladder.", "tab:lad-entropy", header, rows);
     doc.endSection();
     }
   }
@@ -2475,7 +2511,7 @@ void buildPresentation(LatexDocument & doc, const ReportData & d)
     {
     LatexFrame & f = doc.addFrame(L("Mechanism ladder"));
     doc.setCurrentScope(&f);
-    fillLadderTable(doc.addTable(L(""), L("")), d);
+    fillLadderTableWide(doc, d);
     doc.setCurrentScope(&doc);
     }
 }
